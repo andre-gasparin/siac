@@ -1,0 +1,98 @@
+name: Deploy Application
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set environment variables
+        run: |
+          DEPLOY_PATH="${{ secrets.APP_PATH_PROD }}"
+          DEPLOY_PATH="${DEPLOY_PATH:-${{ secrets.APP_PATH }}}"
+          echo "DEPLOY_PATH=$DEPLOY_PATH" >> $GITHUB_ENV
+          echo "ENV_NAME=production" >> $GITHUB_ENV
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.5'
+          extensions: mbstring, xml, ctype, iconv, pdo_mysql, mysql, zip, sqlite, gd, bcmath, curl
+          coverage: none
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Install Composer Dependencies (including dev)
+        run: |
+          cp .env.example .env
+          composer install --no-interaction --prefer-dist --optimize-autoloader
+
+      - name: Install NPM Dependencies and Build Assets
+        run: |
+          npm ci
+          npm run build
+
+      - name: Prune dev dependencies from vendor
+        run: |
+          composer install --no-dev --no-interaction --prefer-dist --optimize-autoloader
+
+      - name: Setup SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_KEY }}" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          SSH_PORT="${{ secrets.SSH_PORT }}"
+          SSH_PORT="${SSH_PORT:-22}"
+          ssh-keyscan -p "$SSH_PORT" ${{ secrets.SSH_HOST }} >> ~/.ssh/known_hosts
+
+      - name: Sync files to Server
+        run: |
+          SSH_PORT="${{ secrets.SSH_PORT }}"
+          SSH_PORT="${SSH_PORT:-22}"
+          rsync -avz --delete \
+            -e "ssh -p $SSH_PORT" \
+            --exclude='.git/' \
+            --exclude='.github/' \
+            --exclude='node_modules/' \
+            --exclude='.env' \
+            --exclude='storage/' \
+            --exclude='bootstrap/cache/*' \
+            --exclude='public/storage' \
+            --exclude='database/*.sqlite' \
+            --exclude='database/*.sqlite-journal' \
+            --exclude='database/*.sqlite-wal' \
+            ./ ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }}:${{ env.DEPLOY_PATH }}/
+
+      - name: Run post-deployment commands on Server
+        run: |
+          SSH_PORT="${{ secrets.SSH_PORT }}"
+          SSH_PORT="${SSH_PORT:-22}"
+          ssh -p "$SSH_PORT" ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} << 'EOF'
+            cd ${{ env.DEPLOY_PATH }}
+            php artisan down || true
+            php artisan migrate --force
+            php artisan optimize:clear
+            php artisan optimize
+            php artisan view:cache
+            php artisan storage:link
+            php artisan queue:restart
+
+            # Ajustar permissões para o usuário/grupo web
+            chown -R nginx:nginx .
+            find . -type d -exec chmod 775 {} +
+            find . -type f -exec chmod 664 {} +
+            chmod -R 775 storage bootstrap/cache
+
+            php artisan up || true
+          EOF
