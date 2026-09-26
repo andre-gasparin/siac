@@ -1,9 +1,14 @@
 import { createInertiaApp } from '@inertiajs/vue3';
+import { configureEcho } from '@laravel/echo-vue';
 import AppLayout from '@/app/layouts/AppLayout.vue';
 import AuthLayout from '@/features/auth/layouts/AuthLayout.vue';
 import SettingsLayout from '@/features/settings/Layout.vue';
 import { initializeTheme } from '@/shared/composables/useAppearance';
 import { initializeFlashToast } from '@/shared/lib/flashToast';
+
+configureEcho({
+    broadcaster: 'reverb',
+});
 
 const appName = import.meta.env.VITE_APP_NAME || 'Laravel';
 

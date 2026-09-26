@@ -1,9 +1,10 @@
 <script setup lang="ts">
 import { Link, router } from '@inertiajs/vue3';
-import { LogOut, Settings } from '@lucide/vue';
+import { CheckSquare, LogOut, Settings } from '@lucide/vue';
 import UserInfo from '@/app/components/UserInfo.vue';
 import { logout } from '@/routes';
 import { edit } from '@/routes/profile';
+import { index as tasksIndex } from '@/routes/tasks';
 import {
     DropdownMenuGroup,
     DropdownMenuItem,
@@ -35,6 +36,16 @@ defineProps<Props>();
             <Link class="block w-full cursor-pointer" :href="edit()" prefetch>
                 <Settings class="mr-2 h-4 w-4" />
                 Settings
+            </Link>
+        </DropdownMenuItem>
+        <DropdownMenuItem v-if="user.is_admin" :as-child="true">
+            <Link
+                class="block w-full cursor-pointer"
+                :href="tasksIndex.url()"
+                prefetch
+            >
+                <CheckSquare class="mr-2 h-4 w-4" />
+                Tarefas
             </Link>
         </DropdownMenuItem>
     </DropdownMenuGroup>
