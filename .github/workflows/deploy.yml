@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - main
+      - develop
 
 jobs:
   deploy:
@@ -15,10 +16,18 @@ jobs:
 
       - name: Set environment variables
         run: |
-          DEPLOY_PATH="${{ secrets.APP_PATH_PROD }}"
-          DEPLOY_PATH="${DEPLOY_PATH:-${{ secrets.APP_PATH }}}"
-          echo "DEPLOY_PATH=$DEPLOY_PATH" >> $GITHUB_ENV
-          echo "ENV_NAME=production" >> $GITHUB_ENV
+          if [ "${{ github.ref_name }}" = "develop" ]; then
+            DEPLOY_PATH="${{ secrets.APP_PATH_TEST }}"
+            DEPLOY_PATH="${DEPLOY_PATH:-/home/consucal-teste/htdocs/teste.consucal.com.br}"
+            echo "DEPLOY_PATH=$DEPLOY_PATH" >> $GITHUB_ENV
+            echo "ENV_NAME=test" >> $GITHUB_ENV
+          else
+            DEPLOY_PATH="${{ secrets.APP_PATH_PROD }}"
+            DEPLOY_PATH="${DEPLOY_PATH:-${{ secrets.APP_PATH }}}"
+            DEPLOY_PATH="${DEPLOY_PATH:-/home/consucal-siac3/htdocs/siac3.consucal.com.br}"
+            echo "DEPLOY_PATH=$DEPLOY_PATH" >> $GITHUB_ENV
+            echo "ENV_NAME=production" >> $GITHUB_ENV
+          fi
 
       - name: Setup PHP
         uses: shivammathur/setup-php@v2
@@ -87,9 +96,13 @@ jobs:
             php artisan view:cache
             php artisan storage:link
             php artisan queue:restart
+            if [ -f /etc/systemd/system/teste-queue.service ] && [ "${{ env.ENV_NAME }}" = "test" ]; then
+              systemctl start teste-queue.service || true
+            fi
 
-            # Ajustar permissões para o usuário/grupo web
-            chown -R nginx:nginx .
+            # Ajustar permissões dinamicamente para o usuário/grupo do site no CloudPanel
+            SITE_OWNER=$(stat -c '%U:%G' .)
+            chown -R "$SITE_OWNER" .
             find . -type d -exec chmod 775 {} +
             find . -type f -exec chmod 664 {} +
             chmod -R 775 storage bootstrap/cache
