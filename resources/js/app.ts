@@ -6,8 +6,33 @@ import SettingsLayout from '@/features/settings/Layout.vue';
 import { initializeTheme } from '@/shared/composables/useAppearance';
 import { initializeFlashToast } from '@/shared/lib/flashToast';
 
+const reverbKey =
+    document.querySelector<HTMLMetaElement>('meta[name="reverb-key"]')
+        ?.content || import.meta.env.VITE_REVERB_APP_KEY;
+
+const isSecure = window.location.protocol === 'https:';
+const isLocalhost = ['localhost', '127.0.0.1'].includes(
+    window.location.hostname,
+);
+
+const wsHost = !isLocalhost
+    ? window.location.hostname
+    : import.meta.env.VITE_REVERB_HOST || window.location.hostname;
+
+const wsPort = !isLocalhost
+    ? isSecure
+        ? 443
+        : 80
+    : Number(import.meta.env.VITE_REVERB_PORT || 8080);
+
 configureEcho({
     broadcaster: 'reverb',
+    key: reverbKey,
+    wsHost: wsHost,
+    wsPort: wsPort,
+    wssPort: wsPort,
+    forceTLS: isSecure,
+    enabledTransports: ['ws', 'wss'],
 });
 
 const appName = import.meta.env.VITE_APP_NAME || 'Laravel';
