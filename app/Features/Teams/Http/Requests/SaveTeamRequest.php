@@ -18,6 +18,7 @@ class SaveTeamRequest extends FormRequest
         return [
             'name' => ['required', 'string', 'max:255', new TeamName],
             'is_active' => ['sometimes', 'boolean'],
+            'require_data_entry_responsible' => ['sometimes', 'boolean'],
         ];
     }
 }

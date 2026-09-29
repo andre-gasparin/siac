@@ -2,6 +2,7 @@
 
 namespace App\Features\DataEntry\Http\Requests;
 
+use App\Models\Team;
 use Illuminate\Contracts\Validation\Validator;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Http\Exceptions\HttpResponseException;
@@ -21,7 +22,11 @@ class StoreBatchDataEntryRequest extends FormRequest
      */
     public function rules(): array
     {
+        $team = $this->route('current_team');
+        $requireResponsible = $team instanceof Team ? (bool) $team->require_data_entry_responsible : false;
+
         return [
+            'responsible' => [$requireResponsible ? 'required' : 'nullable', 'string', 'max:255'],
             'collected_at' => ['required', 'date'],
             'systems' => ['required', 'array', 'min:1'],
             'systems.*.monitored_system_id' => ['required', 'integer', 'exists:monitored_systems,id'],
@@ -29,6 +34,16 @@ class StoreBatchDataEntryRequest extends FormRequest
             'systems.*.values.*.parameter_id' => ['required', 'integer', 'exists:parameters,id'],
             'systems.*.values.*.value' => ['nullable', 'numeric'],
             'systems.*.comment' => ['nullable', 'string', 'max:10000'],
+        ];
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    public function messages(): array
+    {
+        return [
+            'responsible.required' => 'O campo Responsável é obrigatório para esta unidade.',
         ];
     }
 

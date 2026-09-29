@@ -8,12 +8,15 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Str;
 
 /**
  * @property int $id
  * @property int $team_id
  * @property int|null $user_id
+ * @property string|null $responsible
  * @property int $monitored_system_id
+ * @property string|null $batch_group_uuid
  * @property Carbon $collected_at
  * @property Carbon $collected_date
  * @property string $status
@@ -33,7 +36,9 @@ use Illuminate\Support\Carbon;
 #[Fillable([
     'team_id',
     'user_id',
+    'responsible',
     'monitored_system_id',
+    'batch_group_uuid',
     'collected_at',
     'collected_date',
     'status',
@@ -48,6 +53,20 @@ class DataEntryBatch extends Model
 {
     /** @use HasFactory<Factory<static>> */
     use HasFactory;
+
+    /**
+     * Bootstrap the model and its traits.
+     */
+    protected static function boot(): void
+    {
+        parent::boot();
+
+        static::creating(function (DataEntryBatch $batch): void {
+            if (empty($batch->batch_group_uuid)) {
+                $batch->batch_group_uuid = (string) Str::uuid();
+            }
+        });
+    }
 
     /**
      * Get the team that owns the batch.

@@ -17,7 +17,7 @@ class StoreDataEntryAction
 {
     /**
      * @param  list<array{parameter_id: int, value: float|int|string|null}>  $values
-     * @return array{saved_count: int, has_comment: bool, measured_at: string, batch_id: int}
+     * @return array{saved_count: int, cleared_count: int, has_comment: bool, measured_at: string, batch_id: int, batch_group_uuid: ?string}
      */
     public function execute(
         Team $team,
@@ -26,8 +26,10 @@ class StoreDataEntryAction
         string $collectedAt,
         array $values,
         ?string $comment = null,
+        ?string $responsible = null,
+        ?string $batchGroupUuid = null,
     ): array {
-        return DB::transaction(function () use ($team, $user, $monitoredSystemId, $collectedAt, $values, $comment): array {
+        return DB::transaction(function () use ($team, $user, $monitoredSystemId, $collectedAt, $values, $comment, $responsible, $batchGroupUuid): array {
             $system = MonitoredSystem::query()
                 ->where('team_id', $team->id)
                 ->where('id', $monitoredSystemId)
@@ -43,24 +45,56 @@ class StoreDataEntryAction
             $measuredDate = $measuredAt->toDateString();
 
             $validValues = [];
+            $rawClearedIds = [];
+
             foreach ($values as $item) {
+                $parameterId = (int) ($item['parameter_id'] ?? 0);
+                if (! $parameterId) {
+                    continue;
+                }
+
                 $rawVal = $item['value'] ?? null;
                 if ($rawVal !== null && $rawVal !== '') {
-                    $validValues[(int) $item['parameter_id']] = (float) $rawVal;
+                    $validValues[$parameterId] = (float) $rawVal;
+                } else {
+                    $rawClearedIds[] = $parameterId;
                 }
             }
 
-            $trimmedComment = $comment !== null ? trim($comment) : '';
+            // Somente considerar como cleared os parâmetros que já existiam salvos no banco para este measured_at
+            $clearedParamIds = [];
+            if (! empty($rawClearedIds)) {
+                $clearedParamIds = ParameterValue::query()
+                    ->where('team_id', $team->id)
+                    ->where('monitored_system_id', $system->id)
+                    ->where('measured_at', $measuredAt)
+                    ->whereIn('parameter_id', $rawClearedIds)
+                    ->pluck('parameter_id')
+                    ->all();
+            }
 
-            if (empty($validValues) && $trimmedComment === '') {
+            $trimmedComment = $comment !== null ? trim($comment) : '';
+            $hasCommentInput = $comment !== null;
+
+            $existingComment = null;
+            if ($hasCommentInput) {
+                $existingComment = ParameterValuesComment::query()
+                    ->where('team_id', $team->id)
+                    ->where('monitored_system_id', $system->id)
+                    ->where('measured_at', $measuredAt)
+                    ->first();
+            }
+
+            $isClearingComment = $hasCommentInput && $trimmedComment === '' && $existingComment !== null;
+
+            if (empty($validValues) && empty($clearedParamIds) && ($trimmedComment === '' && ! $isClearingComment)) {
                 throw ValidationException::withMessages([
                     'values' => ['Preencha o valor de ao menos um parâmetro ou insira um comentário.'],
                 ]);
             }
 
-            $paramIds = [];
-            if (! empty($validValues)) {
-                $paramIds = array_keys($validValues);
+            $paramIds = array_values(array_unique(array_merge(array_keys($validValues), $clearedParamIds)));
+            if (! empty($paramIds)) {
                 $allowedParamsCount = Parameter::query()
                     ->where('team_id', $team->id)
                     ->where('monitored_system_id', $system->id)
@@ -102,82 +136,59 @@ class StoreDataEntryAction
                         ]);
                     }
                 }
-            }
 
-            // Remove any parameter values for this system and measured_at that were omitted/cleared
-            $systemParamIds = Parameter::query()
-                ->where('team_id', $team->id)
-                ->where('monitored_system_id', $system->id)
-                ->pluck('id')
-                ->all();
-
-            $clearedParamIds = array_diff($systemParamIds, $paramIds);
-            if (! empty($clearedParamIds)) {
-                ParameterValue::query()
-                    ->where('team_id', $team->id)
-                    ->where('monitored_system_id', $system->id)
-                    ->where('measured_at', $measuredAt)
-                    ->whereIn('parameter_id', $clearedParamIds)
-                    ->delete();
+                if (! empty($clearedParamIds)) {
+                    ParameterValue::query()
+                        ->where('team_id', $team->id)
+                        ->where('monitored_system_id', $system->id)
+                        ->where('measured_at', $measuredAt)
+                        ->whereIn('parameter_id', $clearedParamIds)
+                        ->delete();
+                }
             }
 
             $hasComment = false;
-            if ($trimmedComment !== '') {
-                ParameterValuesComment::query()->updateOrCreate(
-                    [
-                        'team_id' => $team->id,
-                        'monitored_system_id' => $system->id,
-                        'measured_at' => $measuredAt,
-                    ],
-                    [
-                        'measured_date' => $measuredDate,
-                        'comment' => $trimmedComment,
-                        'created_by' => $user->id,
-                    ],
-                );
-                $hasComment = true;
-            } else {
-                ParameterValuesComment::query()
-                    ->where('team_id', $team->id)
-                    ->where('monitored_system_id', $system->id)
-                    ->where('measured_at', $measuredAt)
-                    ->delete();
+            if ($hasCommentInput) {
+                if ($trimmedComment !== '') {
+                    ParameterValuesComment::query()->updateOrCreate(
+                        [
+                            'team_id' => $team->id,
+                            'monitored_system_id' => $system->id,
+                            'measured_at' => $measuredAt,
+                        ],
+                        [
+                            'measured_date' => $measuredDate,
+                            'comment' => $trimmedComment,
+                            'created_by' => $user->id,
+                        ],
+                    );
+                    $hasComment = true;
+                } elseif ($existingComment) {
+                    $existingComment->delete();
+                }
             }
 
-            // Update or Create DataEntryBatch
-            $batch = DataEntryBatch::query()
-                ->where('team_id', $team->id)
-                ->where('monitored_system_id', $system->id)
-                ->where('collected_at', $measuredAt)
-                ->where('status', 'completed')
-                ->first();
-
-            if ($batch) {
-                $batch->update([
-                    'user_id' => $user->id,
-                    'saved_values_count' => count($validValues),
-                    'parameter_ids' => $paramIds,
-                    'comment' => $trimmedComment !== '' ? $trimmedComment : null,
-                ]);
-            } else {
-                $batch = DataEntryBatch::query()->create([
-                    'team_id' => $team->id,
-                    'user_id' => $user->id,
-                    'monitored_system_id' => $system->id,
-                    'collected_at' => $measuredAt,
-                    'collected_date' => $measuredDate,
-                    'status' => 'completed',
-                    'saved_values_count' => count($validValues),
-                    'parameter_ids' => $paramIds,
-                    'comment' => $trimmedComment !== '' ? $trimmedComment : null,
-                ]);
-            }
+            $batch = DataEntryBatch::query()->create([
+                'team_id' => $team->id,
+                'user_id' => $user->id,
+                'responsible' => $responsible,
+                'monitored_system_id' => $system->id,
+                'batch_group_uuid' => $batchGroupUuid,
+                'collected_at' => $measuredAt,
+                'collected_date' => $measuredDate,
+                'status' => 'completed',
+                'saved_values_count' => count($validValues) + count($clearedParamIds),
+                'parameter_ids' => $paramIds,
+                'comment' => $trimmedComment !== '' ? $trimmedComment : null,
+            ]);
 
             return [
                 'saved_count' => count($validValues),
+                'cleared_count' => count($clearedParamIds),
                 'has_comment' => $hasComment,
                 'measured_at' => $measuredAt->toDateTimeString(),
                 'batch_id' => $batch->id,
+                'batch_group_uuid' => $batchGroupUuid,
             ];
         });
     }

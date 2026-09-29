@@ -41,6 +41,7 @@ class TeamController extends Controller
                 'slug' => $team->slug,
                 'isActive' => (bool) $team->is_active,
                 'isPersonal' => $team->is_personal,
+                'requireDataEntryResponsible' => (bool) $team->require_data_entry_responsible,
             ],
             'members' => $team->members()->get()->map(function (User $member): array {
                 /** @var Membership $membership */
@@ -89,6 +90,9 @@ class TeamController extends Controller
             $data = ['name' => $request->validated('name')];
             if ($request->has('is_active')) {
                 $data['is_active'] = $request->boolean('is_active');
+            }
+            if ($request->has('require_data_entry_responsible')) {
+                $data['require_data_entry_responsible'] = $request->boolean('require_data_entry_responsible');
             }
             $lockedTeam->update($data);
 

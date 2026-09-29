@@ -5,6 +5,7 @@ namespace App\Features\DataEntry\Actions;
 use App\Models\Team;
 use App\Models\User;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 
 class StoreBatchDataEntryAction
@@ -20,14 +21,17 @@ class StoreBatchDataEntryAction
      *     comment?: string|null
      * }>  $systems
      * @return array{
+     *     batch_group_uuid: string,
      *     total_systems_saved: int,
      *     total_values_saved: int,
      *     batches: list<array{
      *         monitored_system_id: int,
      *         saved_count: int,
+     *         cleared_count: int,
      *         has_comment: bool,
      *         measured_at: string,
-     *         batch_id: int
+     *         batch_id: int,
+     *         batch_group_uuid: ?string
      *     }>
      * }
      */
@@ -36,42 +40,41 @@ class StoreBatchDataEntryAction
         User $user,
         string $collectedAt,
         array $systems,
+        ?string $responsible = null,
     ): array {
-        return DB::transaction(function () use ($team, $user, $collectedAt, $systems): array {
+        return DB::transaction(function () use ($team, $user, $collectedAt, $systems, $responsible): array {
             $savedBatches = [];
             $totalValuesSaved = 0;
+            $batchGroupUuid = (string) Str::uuid();
 
             foreach ($systems as $systemData) {
                 $monitoredSystemId = (int) $systemData['monitored_system_id'];
                 $values = (array) ($systemData['values'] ?? []);
-                $comment = isset($systemData['comment']) ? (string) $systemData['comment'] : null;
+                $hasCommentKey = array_key_exists('comment', $systemData);
+                $comment = $hasCommentKey ? ($systemData['comment'] !== null ? (string) $systemData['comment'] : '') : null;
 
-                $hasValues = false;
-                foreach ($values as $item) {
-                    $raw = $item['value'] ?? null;
-                    if ($raw !== null && $raw !== '') {
-                        $hasValues = true;
-                        break;
+                try {
+                    $batchResult = $this->storeAction->execute(
+                        team: $team,
+                        user: $user,
+                        monitoredSystemId: $monitoredSystemId,
+                        collectedAt: $collectedAt,
+                        values: $values,
+                        comment: $comment,
+                        responsible: $responsible,
+                        batchGroupUuid: $batchGroupUuid,
+                    );
+
+                    $batchResult['monitored_system_id'] = $monitoredSystemId;
+                    $savedBatches[] = $batchResult;
+                    $totalValuesSaved += $batchResult['saved_count'];
+                } catch (ValidationException $e) {
+                    $errors = $e->errors();
+                    if (isset($errors['values']) && in_array('Preencha o valor de ao menos um parâmetro ou insira um comentário.', $errors['values'], true)) {
+                        continue;
                     }
+                    throw $e;
                 }
-                $hasComment = $comment !== null && trim($comment) !== '';
-
-                if (! $hasValues && ! $hasComment) {
-                    continue;
-                }
-
-                $batchResult = $this->storeAction->execute(
-                    team: $team,
-                    user: $user,
-                    monitoredSystemId: $monitoredSystemId,
-                    collectedAt: $collectedAt,
-                    values: $values,
-                    comment: $comment,
-                );
-
-                $batchResult['monitored_system_id'] = $monitoredSystemId;
-                $savedBatches[] = $batchResult;
-                $totalValuesSaved += $batchResult['saved_count'];
             }
 
             if (empty($savedBatches)) {
@@ -81,6 +84,7 @@ class StoreBatchDataEntryAction
             }
 
             return [
+                'batch_group_uuid' => $batchGroupUuid,
                 'total_systems_saved' => count($savedBatches),
                 'total_values_saved' => $totalValuesSaved,
                 'batches' => $savedBatches,

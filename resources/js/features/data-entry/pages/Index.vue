@@ -7,7 +7,15 @@ import DataEntryForm from '@/features/data-entry/components/DataEntryForm.vue';
 import type { SystemItem } from '@/features/data-entry/components/DataEntryForm.vue';
 import DataEntryHistorySheet from '@/features/data-entry/components/DataEntryHistorySheet.vue';
 import DataEntryReceiptDialog from '@/features/data-entry/components/DataEntryReceiptDialog.vue';
-import { useDataEntryDraft } from '@/features/data-entry/composables/useDataEntryDraft';
+import type {
+    ModifiedParamItem,
+    ModifiedSystemItem,
+} from '@/features/data-entry/components/DataEntryReceiptDialog.vue';
+import {
+    computeSystemDiff,
+    useDataEntryDraft,
+} from '@/features/data-entry/composables/useDataEntryDraft';
+import type { SystemDiff } from '@/features/data-entry/composables/useDataEntryDraft';
 import {
     entries as dataEntryEntries,
     index as dataEntryIndex,
@@ -75,14 +83,26 @@ function updateLiveClock() {
     liveTimestamp.value = `${day}/${month}/${year} ${hours}:${minutes}:${seconds}`;
 }
 
-// In-memory draft composable
+// In-memory draft composable with localStorage persistence
 const {
     drafts,
     loadDrafts,
     saveSystemDraft,
     removeSystemDraft,
     clearAllDrafts,
+    getStoredResponsible,
+    saveStoredResponsible,
 } = useDataEntryDraft(props.currentTeam.slug);
+
+// Responsável state (persisted across sessions for this team)
+const responsible = ref<string>(getStoredResponsible());
+
+watch(
+    () => responsible.value,
+    (val) => {
+        saveStoredResponsible(val);
+    },
+);
 
 // Parameter inputs state: record mapping parameterId -> raw string input
 const paramInputs = ref<Record<number, string>>({});
@@ -128,24 +148,45 @@ const currentCollectedAt = computed<string>(() => {
     return `${collectionDate.value} ${timeFormatted}`;
 });
 
-const draftSystems = computed<number[]>(() => {
-    const ids: number[] = [];
+// Map of systems that have ACTUAL modifications compared to loaded DB values
+const modifiedSystemsMap = computed<Record<number, SystemDiff>>(() => {
+    const map: Record<number, SystemDiff> = {};
 
-    for (const [key, draft] of Object.entries(drafts.value)) {
-        const hasValue = Object.values(draft.values || {}).some(
-            (v) => v !== '' && v !== null && v !== undefined,
+    for (const system of props.systems) {
+        const isCurrent = system.id === selectedSystemId.value;
+        const inputs = isCurrent
+            ? paramInputs.value
+            : drafts.value[system.id]?.values || {};
+        const comm = isCurrent
+            ? comment.value
+            : drafts.value[system.id]?.comment || '';
+
+        const hasDraft = Boolean(drafts.value[system.id]);
+
+        if (!isCurrent && !hasDraft) {
+            continue;
+        }
+
+        const diff = computeSystemDiff(
+            system.id,
+            inputs,
+            comm,
+            system.parameters,
+            loadedValues.value,
+            loadedComments.value,
         );
-        const hasComment =
-            draft.comment !== undefined &&
-            draft.comment !== null &&
-            draft.comment.trim() !== '';
 
-        if (hasValue || hasComment) {
-            ids.push(Number(key));
+        if (diff.isModified) {
+            map[system.id] = diff;
         }
     }
 
-    return ids;
+    return map;
+});
+
+// Only systems with REAL differences show the Clock (pendente) icon!
+const draftSystems = computed<number[]>(() => {
+    return Object.keys(modifiedSystemsMap.value).map(Number);
 });
 
 function populateCurrentSystemInputs() {
@@ -187,21 +228,16 @@ function saveCurrentSystemToDraft() {
         return;
     }
 
-    let hasAnyData = false;
+    const diff = computeSystemDiff(
+        currentSystem.value.id,
+        paramInputs.value,
+        comment.value,
+        currentSystem.value.parameters,
+        loadedValues.value,
+        loadedComments.value,
+    );
 
-    for (const param of currentSystem.value.parameters) {
-        if (
-            paramInputs.value[param.id] &&
-            paramInputs.value[param.id].trim() !== ''
-        ) {
-            hasAnyData = true;
-            break;
-        }
-    }
-
-    const hasComment = comment.value && comment.value.trim() !== '';
-
-    if (hasAnyData || hasComment) {
+    if (diff.isModified) {
         saveSystemDraft(
             currentSystem.value.id,
             paramInputs.value,
@@ -209,6 +245,9 @@ function saveCurrentSystemToDraft() {
             collectionDate.value,
             collectionTime.value,
         );
+    } else {
+        // If not modified relative to DB, clean up redundant draft
+        removeSystemDraft(currentSystem.value.id);
     }
 }
 
@@ -331,18 +370,7 @@ onUnmounted(() => {
     }
 });
 
-function parseNumber(val: string | undefined): number | null {
-    if (!val || val.trim() === '') {
-        return null;
-    }
-
-    const clean = val.trim().replace(/\s/g, '').replace(',', '.');
-    const parsed = parseFloat(clean);
-
-    return isNaN(parsed) ? null : parsed;
-}
-
-// Save to browser memory (Draft)
+// Save to browser memory (Draft) with dirty-check notification
 function saveToMemory(andAdvance: boolean) {
     if (!currentSystem.value) {
         return;
@@ -354,22 +382,27 @@ function saveToMemory(andAdvance: boolean) {
         return;
     }
 
-    let filledCount = 0;
+    const diff = computeSystemDiff(
+        currentSystem.value.id,
+        paramInputs.value,
+        comment.value,
+        currentSystem.value.parameters,
+        loadedValues.value,
+        loadedComments.value,
+    );
 
-    for (const param of currentSystem.value.parameters) {
-        const raw = paramInputs.value[param.id];
-        const num = parseNumber(raw);
-
-        if (num !== null) {
-            filledCount++;
-        }
-    }
-
-    const trimmedComment = comment.value.trim();
-
-    if (filledCount === 0 && trimmedComment === '') {
+    if (!diff.isModified) {
         removeSystemDraft(currentSystem.value.id);
-        toast.info(`Rascunho de ${currentSystem.value.name} limpo.`);
+
+        if (systemsWithData.value.includes(currentSystem.value.id)) {
+            toast.info(
+                `Os dados de ${currentSystem.value.name} já estão idênticos aos gravados no banco.`,
+            );
+        } else {
+            toast.info(
+                `Nenhum dado informado para salvar em ${currentSystem.value.name}.`,
+            );
+        }
     } else {
         saveSystemDraft(
             currentSystem.value.id,
@@ -379,7 +412,7 @@ function saveToMemory(andAdvance: boolean) {
             collectionTime.value,
         );
         toast.success(
-            `Dados do ${currentSystem.value.name} salvos na memória!`,
+            `Alterações do ${currentSystem.value.name} salvas na memória!`,
         );
     }
 
@@ -399,35 +432,93 @@ function saveToMemory(andAdvance: boolean) {
     }
 }
 
+// Data structures for Recibo de Conferência
+const receiptModifiedSystems = computed<ModifiedSystemItem[]>(() => {
+    const list: ModifiedSystemItem[] = [];
+
+    for (const sysId of draftSystems.value) {
+        const system = props.systems.find((s) => s.id === sysId);
+        const diff = modifiedSystemsMap.value[sysId];
+
+        if (!system || !diff) {
+            continue;
+        }
+
+        const changedParams: ModifiedParamItem[] = diff.changedParams.map(
+            (p) => {
+                const paramItem = system.parameters.find(
+                    (item) => item.id === p.parameter_id,
+                )!;
+                let isOutOfLimits = false;
+
+                if (p.new_value !== null) {
+                    if (
+                        paramItem.alert_1_min !== null &&
+                        p.new_value < paramItem.alert_1_min
+                    ) {
+                        isOutOfLimits = true;
+                    }
+
+                    if (
+                        paramItem.alert_1_max !== null &&
+                        p.new_value > paramItem.alert_1_max
+                    ) {
+                        isOutOfLimits = true;
+                    }
+                }
+
+                return {
+                    ...p,
+                    param: paramItem,
+                    isOutOfLimits,
+                };
+            },
+        );
+
+        const hasOutOfLimits = changedParams.some((p) => p.isOutOfLimits);
+
+        list.push({
+            system,
+            changedParams,
+            commentChanged: diff.commentChanged,
+            oldComment: loadedComments.value[sysId] || '',
+            newComment: diff.newComment,
+            hasOutOfLimits,
+        });
+    }
+
+    return list;
+});
+
+const receiptUnmodifiedSystems = computed<SystemItem[]>(() => {
+    const modSet = new Set(draftSystems.value);
+
+    return props.systems.filter((s) => !modSet.has(s.id));
+});
+
 // Open Receipt Dialog
 function handleOpenReceipt() {
-    if (currentSystem.value && currentCollectedAt.value) {
-        let hasTypedValues = false;
+    saveCurrentSystemToDraft();
 
-        for (const param of currentSystem.value.parameters) {
-            if (
-                paramInputs.value[param.id] &&
-                paramInputs.value[param.id].trim() !== ''
-            ) {
-                hasTypedValues = true;
-                break;
-            }
-        }
+    const requiresResp = Boolean(
+        props.currentTeam.requireDataEntryResponsible ??
+        props.currentTeam.require_data_entry_responsible,
+    );
 
-        if (hasTypedValues || comment.value.trim() !== '') {
-            saveSystemDraft(
-                currentSystem.value.id,
-                paramInputs.value,
-                comment.value,
-                collectionDate.value,
-                collectionTime.value,
-            );
-        }
+    if (
+        requiresResp &&
+        (!responsible.value || responsible.value.trim() === '')
+    ) {
+        toast.error(
+            'O preenchimento do campo Responsável é obrigatório para esta unidade.',
+        );
+
+        return;
     }
 
     if (draftSystems.value.length === 0) {
         toast.warning(
-            'Nenhum dado salvo em memória para envio. Preencha os parâmetros e clique em "Salvar".',
+            'Nenhuma alteração pendente para envio. Altere algum parâmetro ou comentário antes de enviar.',
         );
 
         return;
@@ -436,10 +527,26 @@ function handleOpenReceipt() {
     isReceiptOpen.value = true;
 }
 
-// Submit Batch to Backend
+// Submit Batch of ONLY modified fields to Backend
 async function handleSubmitBatch() {
     if (!currentCollectedAt.value) {
         toast.error('Data e hora inválidas.');
+
+        return;
+    }
+
+    const requiresResp = Boolean(
+        props.currentTeam.requireDataEntryResponsible ??
+        props.currentTeam.require_data_entry_responsible,
+    );
+
+    if (
+        requiresResp &&
+        (!responsible.value || responsible.value.trim() === '')
+    ) {
+        toast.error(
+            'O preenchimento do campo Responsável é obrigatório para esta unidade.',
+        );
 
         return;
     }
@@ -450,38 +557,21 @@ async function handleSubmitBatch() {
         comment: string | null;
     }> = [];
 
-    for (const system of props.systems) {
-        const draft = drafts.value[system.id];
+    for (const item of receiptModifiedSystems.value) {
+        const values = item.changedParams.map((p) => ({
+            parameter_id: p.parameter_id,
+            value: p.new_value,
+        }));
 
-        if (!draft) {
-            continue;
-        }
-
-        const values: Array<{ parameter_id: number; value: number | null }> =
-            [];
-
-        for (const param of system.parameters) {
-            const raw = draft.values?.[param.id];
-            const num = parseNumber(raw);
-
-            if (num !== null) {
-                values.push({ parameter_id: param.id, value: num });
-            }
-        }
-
-        const comm = (draft.comment || '').trim();
-
-        if (values.length > 0 || comm !== '') {
-            systemsPayload.push({
-                monitored_system_id: system.id,
-                values,
-                comment: comm !== '' ? comm : null,
-            });
-        }
+        systemsPayload.push({
+            monitored_system_id: item.system.id,
+            values,
+            comment: item.commentChanged ? item.newComment : null,
+        });
     }
 
     if (systemsPayload.length === 0) {
-        toast.warning('Nenhum dado válido para envio.');
+        toast.warning('Nenhuma alteração válida para envio.');
 
         return;
     }
@@ -510,6 +600,9 @@ async function handleSubmitBatch() {
             },
             body: JSON.stringify({
                 collected_at: currentCollectedAt.value,
+                responsible: responsible.value
+                    ? responsible.value.trim()
+                    : null,
                 systems: systemsPayload,
             }),
         });
@@ -528,31 +621,33 @@ async function handleSubmitBatch() {
             data.message || 'Dados gravados no banco de dados com sucesso!',
         );
 
-        clearAllDrafts();
-
-        for (const item of systemsPayload) {
-            if (!systemsWithData.value.includes(item.monitored_system_id)) {
+        // Update local cache with newly persisted values
+        for (const item of receiptModifiedSystems.value) {
+            if (!systemsWithData.value.includes(item.system.id)) {
                 systemsWithData.value = [
                     ...systemsWithData.value,
-                    item.monitored_system_id,
+                    item.system.id,
                 ];
             }
 
-            for (const v of item.values) {
-                if (v.value !== null) {
-                    loadedValues.value[v.parameter_id] = v.value;
+            for (const p of item.changedParams) {
+                if (p.new_value !== null) {
+                    loadedValues.value[p.parameter_id] = p.new_value;
                 } else {
-                    delete loadedValues.value[v.parameter_id];
+                    delete loadedValues.value[p.parameter_id];
                 }
             }
 
-            if (item.comment) {
-                loadedComments.value[item.monitored_system_id] = item.comment;
-            } else {
-                delete loadedComments.value[item.monitored_system_id];
+            if (item.commentChanged) {
+                if (item.newComment !== null) {
+                    loadedComments.value[item.system.id] = item.newComment;
+                } else {
+                    delete loadedComments.value[item.system.id];
+                }
             }
         }
 
+        clearAllDrafts();
         populateCurrentSystemInputs();
         isReceiptOpen.value = false;
     } catch (err) {
@@ -611,11 +706,11 @@ async function handleSubmitBatch() {
                             </span>
                         </div>
 
-                        <!-- Indicador de Status: Em memória (Âmbar) ou No Banco (Verde) -->
+                        <!-- Indicador de Status: Alterado/Pendente (Âmbar) ou No Banco (Verde) -->
                         <div
                             v-if="draftSystems.includes(system.id)"
                             class="flex shrink-0 items-center text-amber-500 dark:text-amber-400"
-                            title="Pendente de envio / Em memória"
+                            title="Modificações pendentes de envio"
                         >
                             <Clock class="h-4 w-4" />
                         </div>
@@ -639,6 +734,13 @@ async function handleSubmitBatch() {
                 :is-loading-entries="isLoadingEntries"
                 v-model:param-inputs="paramInputs"
                 v-model:comment="comment"
+                v-model:responsible="responsible"
+                :require-responsible="
+                    Boolean(
+                        currentTeam.requireDataEntryResponsible ??
+                        currentTeam.require_data_entry_responsible,
+                    )
+                "
                 :draft-count="draftSystems.length"
                 @save="saveToMemory"
                 @send="handleOpenReceipt"
@@ -658,8 +760,9 @@ async function handleSubmitBatch() {
             v-model:open="isReceiptOpen"
             :collection-date="collectionDate"
             :collection-time="collectionTime"
-            :systems="systems"
-            :drafts="drafts"
+            :responsible="responsible"
+            :modified-systems="receiptModifiedSystems"
+            :unmodified-systems="receiptUnmodifiedSystems"
             :is-submitting="isSubmittingBatch"
             @edit-system="(sysId) => selectSystem(sysId)"
             @confirm-send="handleSubmitBatch"

@@ -7,9 +7,14 @@ import {
     FileText,
     Loader2,
     Send,
+    User as UserIcon,
 } from '@lucide/vue';
 import { computed } from 'vue';
-import type { DraftStorageMap } from '@/features/data-entry/composables/useDataEntryDraft';
+import type {
+    ParameterItem,
+    SystemItem,
+} from '@/features/data-entry/components/DataEntryForm.vue';
+import type { ParamDiff } from '@/features/data-entry/composables/useDataEntryDraft';
 import { Badge } from '@/shared/components/ui/badge';
 import { Button } from '@/shared/components/ui/button';
 import {
@@ -21,34 +26,27 @@ import {
     DialogTitle,
 } from '@/shared/components/ui/dialog';
 
-interface ParameterItem {
-    id: number;
-    monitored_system_id: number;
-    team_id: number;
-    name: string;
-    code?: string | null;
-    tag?: string | null;
-    unit?: string | null;
-    decimals: number;
-    sort_order: number;
-    alert_1_min: number | null;
-    alert_1_max: number | null;
+export interface ModifiedParamItem extends ParamDiff {
+    param: ParameterItem;
+    isOutOfLimits: boolean;
 }
 
-interface SystemItem {
-    id: number;
-    team_id: number;
-    name: string;
-    sort_order: number;
-    parameters: ParameterItem[];
+export interface ModifiedSystemItem {
+    system: SystemItem;
+    changedParams: ModifiedParamItem[];
+    commentChanged: boolean;
+    oldComment: string;
+    newComment: string | null;
+    hasOutOfLimits: boolean;
 }
 
 const props = defineProps<{
     open: boolean;
     collectionDate: string;
     collectionTime: string;
-    systems: SystemItem[];
-    drafts: DraftStorageMap;
+    responsible?: string;
+    modifiedSystems: ModifiedSystemItem[];
+    unmodifiedSystems: SystemItem[];
     isSubmitting?: boolean;
 }>();
 
@@ -57,17 +55,6 @@ const emit = defineEmits<{
     (e: 'editSystem', systemId: number): void;
     (e: 'confirmSend'): void;
 }>();
-
-function parseNumber(val: string | undefined): number | null {
-    if (!val || val.trim() === '') {
-        return null;
-    }
-
-    const clean = val.trim().replace(/\s/g, '').replace(',', '.');
-    const parsed = parseFloat(clean);
-
-    return isNaN(parsed) ? null : parsed;
-}
 
 function formatDisplayValue(
     val: number | null | undefined,
@@ -97,96 +84,9 @@ function formatDisplayLimit(
     });
 }
 
-function isParamOutOfLimits(
-    param: ParameterItem,
-    rawVal: string | undefined,
-): boolean {
-    const numericVal = parseNumber(rawVal);
-
-    if (numericVal === null) {
-        return false;
-    }
-
-    if (param.alert_1_min !== null && numericVal < param.alert_1_min) {
-        return true;
-    }
-
-    if (param.alert_1_max !== null && numericVal > param.alert_1_max) {
-        return true;
-    }
-
-    return false;
-}
-
-interface SystemReceiptSummary {
-    system: SystemItem;
-    filledParams: Array<{
-        param: ParameterItem;
-        rawValue: string;
-        numericValue: number;
-        isOutOfLimits: boolean;
-    }>;
-    comment: string;
-    hasOutOfLimits: boolean;
-}
-
-const filledSystemsList = computed<SystemReceiptSummary[]>(() => {
-    const list: SystemReceiptSummary[] = [];
-
-    for (const system of props.systems) {
-        const draft = props.drafts[system.id];
-
-        if (!draft) {
-            continue;
-        }
-
-        const filledParams: SystemReceiptSummary['filledParams'] = [];
-        let hasOutOfLimits = false;
-
-        for (const param of system.parameters) {
-            const rawVal = draft.values?.[param.id];
-            const num = parseNumber(rawVal);
-
-            if (num !== null) {
-                const outOfLimits = isParamOutOfLimits(param, rawVal);
-
-                if (outOfLimits) {
-                    hasOutOfLimits = true;
-                }
-
-                filledParams.push({
-                    param,
-                    rawValue: rawVal!,
-                    numericValue: num,
-                    isOutOfLimits: outOfLimits,
-                });
-            }
-        }
-
-        const trimmedComment = (draft.comment || '').trim();
-
-        if (filledParams.length > 0 || trimmedComment !== '') {
-            list.push({
-                system,
-                filledParams,
-                comment: trimmedComment,
-                hasOutOfLimits,
-            });
-        }
-    }
-
-    return list;
-});
-
-const emptySystemsList = computed<SystemItem[]>(() => {
-    const filledIds = new Set(filledSystemsList.value.map((s) => s.system.id));
-
-    return props.systems.filter((s) => !filledIds.has(s.id));
-});
-
-const totalFilledValuesCount = computed<number>(() => {
-    return filledSystemsList.value.reduce(
-        (acc, item) => acc + item.filledParams.length,
+const totalModifiedParamsCount = computed<number>(() => {
+    return props.modifiedSystems.reduce(
+        (acc, item) => acc + item.changedParams.length,
         0,
     );
 });
@@ -228,19 +128,20 @@ function handleConfirm() {
                     </div>
                     <div>
                         <DialogTitle class="text-lg font-bold text-foreground">
-                            Recibo de Conferência - Entrada de Dados
+                            Recibo de Conferência - Alterações de Medição
                         </DialogTitle>
                         <DialogDescription
                             class="text-xs text-muted-foreground"
                         >
-                            Confira as medições salvas em memória antes de
-                            persistir no banco de dados.
+                            Confira as alterações que serão gravadas no banco de
+                            dados. Apenas os campos modificados são alterados.
                         </DialogDescription>
                     </div>
                 </div>
 
+                <!-- Barra de Metadados (Data/Hora e Responsável) -->
                 <div
-                    class="mt-4 flex flex-wrap items-center justify-between gap-2 rounded-lg bg-muted/40 px-3.5 py-2 text-xs font-medium text-foreground"
+                    class="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-lg bg-muted/40 px-3.5 py-2.5 text-xs font-medium text-foreground"
                 >
                     <div class="flex items-center gap-2">
                         <span class="text-muted-foreground"
@@ -250,42 +151,58 @@ function handleConfirm() {
                             formattedDateTime
                         }}</span>
                     </div>
+
                     <div class="flex items-center gap-2">
+                        <UserIcon class="h-3.5 w-3.5 text-muted-foreground" />
+                        <span class="text-muted-foreground">Responsável:</span>
+                        <span class="font-bold text-foreground">
+                            {{
+                                responsible && responsible.trim() !== ''
+                                    ? responsible
+                                    : 'Não informado'
+                            }}
+                        </span>
+                    </div>
+
+                    <div
+                        class="flex items-center gap-2 font-semibold text-primary"
+                    >
                         <span
-                            >{{ filledSystemsList.length }} de
-                            {{ systems.length }} sistemas</span
+                            >{{ modifiedSystems.length }} sistema(s) com
+                            alterações</span
                         >
-                        <span>•</span>
+                        <span class="text-muted-foreground">•</span>
                         <span
-                            >{{ totalFilledValuesCount }} parâmetro(s)
-                            medido(s)</span
+                            >{{ totalModifiedParamsCount }} campo(s)
+                            alterado(s)</span
                         >
                     </div>
                 </div>
             </DialogHeader>
 
-            <!-- Conteúdo: Lista de Sistemas com Dados -->
-            <div class="flex flex-col gap-6 p-6">
-                <!-- Se não houver nenhum dado em memória -->
+            <!-- Conteúdo do Recibo -->
+            <div class="space-y-4 p-6">
+                <!-- Se não houver sistemas modificados -->
                 <div
-                    v-if="filledSystemsList.length === 0"
-                    class="flex flex-col items-center justify-center gap-3 py-12 text-center"
+                    v-if="modifiedSystems.length === 0"
+                    class="rounded-xl border border-dashed border-border/80 bg-muted/20 p-8 text-center"
                 >
-                    <AlertTriangle class="h-10 w-10 text-amber-500" />
-                    <h3 class="text-base font-semibold text-foreground">
-                        Nenhum dado salvo em memória
+                    <CheckCircle2
+                        class="mx-auto mb-2 h-8 w-8 text-emerald-500 opacity-60"
+                    />
+                    <h3 class="text-sm font-bold text-foreground">
+                        Nenhuma alteração detectada
                     </h3>
-                    <p class="max-w-md text-xs text-muted-foreground">
-                        Preencha os resultados dos parâmetros ou comentários nos
-                        sistemas e clique em "Salvar" para adicioná-los à
-                        memória antes de enviar.
+                    <p class="mt-1 text-xs text-muted-foreground">
+                        Todos os dados desta coleta já são idênticos aos
+                        gravados no banco de dados.
                     </p>
                 </div>
 
-                <!-- Lista de Sistemas com Medições Preenchidas -->
+                <!-- Lista de Sistemas com Alterações -->
                 <div v-else class="flex flex-col gap-4">
                     <div
-                        v-for="item in filledSystemsList"
+                        v-for="item in modifiedSystems"
                         :key="item.system.id"
                         class="rounded-xl border border-border/80 bg-card p-4 shadow-2xs transition-all"
                         :class="[
@@ -317,6 +234,10 @@ function handleConfirm() {
                                 >
                                     Fora dos Limites
                                 </Badge>
+                                <span class="text-xs text-muted-foreground">
+                                    ({{ item.changedParams.length }} campo(s)
+                                    modificado(s))
+                                </span>
                             </div>
 
                             <Button
@@ -331,9 +252,9 @@ function handleConfirm() {
                             </Button>
                         </div>
 
-                        <!-- Tabela de Parâmetros Preenchidos -->
+                        <!-- Tabela de Parâmetros Modificados -->
                         <div
-                            v-if="item.filledParams.length > 0"
+                            v-if="item.changedParams.length > 0"
                             class="overflow-x-auto"
                         >
                             <table
@@ -344,6 +265,9 @@ function handleConfirm() {
                                         class="border-b border-border/60 text-[11px] font-bold text-muted-foreground"
                                     >
                                         <th class="py-1.5 pr-3">Parâmetro</th>
+                                        <th class="px-2 py-1.5 text-center">
+                                            Tipo
+                                        </th>
                                         <th class="py-1.5 pr-3 text-right">
                                             Resultado
                                         </th>
@@ -357,8 +281,8 @@ function handleConfirm() {
                                 </thead>
                                 <tbody class="divide-y divide-border/30">
                                     <tr
-                                        v-for="p in item.filledParams"
-                                        :key="p.param.id"
+                                        v-for="p in item.changedParams"
+                                        :key="p.parameter_id"
                                         class="transition-colors hover:bg-muted/10"
                                     >
                                         <td
@@ -366,20 +290,110 @@ function handleConfirm() {
                                         >
                                             {{ p.param.name }}
                                         </td>
+                                        <td class="px-2 py-2 text-center">
+                                            <Badge
+                                                v-if="p.status === 'added'"
+                                                variant="outline"
+                                                class="border-emerald-500/30 bg-emerald-500/10 text-[10px] font-semibold text-emerald-600 dark:text-emerald-400"
+                                            >
+                                                Novo
+                                            </Badge>
+                                            <Badge
+                                                v-else-if="
+                                                    p.status === 'updated'
+                                                "
+                                                variant="outline"
+                                                class="border-blue-500/30 bg-blue-500/10 text-[10px] font-semibold text-blue-600 dark:text-blue-400"
+                                            >
+                                                Alterado
+                                            </Badge>
+                                            <Badge
+                                                v-else-if="
+                                                    p.status === 'cleared'
+                                                "
+                                                variant="outline"
+                                                class="border-amber-500/30 bg-amber-500/10 text-[10px] font-semibold text-amber-600 dark:text-amber-400"
+                                            >
+                                                Apagado
+                                            </Badge>
+                                        </td>
                                         <td
                                             class="py-2 pr-3 text-right font-mono font-bold"
-                                            :class="[
-                                                p.isOutOfLimits
-                                                    ? 'text-red-600 dark:text-red-400'
-                                                    : 'text-foreground',
-                                            ]"
                                         >
-                                            {{
-                                                formatDisplayValue(
-                                                    p.numericValue,
-                                                    p.param.decimals,
-                                                )
-                                            }}
+                                            <div
+                                                v-if="p.status === 'updated'"
+                                                class="flex items-center justify-end gap-1.5"
+                                            >
+                                                <span
+                                                    class="text-xs font-normal text-muted-foreground line-through"
+                                                >
+                                                    {{
+                                                        formatDisplayValue(
+                                                            p.old_value,
+                                                            p.param.decimals,
+                                                        )
+                                                    }}
+                                                </span>
+                                                <span
+                                                    class="font-normal text-muted-foreground"
+                                                    >➔</span
+                                                >
+                                                <span
+                                                    :class="
+                                                        p.isOutOfLimits
+                                                            ? 'text-red-600 dark:text-red-400'
+                                                            : 'text-foreground'
+                                                    "
+                                                >
+                                                    {{
+                                                        formatDisplayValue(
+                                                            p.new_value,
+                                                            p.param.decimals,
+                                                        )
+                                                    }}
+                                                </span>
+                                            </div>
+                                            <div
+                                                v-else-if="
+                                                    p.status === 'cleared'
+                                                "
+                                                class="flex items-center justify-end gap-1.5"
+                                            >
+                                                <span
+                                                    class="text-xs font-normal text-muted-foreground line-through"
+                                                >
+                                                    {{
+                                                        formatDisplayValue(
+                                                            p.old_value,
+                                                            p.param.decimals,
+                                                        )
+                                                    }}
+                                                </span>
+                                                <span
+                                                    class="font-normal text-muted-foreground"
+                                                    >➔</span
+                                                >
+                                                <span
+                                                    class="font-normal text-amber-600 italic dark:text-amber-400"
+                                                >
+                                                    Removido
+                                                </span>
+                                            </div>
+                                            <div
+                                                v-else
+                                                :class="
+                                                    p.isOutOfLimits
+                                                        ? 'text-red-600 dark:text-red-400'
+                                                        : 'text-foreground'
+                                                "
+                                            >
+                                                {{
+                                                    formatDisplayValue(
+                                                        p.new_value,
+                                                        p.param.decimals,
+                                                    )
+                                                }}
+                                            </div>
                                         </td>
                                         <td
                                             class="px-3 py-2 text-center text-muted-foreground"
@@ -419,33 +433,43 @@ function handleConfirm() {
 
                         <!-- Comentário do Sistema -->
                         <div
-                            v-if="item.comment"
+                            v-if="item.commentChanged || item.newComment"
                             class="mt-3 rounded-lg bg-muted/40 p-2.5 text-xs text-foreground"
                         >
                             <span class="font-bold text-muted-foreground"
                                 >Comentário:</span
                             >
-                            <p class="mt-0.5 font-mono whitespace-pre-wrap">
-                                {{ item.comment }}
+                            <p
+                                v-if="item.newComment"
+                                class="mt-0.5 font-mono whitespace-pre-wrap"
+                            >
+                                {{ item.newComment }}
+                            </p>
+                            <p
+                                v-else
+                                class="mt-0.5 font-mono text-muted-foreground italic"
+                            >
+                                (Comentário removido)
                             </p>
                         </div>
                     </div>
                 </div>
 
-                <!-- Sistemas sem dados (informativo) -->
+                <!-- Sistemas inalterados (informativo) -->
                 <div
                     v-if="
-                        emptySystemsList.length > 0 &&
-                        filledSystemsList.length > 0
+                        unmodifiedSystems.length > 0 &&
+                        modifiedSystems.length > 0
                     "
                     class="rounded-lg border border-dashed border-border/80 p-3 text-xs text-muted-foreground"
                 >
-                    <span class="font-semibold"
-                        >Sistemas não preenchidos (não serão enviados):</span
-                    >
+                    <span class="font-semibold">
+                        Sistemas inalterados (mantidos como estão no banco, não
+                        reenviados):
+                    </span>
                     <div class="mt-1 flex flex-wrap gap-1.5">
                         <span
-                            v-for="s in emptySystemsList"
+                            v-for="s in unmodifiedSystems"
                             :key="s.id"
                             class="rounded-md bg-muted px-2 py-0.5 text-[11px]"
                         >
@@ -457,28 +481,27 @@ function handleConfirm() {
 
             <!-- Rodapé com Ações -->
             <DialogFooter
-                class="border-t border-border/70 p-4 sm:justify-between sm:gap-2"
+                class="flex flex-col-reverse items-center justify-between gap-3 border-t border-border/70 p-6 sm:flex-row"
             >
                 <Button
                     type="button"
                     variant="outline"
-                    :disabled="isSubmitting"
                     @click="emit('update:open', false)"
-                    class="cursor-pointer gap-1.5 text-xs font-semibold"
+                    class="w-full cursor-pointer gap-1.5 sm:w-auto"
                 >
                     <ArrowLeft class="h-4 w-4" />
-                    <span>Voltar para alterar</span>
+                    <span>Voltar ao Formulário</span>
                 </Button>
 
                 <Button
                     type="button"
-                    :disabled="isSubmitting || filledSystemsList.length === 0"
                     @click="handleConfirm"
-                    class="flex cursor-pointer items-center gap-2 rounded-lg bg-emerald-800 px-5 py-2.5 text-xs font-semibold text-white shadow-xs transition-all hover:bg-emerald-900"
+                    :disabled="isSubmitting || modifiedSystems.length === 0"
+                    class="w-full cursor-pointer gap-2 bg-primary font-bold text-primary-foreground shadow-md hover:bg-primary/90 sm:w-auto"
                 >
                     <Loader2 v-if="isSubmitting" class="h-4 w-4 animate-spin" />
                     <Send v-else class="h-4 w-4" />
-                    <span>Confirmar e Enviar para o Banco</span>
+                    <span>Confirmar e Enviar Lote</span>
                 </Button>
             </DialogFooter>
         </DialogContent>

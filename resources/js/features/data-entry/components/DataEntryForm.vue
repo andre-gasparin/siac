@@ -7,6 +7,7 @@ import {
     Loader2,
     Save,
     Send,
+    User,
 } from '@lucide/vue';
 import { computed, nextTick, ref, watch } from 'vue';
 import DatePicker from '@/shared/components/DatePicker.vue';
@@ -44,6 +45,8 @@ const props = defineProps<{
     paramInputs: Record<number, string>;
     comment: string;
     draftCount: number;
+    responsible: string;
+    requireResponsible?: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -51,6 +54,7 @@ const emit = defineEmits<{
     (e: 'update:collectionTime', val: string): void;
     (e: 'update:paramInputs', val: Record<number, string>): void;
     (e: 'update:comment', val: string): void;
+    (e: 'update:responsible', val: string): void;
     (e: 'save', andAdvance: boolean): void;
     (e: 'send'): void;
     (e: 'openHistory'): void;
@@ -296,6 +300,44 @@ const hasAnyOutOfLimits = computed<boolean>(() => {
                     >
                         <Clock class="h-4 w-4 opacity-70" />
                         <span>{{ liveTimestamp }}</span>
+                    </div>
+                </div>
+
+                <!-- Responsável -->
+                <div
+                    class="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-4"
+                >
+                    <span
+                        class="flex w-36 shrink-0 items-center gap-1 text-sm font-bold text-foreground"
+                    >
+                        Responsável
+                        <span
+                            v-if="requireResponsible"
+                            class="text-xs font-bold text-destructive"
+                            title="Obrigatório para esta unidade"
+                            >*</span
+                        >
+                    </span>
+                    <div class="flex max-w-sm flex-1 items-center gap-2">
+                        <div class="relative w-full">
+                            <User
+                                class="absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-muted-foreground"
+                            />
+                            <Input
+                                :model-value="responsible"
+                                @update:model-value="
+                                    (val) =>
+                                        emit('update:responsible', String(val))
+                                "
+                                type="text"
+                                placeholder="Nome de quem digitou os dados"
+                                class="h-9 pl-9 text-sm"
+                                :class="{
+                                    'border-destructive/60 focus-visible:ring-destructive':
+                                        requireResponsible && !responsible,
+                                }"
+                            />
+                        </div>
                     </div>
                 </div>
             </div>
