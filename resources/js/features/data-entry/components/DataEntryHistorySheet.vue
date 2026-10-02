@@ -8,6 +8,7 @@ import {
     ChevronUp,
     Clock,
     History,
+    Layers,
     Loader2,
     MessageSquare,
     RotateCcw,
@@ -18,7 +19,11 @@ import {
 import { ref, watch } from 'vue';
 import { toast } from 'vue-sonner';
 import { history as dataEntryHistory } from '@/routes/data-entry';
-import { destroy as dataEntryHistoryDestroy } from '@/routes/data-entry/history';
+import {
+    destroy as dataEntryHistoryDestroy,
+    destroyGroup as dataEntryHistoryDestroyGroup,
+    showGroup as dataEntryHistoryShowGroup,
+} from '@/routes/data-entry/history';
 import { Badge } from '@/shared/components/ui/badge';
 import { Button } from '@/shared/components/ui/button';
 import {
@@ -48,20 +53,38 @@ interface ParameterDetail {
     alert_1_max: number | null;
 }
 
-interface BatchItem {
+interface EnvioSystemItem {
     id: number;
-    system_name: string;
     monitored_system_id: number;
-    user_name: string;
-    user_id: number | null;
+    system_name: string;
+    user_name?: string;
+    user_id?: number | null;
+    responsible?: string;
     status: 'completed' | 'reverted';
-    collected_at: string;
-    created_at: string | null;
+    collected_at?: string;
+    created_at?: string | null;
     reverted_at: string | null;
     reverted_by_name: string | null;
     saved_values_count: number;
     comment: string | null;
-    parameters_data: ParameterDetail[];
+    can_revert: boolean;
+    parameters_data?: ParameterDetail[];
+}
+
+interface EnvioGroupItem {
+    batch_group_uuid: string;
+    created_at: string | null;
+    collected_at: string | null;
+    responsible: string;
+    user_name: string;
+    user_id: number | null;
+    status: 'completed' | 'reverted' | 'partial';
+    systems_count: number;
+    systems_names: string[];
+    systems: EnvioSystemItem[];
+    total_values_count: number;
+    reverted_at: string | null;
+    reverted_by_name: string | null;
     can_revert: boolean;
 }
 
@@ -76,7 +99,7 @@ const emit = defineEmits<{
 }>();
 
 const isLoading = ref(false);
-const batches = ref<BatchItem[]>([]);
+const envios = ref<EnvioGroupItem[]>([]);
 const currentPage = ref(1);
 const lastPage = ref(1);
 const total = ref(0);
@@ -84,27 +107,19 @@ const total = ref(0);
 const filterSystemId = ref<string>('all');
 const filterStatus = ref<'all' | 'completed' | 'reverted'>('all');
 
-const expandedBatchIds = ref<number[]>([]);
-const confirmingDeleteId = ref<number | null>(null);
-const isDeletingId = ref<number | null>(null);
+const expandedGroupUuids = ref<string[]>([]);
+const expandedSystemIds = ref<number[]>([]);
+const groupDetailsCache = ref<Record<string, EnvioSystemItem[]>>({});
+const loadingGroupDetails = ref<Record<string, boolean>>({});
 
-function toggleExpand(id: number) {
-    if (expandedBatchIds.value.includes(id)) {
-        expandedBatchIds.value = expandedBatchIds.value.filter(
-            (bId) => bId !== id,
-        );
-    } else {
-        expandedBatchIds.value.push(id);
-    }
-}
-
-function isExpanded(id: number): boolean {
-    return expandedBatchIds.value.includes(id);
-}
+const confirmingDeleteGroupUuid = ref<string | null>(null);
+const confirmingDeleteSystemId = ref<number | null>(null);
+const isDeleting = ref(false);
 
 async function fetchHistory(page = 1) {
     isLoading.value = true;
-    confirmingDeleteId.value = null;
+    confirmingDeleteGroupUuid.value = null;
+    confirmingDeleteSystemId.value = null;
 
     try {
         const query: Record<string, string | number> = {
@@ -137,11 +152,11 @@ async function fetchHistory(page = 1) {
         }
 
         const data = await response.json();
-        batches.value = data.data || [];
+        envios.value = data.data || [];
         currentPage.value = data.current_page || 1;
         lastPage.value = data.last_page || 1;
         total.value = data.total || 0;
-    } catch (err: any) {
+    } catch (err: unknown) {
         console.error('Erro ao buscar histórico:', err);
         toast.error('Não foi possível carregar o histórico de envios.');
     } finally {
@@ -157,6 +172,67 @@ watch(
         }
     },
 );
+
+async function toggleExpandGroup(groupUuid: string) {
+    if (expandedGroupUuids.value.includes(groupUuid)) {
+        expandedGroupUuids.value = expandedGroupUuids.value.filter(
+            (u) => u !== groupUuid,
+        );
+
+        return;
+    }
+
+    expandedGroupUuids.value.push(groupUuid);
+
+    // Background fetch of full details if not already cached
+    if (!groupDetailsCache.value[groupUuid]) {
+        loadingGroupDetails.value[groupUuid] = true;
+
+        try {
+            const url = dataEntryHistoryShowGroup.url({
+                current_team: props.currentTeam.slug,
+                batch_group_uuid: groupUuid,
+            });
+            const res = await fetch(url, {
+                headers: {
+                    Accept: 'application/json',
+                    'X-Requested-With': 'XMLHttpRequest',
+                },
+            });
+
+            if (res.ok) {
+                const data = await res.json();
+                groupDetailsCache.value[groupUuid] = data.systems || [];
+            }
+        } catch (e) {
+            console.error('Erro ao buscar detalhes do envio em background:', e);
+        } finally {
+            loadingGroupDetails.value[groupUuid] = false;
+        }
+    }
+}
+
+function isGroupExpanded(groupUuid: string): boolean {
+    return expandedGroupUuids.value.includes(groupUuid);
+}
+
+function toggleExpandSystem(batchId: number) {
+    if (expandedSystemIds.value.includes(batchId)) {
+        expandedSystemIds.value = expandedSystemIds.value.filter(
+            (id) => id !== batchId,
+        );
+    } else {
+        expandedSystemIds.value.push(batchId);
+    }
+}
+
+function isSystemExpanded(batchId: number): boolean {
+    return expandedSystemIds.value.includes(batchId);
+}
+
+function getSystemsForGroup(envio: EnvioGroupItem): EnvioSystemItem[] {
+    return groupDetailsCache.value[envio.batch_group_uuid] || envio.systems;
+}
 
 function formatValue(val: number | null | undefined, decimals: number): string {
     if (val === null || val === undefined || isNaN(val)) {
@@ -185,8 +261,8 @@ function isParamOutOfLimits(param: ParameterDetail): boolean {
     return false;
 }
 
-async function revertBatch(batch: BatchItem) {
-    isDeletingId.value = batch.id;
+async function revertEntireGroup(groupUuid: string) {
+    isDeleting.value = true;
 
     try {
         const csrfToken =
@@ -196,20 +272,19 @@ async function revertBatch(batch: BatchItem) {
                 ) as HTMLMetaElement
             )?.content || '';
 
-        const response = await fetch(
-            dataEntryHistoryDestroy.url({
-                current_team: props.currentTeam.slug,
-                batch: batch.id,
-            }),
-            {
-                method: 'DELETE',
-                headers: {
-                    Accept: 'application/json',
-                    'X-Requested-With': 'XMLHttpRequest',
-                    'X-CSRF-TOKEN': csrfToken,
-                },
+        const url = dataEntryHistoryDestroyGroup.url({
+            current_team: props.currentTeam.slug,
+            batch_group_uuid: groupUuid,
+        });
+
+        const response = await fetch(url, {
+            method: 'DELETE',
+            headers: {
+                Accept: 'application/json',
+                'X-Requested-With': 'XMLHttpRequest',
+                'X-CSRF-TOKEN': csrfToken,
             },
-        );
+        });
 
         const data = await response.json();
 
@@ -221,15 +296,65 @@ async function revertBatch(batch: BatchItem) {
         }
 
         toast.success(
-            'Envio excluído e medições revertidas com sucesso! O registro foi mantido no histórico.',
+            data.message ||
+                'Envio cancelado e medições revertidas com sucesso!',
         );
-        confirmingDeleteId.value = null;
+        confirmingDeleteGroupUuid.value = null;
+        delete groupDetailsCache.value[groupUuid];
         await fetchHistory(currentPage.value);
-    } catch (err: any) {
-        console.error('Erro ao reverter envio:', err);
+    } catch (err) {
+        console.error('Erro ao reverter envio completo:', err);
         toast.error('Erro na comunicação com o servidor.');
     } finally {
-        isDeletingId.value = null;
+        isDeleting.value = false;
+    }
+}
+
+async function revertSingleSystem(batchId: number, groupUuid: string) {
+    isDeleting.value = true;
+
+    try {
+        const csrfToken =
+            (
+                document.querySelector(
+                    'meta[name="csrf-token"]',
+                ) as HTMLMetaElement
+            )?.content || '';
+
+        const url = dataEntryHistoryDestroy.url({
+            current_team: props.currentTeam.slug,
+            batch: batchId,
+        });
+
+        const response = await fetch(url, {
+            method: 'DELETE',
+            headers: {
+                Accept: 'application/json',
+                'X-Requested-With': 'XMLHttpRequest',
+                'X-CSRF-TOKEN': csrfToken,
+            },
+        });
+
+        const data = await response.json();
+
+        if (!response.ok) {
+            const errorMsg = data.message || 'Falha ao reverter o sistema.';
+            toast.error(errorMsg);
+
+            return;
+        }
+
+        toast.success(
+            data.message || 'Medições do sistema revertidas com sucesso!',
+        );
+        confirmingDeleteSystemId.value = null;
+        delete groupDetailsCache.value[groupUuid];
+        await fetchHistory(currentPage.value);
+    } catch (err) {
+        console.error('Erro ao reverter sistema individual:', err);
+        toast.error('Erro na comunicação com o servidor.');
+    } finally {
+        isDeleting.value = false;
     }
 }
 </script>
@@ -253,7 +378,8 @@ async function revertBatch(batch: BatchItem) {
                             Histórico de Envios
                         </SheetTitle>
                         <SheetDescription class="text-xs text-muted-foreground">
-                            Auditoria e reversão de medições manuais inseridas
+                            Auditoria agrupada por envio, com expansão em
+                            cascata e reversão
                         </SheetDescription>
                     </div>
                 </div>
@@ -265,9 +391,9 @@ async function revertBatch(batch: BatchItem) {
             >
                 <!-- Filtro por Sistema -->
                 <div class="flex min-w-[160px] flex-1 flex-col gap-1">
-                    <label class="text-xs font-semibold text-muted-foreground"
-                        >Sistema</label
-                    >
+                    <label class="text-xs font-semibold text-muted-foreground">
+                        Sistema
+                    </label>
                     <select
                         v-model="filterSystemId"
                         @change="fetchHistory(1)"
@@ -286,9 +412,9 @@ async function revertBatch(batch: BatchItem) {
 
                 <!-- Filtro por Status -->
                 <div class="flex w-36 flex-col gap-1">
-                    <label class="text-xs font-semibold text-muted-foreground"
-                        >Status</label
-                    >
+                    <label class="text-xs font-semibold text-muted-foreground">
+                        Status
+                    </label>
                     <select
                         v-model="filterStatus"
                         @change="fetchHistory(1)"
@@ -319,11 +445,11 @@ async function revertBatch(batch: BatchItem) {
                 </div>
             </div>
 
-            <!-- Conteúdo da Lista -->
+            <!-- Conteúdo da Lista de Envios -->
             <div class="flex-1 space-y-3 overflow-y-auto p-4">
-                <!-- Loading State -->
+                <!-- Loading State Inicial -->
                 <div
-                    v-if="isLoading && batches.length === 0"
+                    v-if="isLoading && envios.length === 0"
                     class="flex flex-col items-center justify-center py-16 text-muted-foreground"
                 >
                     <Loader2 class="mb-2 h-8 w-8 animate-spin text-primary" />
@@ -334,7 +460,7 @@ async function revertBatch(batch: BatchItem) {
 
                 <!-- Empty State -->
                 <div
-                    v-else-if="batches.length === 0"
+                    v-else-if="envios.length === 0"
                     class="flex flex-col items-center justify-center rounded-2xl border border-dashed border-border/80 bg-muted/10 px-4 py-16 text-center text-muted-foreground"
                 >
                     <History class="mb-3 h-10 w-10 stroke-1 opacity-40" />
@@ -347,38 +473,38 @@ async function revertBatch(batch: BatchItem) {
                     </p>
                 </div>
 
-                <!-- List of Batches -->
+                <!-- NÍVEL 1: Cartões de Envio Agrupados -->
                 <div
-                    v-for="batch in batches"
-                    :key="batch.id"
+                    v-for="envio in envios"
+                    :key="envio.batch_group_uuid"
                     class="overflow-hidden rounded-xl border transition-all"
                     :class="[
-                        batch.status === 'reverted'
+                        envio.status === 'reverted'
                             ? 'border-border/60 bg-muted/10 opacity-75'
-                            : 'border-border/80 bg-card shadow-xs hover:border-border',
+                            : 'border-border/80 bg-card shadow-xs hover:border-primary/40',
                     ]"
                 >
-                    <!-- Card Header / Summary -->
-                    <div class="flex flex-col gap-2.5 p-4">
+                    <!-- Cabeçalho do Cartão de Envio (Nível 1) -->
+                    <div class="flex flex-col gap-3 p-4">
                         <div class="flex items-center justify-between gap-2">
                             <div class="flex min-w-0 items-center gap-2">
-                                <span
-                                    class="truncate text-sm font-bold"
-                                    :class="[
-                                        batch.status === 'reverted'
-                                            ? 'text-muted-foreground line-through'
-                                            : 'text-foreground',
-                                    ]"
-                                    :title="batch.system_name"
+                                <div
+                                    class="rounded-lg bg-primary/10 p-1.5 text-primary"
                                 >
-                                    {{ batch.system_name }}
+                                    <Layers class="h-4 w-4" />
+                                </div>
+                                <span
+                                    class="truncate text-sm font-bold text-foreground"
+                                >
+                                    Envio com
+                                    {{ envio.systems_count }} sistema(s)
                                 </span>
                             </div>
 
                             <div class="flex shrink-0 items-center gap-2">
-                                <!-- Status Badge -->
+                                <!-- Status Badge do Envio -->
                                 <Badge
-                                    v-if="batch.status === 'completed'"
+                                    v-if="envio.status === 'completed'"
                                     variant="outline"
                                     class="flex items-center gap-1 border-emerald-500/20 bg-emerald-500/10 py-0.5 text-[11px] font-semibold text-emerald-600 dark:text-emerald-400"
                                 >
@@ -386,17 +512,24 @@ async function revertBatch(batch: BatchItem) {
                                     Ativo
                                 </Badge>
                                 <Badge
-                                    v-else
+                                    v-else-if="envio.status === 'reverted'"
                                     variant="outline"
                                     class="flex items-center gap-1 border-red-500/20 bg-red-500/10 py-0.5 text-[11px] font-semibold text-red-600 dark:text-red-400"
                                 >
                                     <X class="h-3 w-3" />
                                     Cancelado
                                 </Badge>
+                                <Badge
+                                    v-else
+                                    variant="outline"
+                                    class="flex items-center gap-1 border-amber-500/20 bg-amber-500/10 py-0.5 text-[11px] font-semibold text-amber-600 dark:text-amber-400"
+                                >
+                                    Parcial
+                                </Badge>
                             </div>
                         </div>
 
-                        <!-- Metadados -->
+                        <!-- Metadados do Envio (Responsável, Coleta, Horário de Envio) -->
                         <div
                             class="grid grid-cols-1 gap-x-4 gap-y-1.5 text-xs text-muted-foreground sm:grid-cols-2"
                         >
@@ -404,250 +537,465 @@ async function revertBatch(batch: BatchItem) {
                                 <Clock
                                     class="h-3.5 w-3.5 shrink-0 opacity-70"
                                 />
-                                <span
-                                    >Coleta:
+                                <span>
+                                    Coleta:
                                     <strong class="text-foreground/90">{{
-                                        batch.collected_at
-                                    }}</strong></span
-                                >
+                                        envio.collected_at
+                                    }}</strong>
+                                </span>
                             </div>
+
                             <div class="flex items-center gap-1.5">
                                 <UserIcon
                                     class="h-3.5 w-3.5 shrink-0 opacity-70"
                                 />
-                                <span class="truncate"
-                                    >Por:
+                                <span class="truncate">
+                                    Responsável:
                                     <strong class="text-foreground/90">{{
-                                        batch.user_name
-                                    }}</strong></span
-                                >
+                                        envio.responsible
+                                    }}</strong>
+                                </span>
+                            </div>
+
+                            <div class="flex items-center gap-1.5">
+                                <History
+                                    class="h-3.5 w-3.5 shrink-0 opacity-70"
+                                />
+                                <span>
+                                    Enviado em:
+                                    <strong class="text-foreground/90">{{
+                                        envio.created_at
+                                    }}</strong>
+                                </span>
+                            </div>
+
+                            <div class="flex items-center gap-1.5">
+                                <span class="truncate">
+                                    Usuário:
+                                    <strong class="text-foreground/90">{{
+                                        envio.user_name
+                                    }}</strong>
+                                </span>
                             </div>
                         </div>
 
-                        <!-- Detalhes de cancelamento se revertido -->
+                        <!-- Nomes resumidos dos sistemas incluídos -->
                         <div
-                            v-if="batch.status === 'reverted'"
+                            class="flex flex-wrap items-center gap-1 text-[11px] text-muted-foreground"
+                        >
+                            <span class="font-semibold text-foreground/80"
+                                >Sistemas:</span
+                            >
+                            <span
+                                v-for="(name, idx) in envio.systems_names"
+                                :key="name"
+                                class="rounded bg-muted/60 px-1.5 py-0.5 font-medium"
+                            >
+                                {{ name
+                                }}<span
+                                    v-if="idx < envio.systems_names.length - 1"
+                                    >,</span
+                                >
+                            </span>
+                        </div>
+
+                        <!-- Aviso se revertido -->
+                        <div
+                            v-if="envio.status === 'reverted'"
                             class="flex items-center gap-2 rounded-lg border border-red-200/60 bg-red-50/50 p-2 text-[11px] text-red-600 dark:border-red-900/40 dark:bg-red-950/20 dark:text-red-400"
                         >
                             <AlertTriangle class="h-3.5 w-3.5 shrink-0" />
                             <span>
-                                Cancelado por
+                                Envio cancelado por
                                 <strong>{{
-                                    batch.reverted_by_name || 'Usuário'
+                                    envio.reverted_by_name || 'Usuário'
                                 }}</strong>
                                 em
-                                {{ batch.reverted_at || 'data desconhecida' }}.
+                                {{ envio.reverted_at || 'data desconhecida' }}.
                             </span>
                         </div>
 
-                        <!-- Rodapé do Card com Ações -->
+                        <!-- Barra de Ações do Envio (Expandir e Reverter Envio Completo) -->
                         <div
-                            class="mt-1 flex items-center justify-between border-t border-border/40 pt-2"
+                            class="mt-1 flex items-center justify-between border-t border-border/40 pt-2.5"
                         >
                             <Button
                                 type="button"
                                 variant="ghost"
                                 size="sm"
-                                @click="toggleExpand(batch.id)"
-                                class="h-7 cursor-pointer gap-1 px-2 text-xs font-semibold text-muted-foreground hover:text-foreground"
+                                @click="
+                                    toggleExpandGroup(envio.batch_group_uuid)
+                                "
+                                class="h-7 cursor-pointer gap-1 px-2 text-xs font-semibold text-primary hover:bg-primary/10"
                             >
-                                <span>{{
-                                    isExpanded(batch.id)
-                                        ? 'Ocultar medições'
-                                        : `Ver medições (${batch.saved_values_count || 0})`
-                                }}</span>
-                                <component
-                                    :is="
-                                        isExpanded(batch.id)
-                                            ? ChevronUp
-                                            : ChevronDown
+                                <span>
+                                    {{
+                                        isGroupExpanded(envio.batch_group_uuid)
+                                            ? 'Recolher Sistemas'
+                                            : 'Ver Sistemas Enviados'
+                                    }}
+                                </span>
+                                <ChevronUp
+                                    v-if="
+                                        isGroupExpanded(envio.batch_group_uuid)
                                     "
                                     class="h-3.5 w-3.5"
                                 />
+                                <ChevronDown v-else class="h-3.5 w-3.5" />
                             </Button>
 
-                            <!-- Botão Excluir Envio -->
+                            <!-- Botão Reverter Envio Completo -->
                             <div
                                 v-if="
-                                    batch.can_revert &&
-                                    batch.status === 'completed'
+                                    envio.status !== 'reverted' &&
+                                    envio.can_revert
                                 "
                             >
-                                <!-- Caixa de Confirmação Inline -->
                                 <div
-                                    v-if="confirmingDeleteId === batch.id"
+                                    v-if="
+                                        confirmingDeleteGroupUuid ===
+                                        envio.batch_group_uuid
+                                    "
                                     class="flex items-center gap-1.5"
                                 >
                                     <span
-                                        class="text-[11px] font-semibold text-red-600 dark:text-red-400"
-                                        >Confirmar?</span
+                                        class="text-[11px] font-semibold text-destructive"
                                     >
+                                        Reverter envio completo?
+                                    </span>
                                     <Button
                                         type="button"
-                                        size="sm"
                                         variant="destructive"
-                                        :disabled="isDeletingId === batch.id"
-                                        @click="revertBatch(batch)"
-                                        class="h-7 cursor-pointer gap-1 px-2 text-xs font-semibold"
+                                        size="sm"
+                                        :disabled="isDeleting"
+                                        @click="
+                                            revertEntireGroup(
+                                                envio.batch_group_uuid,
+                                            )
+                                        "
+                                        class="h-6 cursor-pointer px-2 text-[10px]"
                                     >
                                         <Loader2
-                                            v-if="isDeletingId === batch.id"
+                                            v-if="isDeleting"
                                             class="h-3 w-3 animate-spin"
                                         />
-                                        <span>Excluir</span>
+                                        <span v-else>Sim, cancelar</span>
                                     </Button>
                                     <Button
                                         type="button"
-                                        size="sm"
                                         variant="ghost"
-                                        @click="confirmingDeleteId = null"
-                                        class="h-7 cursor-pointer px-2 text-xs"
+                                        size="sm"
+                                        :disabled="isDeleting"
+                                        @click="
+                                            confirmingDeleteGroupUuid = null
+                                        "
+                                        class="h-6 cursor-pointer px-1.5 text-[10px]"
                                     >
-                                        Cancelar
+                                        Não
                                     </Button>
                                 </div>
-
                                 <Button
                                     v-else
                                     type="button"
-                                    variant="outline"
+                                    variant="ghost"
                                     size="sm"
-                                    @click="confirmingDeleteId = batch.id"
-                                    class="h-7 cursor-pointer gap-1 border-red-200 px-2 text-xs font-semibold text-red-600 hover:bg-red-50 dark:border-red-900/50 dark:text-red-400 dark:hover:bg-red-950/30"
+                                    @click="
+                                        confirmingDeleteGroupUuid =
+                                            envio.batch_group_uuid
+                                    "
+                                    class="h-7 cursor-pointer gap-1 px-2 text-xs text-muted-foreground hover:bg-red-50 hover:text-destructive dark:hover:bg-red-950/20"
                                 >
-                                    <Trash2 class="h-3 w-3" />
-                                    <span>Excluir envio</span>
+                                    <Trash2 class="h-3.5 w-3.5" />
+                                    <span>Cancelar Envio</span>
                                 </Button>
                             </div>
                         </div>
                     </div>
 
-                    <!-- Seção Retrátil: Tabela de Parâmetros e Comentário -->
+                    <!-- NÍVEL 2: Sistemas do Envio Expandido (busca em background) -->
                     <div
-                        v-if="isExpanded(batch.id)"
-                        class="flex flex-col gap-3 border-t border-border/60 bg-muted/20 p-4 text-xs"
+                        v-if="isGroupExpanded(envio.batch_group_uuid)"
+                        class="space-y-2.5 border-t border-border/60 bg-muted/20 p-3"
                     >
-                        <!-- Tabela de Valores -->
                         <div
-                            class="overflow-hidden rounded-lg border border-border/60 bg-card"
+                            v-if="loadingGroupDetails[envio.batch_group_uuid]"
+                            class="flex items-center justify-center py-4 text-xs text-muted-foreground"
                         >
-                            <table
-                                class="w-full border-collapse text-left text-xs"
-                            >
-                                <thead>
-                                    <tr
-                                        class="border-b border-border/80 bg-muted/40 font-bold text-foreground"
-                                    >
-                                        <th class="px-3 py-2 text-left">
-                                            Parâmetro
-                                        </th>
-                                        <th class="px-3 py-2 text-center">
-                                            Resultado
-                                        </th>
-                                        <th class="px-3 py-2 text-center">
-                                            Unidade
-                                        </th>
-                                        <th class="px-3 py-2 text-center">
-                                            Mín/Máx
-                                        </th>
-                                    </tr>
-                                </thead>
-                                <tbody class="divide-y divide-border/40">
-                                    <tr
-                                        v-for="param in batch.parameters_data"
-                                        :key="param.parameter_id"
-                                        class="hover:bg-muted/10"
-                                    >
-                                        <td
-                                            class="px-3 py-2 font-medium text-foreground"
-                                        >
-                                            {{ param.name }}
-                                        </td>
-                                        <td
-                                            class="px-3 py-2 text-center font-bold"
-                                            :class="[
-                                                isParamOutOfLimits(param)
-                                                    ? 'text-red-600 dark:text-red-400'
-                                                    : 'text-foreground',
-                                            ]"
-                                        >
-                                            {{
-                                                formatValue(
-                                                    param.value,
-                                                    param.decimals,
-                                                )
-                                            }}
-                                        </td>
-                                        <td
-                                            class="px-3 py-2 text-center font-medium text-muted-foreground"
-                                        >
-                                            {{ param.unit || '-' }}
-                                        </td>
-                                        <td
-                                            class="px-3 py-2 text-center font-mono text-[11px] text-muted-foreground"
-                                        >
-                                            {{
-                                                formatValue(
-                                                    param.alert_1_min,
-                                                    param.decimals,
-                                                )
-                                            }}
-                                            /
-                                            {{
-                                                formatValue(
-                                                    param.alert_1_max,
-                                                    param.decimals,
-                                                )
-                                            }}
-                                        </td>
-                                    </tr>
-                                    <tr
-                                        v-if="
-                                            !batch.parameters_data ||
-                                            batch.parameters_data.length === 0
-                                        "
-                                    >
-                                        <td
-                                            colspan="4"
-                                            class="py-4 text-center text-muted-foreground"
-                                        >
-                                            Nenhum detalhe disponível.
-                                        </td>
-                                    </tr>
-                                </tbody>
-                            </table>
+                            <Loader2
+                                class="mr-2 h-4 w-4 animate-spin text-primary"
+                            />
+                            <span>Carregando sistemas e medições...</span>
                         </div>
 
-                        <!-- Comentário -->
                         <div
-                            v-if="batch.comment"
-                            class="flex flex-col gap-1 rounded-lg border border-border/60 bg-background p-3"
+                            v-else
+                            v-for="systemItem in getSystemsForGroup(envio)"
+                            :key="systemItem.id"
+                            class="rounded-lg border border-border/70 bg-card p-3 shadow-2xs"
                         >
+                            <!-- Linha do Sistema (Nível 2) -->
                             <div
-                                class="flex items-center gap-1.5 text-[11px] font-bold text-foreground"
+                                class="flex items-center justify-between gap-2"
                             >
-                                <MessageSquare class="h-3 w-3 text-primary" />
-                                <span>Comentário / Justificativa:</span>
+                                <button
+                                    type="button"
+                                    @click="toggleExpandSystem(systemItem.id)"
+                                    class="flex flex-1 cursor-pointer items-center gap-2 text-left hover:opacity-80"
+                                >
+                                    <ChevronRight
+                                        class="h-4 w-4 text-primary transition-transform duration-200"
+                                        :class="{
+                                            'rotate-90': isSystemExpanded(
+                                                systemItem.id,
+                                            ),
+                                        }"
+                                    />
+                                    <span
+                                        class="text-xs font-bold"
+                                        :class="[
+                                            systemItem.status === 'reverted'
+                                                ? 'text-muted-foreground line-through'
+                                                : 'text-foreground',
+                                        ]"
+                                    >
+                                        {{ systemItem.system_name }}
+                                    </span>
+                                    <Badge
+                                        variant="secondary"
+                                        class="py-0 text-[10px]"
+                                    >
+                                        {{ systemItem.saved_values_count }}
+                                        parâmetro(s)
+                                    </Badge>
+                                </button>
+
+                                <div class="flex items-center gap-2">
+                                    <Badge
+                                        v-if="systemItem.status === 'completed'"
+                                        variant="outline"
+                                        class="border-emerald-500/20 bg-emerald-500/10 py-0 text-[10px] text-emerald-600 dark:text-emerald-400"
+                                    >
+                                        Ativo
+                                    </Badge>
+                                    <Badge
+                                        v-else
+                                        variant="outline"
+                                        class="border-red-500/20 bg-red-500/10 py-0 text-[10px] text-red-600 dark:text-red-400"
+                                    >
+                                        Cancelado
+                                    </Badge>
+
+                                    <!-- Reversão individual deste sistema -->
+                                    <div
+                                        v-if="
+                                            systemItem.status === 'completed' &&
+                                            systemItem.can_revert
+                                        "
+                                    >
+                                        <div
+                                            v-if="
+                                                confirmingDeleteSystemId ===
+                                                systemItem.id
+                                            "
+                                            class="flex items-center gap-1"
+                                        >
+                                            <Button
+                                                type="button"
+                                                variant="destructive"
+                                                size="sm"
+                                                :disabled="isDeleting"
+                                                @click="
+                                                    revertSingleSystem(
+                                                        systemItem.id,
+                                                        envio.batch_group_uuid,
+                                                    )
+                                                "
+                                                class="h-6 cursor-pointer px-2 text-[10px]"
+                                            >
+                                                Sim
+                                            </Button>
+                                            <Button
+                                                type="button"
+                                                variant="ghost"
+                                                size="sm"
+                                                :disabled="isDeleting"
+                                                @click="
+                                                    confirmingDeleteSystemId =
+                                                        null
+                                                "
+                                                class="h-6 cursor-pointer px-1 text-[10px]"
+                                            >
+                                                Não
+                                            </Button>
+                                        </div>
+                                        <Button
+                                            v-else
+                                            type="button"
+                                            variant="ghost"
+                                            size="sm"
+                                            @click="
+                                                confirmingDeleteSystemId =
+                                                    systemItem.id
+                                            "
+                                            title="Cancelar apenas este sistema"
+                                            class="h-6 w-6 cursor-pointer p-0 text-muted-foreground hover:text-destructive"
+                                        >
+                                            <Trash2 class="h-3 w-3" />
+                                        </Button>
+                                    </div>
+                                </div>
                             </div>
-                            <p
-                                class="mt-1 border-l-2 border-primary/40 pl-4 text-xs leading-relaxed whitespace-pre-wrap text-foreground/80"
+
+                            <!-- NÍVEL 3: Tabela de Valores dos Parâmetros do Sistema -->
+                            <div
+                                v-if="isSystemExpanded(systemItem.id)"
+                                class="mt-3 border-t border-border/40 pt-2"
                             >
-                                {{ batch.comment }}
-                            </p>
+                                <div
+                                    v-if="
+                                        systemItem.parameters_data &&
+                                        systemItem.parameters_data.length > 0
+                                    "
+                                    class="overflow-x-auto"
+                                >
+                                    <table
+                                        class="w-full border-collapse text-left text-xs"
+                                    >
+                                        <thead>
+                                            <tr
+                                                class="border-b border-border/50 text-[10px] font-bold text-muted-foreground"
+                                            >
+                                                <th class="py-1 pr-2">
+                                                    Parâmetro
+                                                </th>
+                                                <th
+                                                    class="py-1 pr-2 text-right"
+                                                >
+                                                    Valor
+                                                </th>
+                                                <th
+                                                    class="px-2 py-1 text-center"
+                                                >
+                                                    Unidade
+                                                </th>
+                                                <th
+                                                    class="px-2 py-1 text-center"
+                                                >
+                                                    Faixa
+                                                </th>
+                                            </tr>
+                                        </thead>
+                                        <tbody
+                                            class="divide-y divide-border/20"
+                                        >
+                                            <tr
+                                                v-for="p in systemItem.parameters_data"
+                                                :key="p.parameter_id"
+                                                class="hover:bg-muted/30"
+                                            >
+                                                <td
+                                                    class="py-1.5 pr-2 font-medium text-foreground"
+                                                >
+                                                    {{ p.name }}
+                                                </td>
+                                                <td
+                                                    class="py-1.5 pr-2 text-right font-mono font-bold"
+                                                    :class="[
+                                                        isParamOutOfLimits(p)
+                                                            ? 'text-red-600 dark:text-red-400'
+                                                            : 'text-foreground',
+                                                    ]"
+                                                >
+                                                    <span
+                                                        v-if="p.value !== null"
+                                                    >
+                                                        {{
+                                                            formatValue(
+                                                                p.value,
+                                                                p.decimals,
+                                                            )
+                                                        }}
+                                                    </span>
+                                                    <span
+                                                        v-else
+                                                        class="font-normal text-amber-500 italic"
+                                                    >
+                                                        Apagado
+                                                    </span>
+                                                </td>
+                                                <td
+                                                    class="px-2 py-1.5 text-center text-muted-foreground"
+                                                >
+                                                    {{ p.unit || '-' }}
+                                                </td>
+                                                <td
+                                                    class="px-2 py-1.5 text-center font-mono text-[10px] text-muted-foreground"
+                                                >
+                                                    <span
+                                                        v-if="
+                                                            p.alert_1_min !==
+                                                                null ||
+                                                            p.alert_1_max !==
+                                                                null
+                                                        "
+                                                    >
+                                                        {{
+                                                            formatValue(
+                                                                p.alert_1_min,
+                                                                p.decimals,
+                                                            )
+                                                        }}
+                                                        -
+                                                        {{
+                                                            formatValue(
+                                                                p.alert_1_max,
+                                                                p.decimals,
+                                                            )
+                                                        }}
+                                                    </span>
+                                                    <span v-else>-</span>
+                                                </td>
+                                            </tr>
+                                        </tbody>
+                                    </table>
+                                </div>
+                                <div
+                                    v-else
+                                    class="py-2 text-center text-xs text-muted-foreground"
+                                >
+                                    Nenhum parâmetro detalhado registrado.
+                                </div>
+
+                                <!-- Comentário do Sistema se houver -->
+                                <div
+                                    v-if="systemItem.comment"
+                                    class="mt-2 flex items-start gap-1.5 rounded bg-muted/40 p-2 text-xs text-foreground"
+                                >
+                                    <MessageSquare
+                                        class="mt-0.5 h-3 w-3 shrink-0 text-muted-foreground"
+                                    />
+                                    <p
+                                        class="font-mono text-[11px] whitespace-pre-wrap"
+                                    >
+                                        {{ systemItem.comment }}
+                                    </p>
+                                </div>
+                            </div>
                         </div>
                     </div>
                 </div>
             </div>
 
-            <!-- Footer com Paginação -->
+            <!-- Paginação do Histórico -->
             <div
                 v-if="lastPage > 1"
                 class="flex items-center justify-between border-t border-border/70 bg-card p-4 text-xs text-muted-foreground"
             >
-                <span
-                    >Página <strong>{{ currentPage }}</strong> de
-                    <strong>{{ lastPage }}</strong> (Total: {{ total }})</span
-                >
+                <div>
+                    Página <strong>{{ currentPage }}</strong> de
+                    <strong>{{ lastPage }}</strong> ({{ total }} envios)
+                </div>
+
                 <div class="flex items-center gap-1.5">
                     <Button
                         type="button"
@@ -655,10 +1003,9 @@ async function revertBatch(batch: BatchItem) {
                         size="sm"
                         :disabled="currentPage <= 1 || isLoading"
                         @click="fetchHistory(currentPage - 1)"
-                        class="h-8 cursor-pointer rounded-lg px-2 text-xs"
+                        class="h-8 w-8 cursor-pointer p-0"
                     >
-                        <ChevronLeft class="h-3.5 w-3.5" />
-                        <span>Anterior</span>
+                        <ChevronLeft class="h-4 w-4" />
                     </Button>
                     <Button
                         type="button"
@@ -666,10 +1013,9 @@ async function revertBatch(batch: BatchItem) {
                         size="sm"
                         :disabled="currentPage >= lastPage || isLoading"
                         @click="fetchHistory(currentPage + 1)"
-                        class="h-8 cursor-pointer rounded-lg px-2 text-xs"
+                        class="h-8 w-8 cursor-pointer p-0"
                     >
-                        <span>Próxima</span>
-                        <ChevronRight class="h-3.5 w-3.5" />
+                        <ChevronRight class="h-4 w-4" />
                     </Button>
                 </div>
             </div>

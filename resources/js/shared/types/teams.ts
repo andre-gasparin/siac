@@ -6,6 +6,8 @@ export type Team = {
     slug: string;
     isActive?: boolean;
     isPersonal: boolean;
+    requireDataEntryResponsible?: boolean;
+    require_data_entry_responsible?: boolean;
     role?: TeamRole;
     roleLabel?: string;
     isCurrent?: boolean;

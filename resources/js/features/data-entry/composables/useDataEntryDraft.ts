@@ -1,5 +1,26 @@
 import { ref } from 'vue';
 
+export interface ParamDiff {
+    parameter_id: number;
+    name?: string;
+    code?: string | null;
+    unit?: string | null;
+    decimals?: number;
+    alert_1_min?: number | null;
+    alert_1_max?: number | null;
+    old_value: number | null;
+    new_value: number | null;
+    status: 'added' | 'updated' | 'cleared';
+}
+
+export interface SystemDiff {
+    system_id: number;
+    isModified: boolean;
+    changedParams: ParamDiff[];
+    commentChanged: boolean;
+    newComment: string | null;
+}
+
 export interface SystemDraft {
     system_id: number;
     values: Record<number, string>;
@@ -17,6 +38,106 @@ export interface TeamDraftPayload {
     updated_at?: string;
 }
 
+export function parseNumber(val: string | undefined): number | null {
+    if (!val || val.trim() === '') {
+        return null;
+    }
+
+    const clean = val.trim().replace(/\s/g, '').replace(',', '.');
+    const parsed = parseFloat(clean);
+
+    return isNaN(parsed) ? null : parsed;
+}
+
+export function computeSystemDiff(
+    systemId: number,
+    paramInputs: Record<number, string>,
+    comment: string,
+    parameters: Array<{
+        id: number;
+        name: string;
+        code?: string | null;
+        unit?: string | null;
+        decimals: number;
+        alert_1_min: number | null;
+        alert_1_max: number | null;
+    }>,
+    loadedValues: Record<number, number>,
+    loadedComments: Record<number, string>,
+): SystemDiff {
+    const changedParams: ParamDiff[] = [];
+
+    for (const param of parameters) {
+        const raw = paramInputs[param.id];
+        const newNum = parseNumber(raw);
+        const oldNum =
+            loadedValues[param.id] !== undefined
+                ? loadedValues[param.id]
+                : null;
+
+        if (oldNum === null && newNum !== null) {
+            changedParams.push({
+                parameter_id: param.id,
+                name: param.name,
+                code: param.code,
+                unit: param.unit,
+                decimals: param.decimals,
+                alert_1_min: param.alert_1_min,
+                alert_1_max: param.alert_1_max,
+                old_value: null,
+                new_value: newNum,
+                status: 'added',
+            });
+        } else if (oldNum !== null && newNum === null) {
+            changedParams.push({
+                parameter_id: param.id,
+                name: param.name,
+                code: param.code,
+                unit: param.unit,
+                decimals: param.decimals,
+                alert_1_min: param.alert_1_min,
+                alert_1_max: param.alert_1_max,
+                old_value: oldNum,
+                new_value: null,
+                status: 'cleared',
+            });
+        } else if (oldNum !== null && newNum !== null) {
+            if (Math.abs(oldNum - newNum) > 0.000001) {
+                changedParams.push({
+                    parameter_id: param.id,
+                    name: param.name,
+                    code: param.code,
+                    unit: param.unit,
+                    decimals: param.decimals,
+                    alert_1_min: param.alert_1_min,
+                    alert_1_max: param.alert_1_max,
+                    old_value: oldNum,
+                    new_value: newNum,
+                    status: 'updated',
+                });
+            }
+        }
+    }
+
+    const currentComm = (comment || '').trim();
+    const oldComm = (loadedComments[systemId] || '').trim();
+    const commentChanged = currentComm !== oldComm;
+
+    const isModified = changedParams.length > 0 || commentChanged;
+
+    return {
+        system_id: systemId,
+        isModified,
+        changedParams,
+        commentChanged,
+        newComment: commentChanged
+            ? currentComm !== ''
+                ? currentComm
+                : null
+            : null,
+    };
+}
+
 export function useDataEntryDraft(teamSlug: string) {
     const drafts = ref<DraftSystemsMap>({});
     const savedCollectionDate = ref<string | null>(null);
@@ -24,6 +145,38 @@ export function useDataEntryDraft(teamSlug: string) {
 
     function getStorageKey(): string {
         return `siac_data_entry_draft_${teamSlug}`;
+    }
+
+    function getResponsibleKey(): string {
+        return `siac_data_entry_responsible_${teamSlug}`;
+    }
+
+    function getStoredResponsible(): string {
+        if (!teamSlug || typeof window === 'undefined') {
+            return '';
+        }
+
+        try {
+            return localStorage.getItem(getResponsibleKey()) || '';
+        } catch {
+            return '';
+        }
+    }
+
+    function saveStoredResponsible(name: string): void {
+        if (!teamSlug || typeof window === 'undefined') {
+            return;
+        }
+
+        try {
+            if (name && name.trim() !== '') {
+                localStorage.setItem(getResponsibleKey(), name.trim());
+            } else {
+                localStorage.removeItem(getResponsibleKey());
+            }
+        } catch (e) {
+            console.error('Erro ao salvar responsável no localStorage:', e);
+        }
     }
 
     function loadDrafts(): {
@@ -159,26 +312,6 @@ export function useDataEntryDraft(teamSlug: string) {
         }
     }
 
-    function getDraftSystems(): number[] {
-        const ids: number[] = [];
-
-        for (const [key, draft] of Object.entries(drafts.value)) {
-            const hasValue = Object.values(draft.values || {}).some(
-                (v) => v !== '' && v !== null && v !== undefined,
-            );
-            const hasComment =
-                draft.comment !== undefined &&
-                draft.comment !== null &&
-                draft.comment.trim() !== '';
-
-            if (hasValue || hasComment) {
-                ids.push(Number(key));
-            }
-        }
-
-        return ids;
-    }
-
     return {
         drafts,
         savedCollectionDate,
@@ -187,6 +320,7 @@ export function useDataEntryDraft(teamSlug: string) {
         saveSystemDraft,
         removeSystemDraft,
         clearAllDrafts,
-        getDraftSystems,
+        getStoredResponsible,
+        saveStoredResponsible,
     };
 }

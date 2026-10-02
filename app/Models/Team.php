@@ -22,6 +22,7 @@ use Illuminate\Support\Carbon;
  * @property string $slug
  * @property bool $is_active
  * @property bool $is_personal
+ * @property bool $require_data_entry_responsible
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
  * @property Carbon|null $deleted_at
@@ -37,7 +38,7 @@ use Illuminate\Support\Carbon;
  * @property-read Collection<int, ChartTemplate> $chartTemplates
  * @property-read Collection<int, ChartSeries> $chartSeries
  */
-#[Fillable(['name', 'slug', 'is_active', 'is_personal'])]
+#[Fillable(['name', 'slug', 'is_active', 'is_personal', 'require_data_entry_responsible'])]
 #[UsePolicy(TeamPolicy::class)]
 class Team extends Model
 {
@@ -197,6 +198,7 @@ class Team extends Model
         return [
             'is_active' => 'boolean',
             'is_personal' => 'boolean',
+            'require_data_entry_responsible' => 'boolean',
         ];
     }
 

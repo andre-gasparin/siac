@@ -13,6 +13,7 @@ use App\Models\Team;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Str;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -85,7 +86,9 @@ class DataEntryController extends Controller
             monitoredSystemId: (int) $validated['monitored_system_id'],
             collectedAt: (string) $validated['collected_at'],
             values: (array) $validated['values'],
-            comment: isset($validated['comment']) ? (string) $validated['comment'] : null,
+            comment: array_key_exists('comment', $validated) ? ($validated['comment'] !== null ? (string) $validated['comment'] : '') : null,
+            responsible: isset($validated['responsible']) ? (string) $validated['responsible'] : null,
+            batchGroupUuid: (string) Str::uuid(),
         );
 
         return response()->json([
@@ -104,6 +107,7 @@ class DataEntryController extends Controller
             user: $request->user(),
             collectedAt: (string) $validated['collected_at'],
             systems: (array) $validated['systems'],
+            responsible: isset($validated['responsible']) ? (string) $validated['responsible'] : null,
         );
 
         return response()->json([
