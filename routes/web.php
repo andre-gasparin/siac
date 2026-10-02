@@ -7,4 +7,5 @@ require app_path('Features/DataEntry/Routes/web.php');
 require app_path('Features/SpreadsheetImports/Routes/web.php');
 require app_path('Features/Reports/Routes/web.php');
 require app_path('Features/Tasks/Routes/web.php');
+require app_path('Features/StatisticalAnalysis/Routes/web.php');
 require __DIR__.'/settings.php';
