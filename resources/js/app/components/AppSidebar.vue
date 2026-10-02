@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { Link, usePage } from '@inertiajs/vue3';
 import {
+    Activity,
     Building2,
     ClipboardEdit,
     FileSpreadsheet,
@@ -17,6 +18,7 @@ import { dashboard } from '@/routes';
 import { index as dataEntryIndex } from '@/routes/data-entry';
 import { index as reportsIndex } from '@/routes/reports';
 import { index as spreadsheetImportsIndex } from '@/routes/spreadsheet-imports';
+import { index as statisticalAnalysisIndex } from '@/routes/statistical-analysis';
 import { index as teamsIndex } from '@/routes/teams';
 import {
     Sidebar,
@@ -55,6 +57,14 @@ const dataTableUrl = computed(() =>
         : '#',
 );
 
+const statisticalAnalysisUrl = computed(() =>
+    page.props.currentTeam
+        ? statisticalAnalysisIndex.url({
+              current_team: page.props.currentTeam.slug,
+          })
+        : '#',
+);
+
 const reportsUrl = computed(() => {
     if (!page.props.currentTeam) {
         return '#';
@@ -88,6 +98,11 @@ const mainNavItems = computed<NavItem[]>(() => {
             title: 'Tabela de dados',
             href: dataTableUrl.value,
             icon: Table,
+        },
+        {
+            title: 'Controle Estatístico',
+            href: statisticalAnalysisUrl.value,
+            icon: Activity,
         },
         {
             title: 'Relatórios',
