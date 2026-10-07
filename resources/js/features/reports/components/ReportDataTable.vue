@@ -8,6 +8,7 @@ import {
     Tag,
 } from '@lucide/vue';
 import { computed, ref } from 'vue';
+import ReportGroupedSystemsFilter from '@/features/reports/components/ReportGroupedSystemsFilter.vue';
 
 interface Parameter {
     id: number;
@@ -40,10 +41,23 @@ const emit = defineEmits<{
 
 const copiedParameterId = ref<number | null>(null);
 const hiddenParameterIds = ref<number[]>([]);
+const disabledSystemIds = ref<number[]>([]);
 const isMenuOpen = ref(false);
 
+const systemFilteredParameters = computed(() => {
+    if (disabledSystemIds.value.length === 0) {
+        return props.parameters;
+    }
+
+    return props.parameters.filter(
+        (parameter) =>
+            !parameter.monitored_system_id ||
+            !disabledSystemIds.value.includes(parameter.monitored_system_id),
+    );
+});
+
 const visibleParameters = computed(() =>
-    props.parameters.filter(
+    systemFilteredParameters.value.filter(
         (parameter) => !hiddenParameterIds.value.includes(parameter.id),
     ),
 );
@@ -59,11 +73,21 @@ function toggleParameter(id: number): void {
 }
 
 function showAllParameters(): void {
-    hiddenParameterIds.value = [];
+    const currentSystemParamIds = systemFilteredParameters.value.map(
+        (p) => p.id,
+    );
+    hiddenParameterIds.value = hiddenParameterIds.value.filter(
+        (id) => !currentSystemParamIds.includes(id),
+    );
 }
 
 function hideAllParameters(): void {
-    hiddenParameterIds.value = props.parameters.map((p) => p.id);
+    const currentSystemParamIds = systemFilteredParameters.value.map(
+        (p) => p.id,
+    );
+    hiddenParameterIds.value = Array.from(
+        new Set([...hiddenParameterIds.value, ...currentSystemParamIds]),
+    );
 }
 
 function formatValue(
@@ -117,7 +141,12 @@ function copyTag(parameter: Parameter): void {
 </script>
 
 <template>
-    <div class="flex flex-col gap-2">
+    <div class="flex flex-col gap-3">
+        <ReportGroupedSystemsFilter
+            :parameters="parameters"
+            v-model:disabled-system-ids="disabledSystemIds"
+        />
+
         <div
             v-if="parameters.length > 0"
             class="flex items-center justify-between gap-2 px-1 text-xs"
@@ -126,7 +155,9 @@ function copyTag(parameter: Parameter): void {
                 <span>
                     Parâmetros:
                     <strong class="font-semibold text-foreground">
-                        {{ visibleParameters.length }}/{{ parameters.length }}
+                        {{ visibleParameters.length }}/{{
+                            systemFilteredParameters.length
+                        }}
                     </strong>
                 </span>
             </div>
@@ -173,7 +204,7 @@ function copyTag(parameter: Parameter): void {
 
                     <div class="max-h-56 space-y-1 overflow-y-auto pr-1">
                         <div
-                            v-for="parameter in parameters"
+                            v-for="parameter in systemFilteredParameters"
                             :key="parameter.id"
                             class="flex items-center justify-between gap-2 rounded-md px-2 py-1.5 text-xs text-popover-foreground hover:bg-muted"
                         >
@@ -224,6 +255,18 @@ function copyTag(parameter: Parameter): void {
         </div>
 
         <div
+            v-if="visibleParameters.length === 0"
+            class="rounded-2xl border border-dashed border-border/80 bg-muted/15 px-4 py-12 text-center text-xs text-muted-foreground"
+        >
+            {{
+                systemFilteredParameters.length === 0
+                    ? 'Nenhum sistema selecionado. Ative ao menos um sistema no filtro acima para visualizar os dados.'
+                    : 'Nenhum parâmetro selecionado no menu de colunas.'
+            }}
+        </div>
+
+        <div
+            v-else
             class="max-h-[550px] w-full overflow-x-auto overflow-y-auto rounded-xl border border-border bg-card shadow-2xs"
         >
             <table class="w-full min-w-max border-collapse text-[11px]">
@@ -393,14 +436,6 @@ function copyTag(parameter: Parameter): void {
                             class="px-4 py-6 text-center text-xs text-muted-foreground"
                         >
                             Nenhum registro encontrado no período selecionado.
-                        </td>
-                    </tr>
-
-                    <tr v-if="visibleParameters.length === 0">
-                        <td
-                            class="px-4 py-6 text-center text-xs text-muted-foreground"
-                        >
-                            Nenhum parâmetro selecionado ou ativo.
                         </td>
                     </tr>
                 </tbody>

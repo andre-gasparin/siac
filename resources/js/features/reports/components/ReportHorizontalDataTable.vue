@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { BarChart3, Check, LineChart, Tag } from '@lucide/vue';
-import { ref } from 'vue';
+import { computed, ref } from 'vue';
+import ReportGroupedSystemsFilter from '@/features/reports/components/ReportGroupedSystemsFilter.vue';
 
 interface Parameter {
     id: number;
@@ -38,6 +39,19 @@ const emit = defineEmits<{
 }>();
 
 const copiedParameterId = ref<number | null>(null);
+const disabledSystemIds = ref<number[]>([]);
+
+const visibleParameters = computed(() => {
+    if (disabledSystemIds.value.length === 0) {
+        return props.parameters;
+    }
+
+    return props.parameters.filter(
+        (parameter) =>
+            !parameter.monitored_system_id ||
+            !disabledSystemIds.value.includes(parameter.monitored_system_id),
+    );
+});
 
 function formatValue(
     value: number | null | undefined,
@@ -128,7 +142,12 @@ function getAverageFormatted(parameter: Parameter): string {
 </script>
 
 <template>
-    <div class="flex flex-col gap-2">
+    <div class="flex flex-col gap-3">
+        <ReportGroupedSystemsFilter
+            :parameters="parameters"
+            v-model:disabled-system-ids="disabledSystemIds"
+        />
+
         <div
             class="max-h-[550px] w-full overflow-x-auto overflow-y-auto rounded-xl border border-border bg-card shadow-2xs"
         >
@@ -162,7 +181,7 @@ function getAverageFormatted(parameter: Parameter): string {
 
                 <tbody>
                     <tr
-                        v-for="parameter in parameters"
+                        v-for="parameter in visibleParameters"
                         :key="parameter.id"
                         class="border-b border-border/40 transition hover:bg-muted/30"
                     >
@@ -310,6 +329,16 @@ function getAverageFormatted(parameter: Parameter): string {
                         >
                             Nenhum parâmetro monitorado configurado para este
                             sistema.
+                        </td>
+                    </tr>
+
+                    <tr v-else-if="visibleParameters.length === 0">
+                        <td
+                            :colspan="rows.length + 2"
+                            class="px-4 py-12 text-center text-xs text-muted-foreground"
+                        >
+                            Nenhum sistema selecionado. Ative ao menos um
+                            sistema no filtro acima para visualizar os dados.
                         </td>
                     </tr>
 
