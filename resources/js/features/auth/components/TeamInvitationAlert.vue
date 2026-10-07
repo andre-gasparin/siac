@@ -5,7 +5,7 @@ import type { TeamInvitationContext } from '@/shared/types';
 
 type Props = {
     invitation: TeamInvitationContext;
-    action: 'Log in' | 'Register';
+    action: 'Entre' | 'Cadastre-se';
 };
 
 defineProps<Props>();
@@ -18,7 +18,9 @@ defineProps<Props>();
         >
             <Info class="size-4" />
             <AlertDescription class="text-blue-900 dark:text-blue-100">
-                {{ action }} to join the "{{ invitation.teamName }}" team.
+                {{ action }} para participar da equipe "{{
+                    invitation.teamName
+                }}".
             </AlertDescription>
         </Alert>
     </div>

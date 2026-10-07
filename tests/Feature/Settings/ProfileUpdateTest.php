@@ -33,6 +33,11 @@ test('profile information can be updated', function () {
     expect($user->email_verified_at)->toBeNull();
 });
 
+test('settings toast messages are translated to portuguese', function () {
+    expect(__('Profile updated.'))->toBe('Perfil atualizado.');
+    expect(__('Password updated.'))->toBe('Senha atualizada.');
+});
+
 test('email verification status is unchanged when the email address is unchanged', function () {
     $user = User::factory()->create();
 

@@ -64,12 +64,12 @@ const mainNavItems = computed<NavItem[]>(() => [
         icon: LayoutGrid,
     },
     {
-        title: 'Teams',
+        title: 'Unidades',
         href: teamsIndex(),
         icon: Users,
     },
     {
-        title: 'Settings',
+        title: 'Configurações',
         href: editProfile(),
         icon: Settings,
     },
@@ -94,7 +94,7 @@ const mainNavItems = computed<NavItem[]>(() => [
                         </SheetTrigger>
                         <SheetContent side="left" class="w-[300px] p-6">
                             <SheetTitle class="sr-only"
-                                >Navigation menu</SheetTitle
+                                >Menu de navegação</SheetTitle
                             >
                             <SheetHeader class="flex justify-start text-left">
                                 <AppLogoIcon class="size-9 object-contain" />

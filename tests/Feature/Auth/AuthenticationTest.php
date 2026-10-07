@@ -49,6 +49,19 @@ test('users can authenticate using the login screen', function () {
     $response->assertRedirect(route('dashboard'));
 });
 
+test('invalid credentials return a translated error message', function () {
+    $user = User::factory()->create();
+
+    $response = $this->post(route('login.store'), [
+        'email' => $user->email,
+        'password' => 'wrong-password',
+    ]);
+
+    $response->assertSessionHasErrors([
+        'email' => 'Essas credenciais não correspondem aos nossos registros.',
+    ]);
+});
+
 test('passkey login response redirects to the current team dashboard', function () {
     $user = User::factory()->create();
 
