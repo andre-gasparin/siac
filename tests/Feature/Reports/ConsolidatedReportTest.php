@@ -647,3 +647,103 @@ test('administrator can ungroup a grouped system', function () {
 
     expect($otherItem->refresh()->parent_report_item_id)->toBeNull();
 });
+
+test('administrator can add and remove recipient on a report', function () {
+    $report = createConsolidatedReport($this);
+
+    $this->actingAs($this->admin)
+        ->post(route('reports.recipients.store', [$this->team, $report]), [
+            'email' => 'gerente@innova.com',
+            'name' => 'Carlos Gerente',
+        ])
+        ->assertRedirect();
+
+    $recipient = ReportRecipient::query()
+        ->where('report_id', $report->id)
+        ->where('email', 'gerente@innova.com')
+        ->firstOrFail();
+
+    expect($recipient->name)->toBe('Carlos Gerente')
+        ->and($recipient->revoked_at)->toBeNull();
+
+    $this->actingAs($this->admin)
+        ->delete(route('reports.recipients.destroy', [$this->team, $report, $recipient]))
+        ->assertRedirect();
+
+    expect(ReportRecipient::query()->whereKey($recipient->id)->exists())->toBeFalse();
+});
+
+test('new report inherits active recipients from previous report', function () {
+    $report1 = createConsolidatedReport($this);
+
+    $this->actingAs($this->admin)
+        ->post(route('reports.recipients.store', [$this->team, $report1]), [
+            'email' => 'diretor@innova.com',
+            'name' => 'Diretor Innova',
+        ])
+        ->assertRedirect();
+
+    $this->actingAs($this->admin)
+        ->post(route('reports.store', [$this->team]), [
+            'date_reference' => '2026-08-05',
+        ])
+        ->assertRedirect();
+
+    $report2 = Report::query()->whereDate('date_reference', '2026-08-05')->firstOrFail();
+
+    expect(ReportRecipient::query()->where('report_id', $report2->id)->where('email', 'diretor@innova.com')->exists())->toBeTrue();
+});
+
+test('administrator can resend report individually to a specific recipient', function () {
+    $report = createConsolidatedReport($this);
+    $report->update(['status' => 'completed', 'finished_at' => now()]);
+
+    $recipient = ReportRecipient::query()->create([
+        'team_id' => $this->team->id,
+        'report_id' => $report->id,
+        'name' => 'Carlos Gerente',
+        'email' => 'gerente@innova.com',
+        'access_token' => 'individual-token-123',
+        'token_hash' => hash('sha256', 'individual-token-123'),
+    ]);
+
+    Queue::fake();
+
+    $this->actingAs($this->admin)
+        ->post(route('reports.recipients.resend', [$this->team, $report, $recipient]))
+        ->assertRedirect();
+
+    Queue::assertPushed(SendReportRecipientEmail::class, function ($job) use ($recipient) {
+        return $job->recipientId === $recipient->id;
+    });
+});
+
+test('external recipient without user_id can access public report via token', function () {
+    $report = createConsolidatedReport($this);
+    $report->update(['status' => 'completed', 'finished_at' => now()]);
+
+    ReportItem::query()->create([
+        'team_id' => $this->team->id,
+        'report_id' => $report->id,
+        'monitored_system_id' => $this->system->id,
+        'date_reference' => '2026-08-04',
+        'show_data_results' => true,
+    ]);
+
+    $token = 'external-token-unique-xyz';
+    ReportRecipient::query()->create([
+        'team_id' => $this->team->id,
+        'report_id' => $report->id,
+        'user_id' => null,
+        'name' => 'Visitante Externo',
+        'email' => 'visitante@externo.com',
+        'access_token' => $token,
+        'token_hash' => hash('sha256', $token),
+    ]);
+
+    $this->get(route('reports.public.show', $token))
+        ->assertOk()
+        ->assertInertia(fn ($page) => $page
+            ->component('Reports/Public')
+            ->where('recipient.email', 'visitante@externo.com'));
+});

@@ -20,6 +20,7 @@ use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 
 class ConsolidatedReportService
@@ -72,11 +73,42 @@ class ConsolidatedReportService
                     'date_reference' => $reference->toDateString(),
                     'status' => 'draft',
                 ]);
+                $this->ensureRecipientsInitialized($team, $report);
                 $this->record($report, 'report.created', $user);
 
                 return $report;
             });
         });
+    }
+
+    public function ensureRecipientsInitialized(Team $team, Report $report): void
+    {
+        if ($report->recipients()->exists()) {
+            return;
+        }
+
+        $previousReport = Report::query()
+            ->whereBelongsTo($team)
+            ->where('id', '!=', $report->id)
+            ->whereHas('recipients', fn ($q) => $q->whereNull('revoked_at'))
+            ->latest('date_reference')
+            ->latest('id')
+            ->first();
+
+        if ($previousReport) {
+            foreach ($previousReport->recipients()->whereNull('revoked_at')->orderBy('id')->get() as $prev) {
+                $token = Str::random(64);
+                ReportRecipient::query()->create([
+                    'team_id' => $team->id,
+                    'report_id' => $report->id,
+                    'user_id' => $prev->user_id,
+                    'name' => $prev->name,
+                    'email' => $prev->email,
+                    'access_token' => $token,
+                    'token_hash' => hash('sha256', $token),
+                ]);
+            }
+        }
     }
 
     public function scopedReport(Team $team, int $reportId): Report
@@ -139,6 +171,8 @@ class ConsolidatedReportService
      */
     public function view(Team $team, Report $report): array
     {
+        $this->ensureRecipientsInitialized($team, $report);
+
         $items = ReportItem::query()
             ->whereBelongsTo($report)
             ->with([
@@ -196,9 +230,11 @@ class ConsolidatedReportService
                 'access_token' => $recipient->access_token,
                 'public_url' => route('reports.public.show', ['token' => $recipient->access_token]),
                 'revoked_at' => $recipient->revoked_at?->toIso8601String(),
+                'last_accessed_at' => $recipient->last_accessed_at?->toIso8601String(),
                 'last_sent_at' => $recipient->last_sent_at?->toIso8601String(),
                 'send_count' => $recipient->send_count,
             ])->all(),
+            'activeRecipientsCount' => $recipients->whereNull('revoked_at')->count(),
             'activities' => $report->activities()
                 ->with(['user:id,name', 'recipient:id,name,email'])
                 ->latest('id')
@@ -657,7 +693,9 @@ class ConsolidatedReportService
             ->firstOrFail();
 
         abort_unless($recipient->report->status === 'completed', 404);
-        abort_unless($recipient->user_id !== null && $recipient->report->team->members()->whereKey($recipient->user_id)->exists(), 403);
+        if ($recipient->user_id !== null) {
+            abort_unless($recipient->report->team->members()->whereKey($recipient->user_id)->exists(), 403);
+        }
 
         return $recipient;
     }
@@ -678,14 +716,32 @@ class ConsolidatedReportService
     public function previewView(Team $team, Report $report, User $adminUser): array
     {
         abort_unless($report->team_id === $team->id, 404);
+        $this->ensureRecipientsInitialized($team, $report);
 
-        return $this->buildClientReportView(
+        $view = $this->buildClientReportView(
             team: $team,
             report: $report,
             currentRecipient: null,
             currentUser: $adminUser,
             isPreview: true,
         );
+
+        $recipients = $report->recipients()->orderBy('name')->get();
+        $view['recipients'] = $recipients->map(fn ($recipient): array => [
+            'id' => $recipient->id,
+            'user_id' => $recipient->user_id,
+            'name' => $recipient->name,
+            'email' => $recipient->email,
+            'access_token' => $recipient->access_token,
+            'public_url' => route('reports.public.show', ['token' => $recipient->access_token]),
+            'revoked_at' => $recipient->revoked_at?->toIso8601String(),
+            'last_accessed_at' => $recipient->last_accessed_at?->toIso8601String(),
+            'last_sent_at' => $recipient->last_sent_at?->toIso8601String(),
+            'send_count' => $recipient->send_count,
+        ])->all();
+        $view['activeRecipientsCount'] = $recipients->whereNull('revoked_at')->count();
+
+        return $view;
     }
 
     /**

@@ -36,7 +36,7 @@ class SendReportRecipientEmail implements ShouldBeUnique, ShouldQueue
     {
         $recipient = ReportRecipient::query()->with(['report.team'])->findOrFail($this->recipientId);
 
-        if ($recipient->revoked_at || ! $recipient->report->team->members()->whereKey($recipient->user_id)->exists()) {
+        if ($recipient->revoked_at || ($recipient->user_id && ! $recipient->report->team->members()->whereKey($recipient->user_id)->exists())) {
             return;
         }
 

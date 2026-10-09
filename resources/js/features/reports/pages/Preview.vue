@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { Head } from '@inertiajs/vue3';
+import { ref } from 'vue';
 import ClientReportContent from '@/features/reports/components/ClientReportContent.vue';
+import ReportRecipientsModal from '@/features/reports/components/ReportRecipientsModal.vue';
 import type { Team } from '@/shared/types';
 
 interface ReportComment {
@@ -51,8 +53,13 @@ interface ReportData {
 
 interface RecipientInfo {
     id?: number;
+    user_id?: number | null;
     name: string;
     email: string;
+    access_token?: string;
+    public_url?: string;
+    revoked_at?: string | null;
+    last_accessed_at?: string | null;
     last_sent_at?: string | null;
     send_count?: number;
     is_admin?: boolean;
@@ -71,8 +78,11 @@ const props = defineProps<{
     dataBySystem: Record<number, ReportData>;
     recipients?: RecipientInfo[];
     recipient?: RecipientInfo | null;
+    activeRecipientsCount?: number;
     currentTeam: Team;
 }>();
+
+const recipientsOpen = ref(false);
 
 function getCommentSubmitUrl(): string {
     return `/${props.currentTeam.slug}/relatorios/${props.report.id}/preview/comentarios`;
@@ -99,10 +109,21 @@ function getChartUrl(
             :data-by-system="dataBySystem"
             :recipients="recipients"
             :recipient="recipient"
+            :active-recipients-count="activeRecipientsCount"
             :current-team="currentTeam"
             :is-preview="true"
             :comment-submit-url-generator="getCommentSubmitUrl"
             :chart-url-generator="getChartUrl"
+            @open-recipients="recipientsOpen = true"
+        />
+
+        <ReportRecipientsModal
+            :show="recipientsOpen"
+            :recipients="(recipients as any[]) || []"
+            :team-slug="currentTeam.slug"
+            :report-id="report.id"
+            :report-status="report.status"
+            @close="recipientsOpen = false"
         />
     </main>
 </template>

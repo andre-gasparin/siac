@@ -41,6 +41,47 @@ class ReportDeliveryController extends Controller
         return back()->with('success', 'Reenvio enfileirado.');
     }
 
+    public function storeRecipient(
+        Request $request,
+        Team $current_team,
+        Report $report,
+        ConsolidatedReportService $reports,
+        ReportDeliveryService $delivery,
+    ): RedirectResponse {
+        $this->authorizeAdmin($request);
+        $report = $reports->scopedReport($current_team, $report->id);
+
+        $validated = $request->validate([
+            'email' => ['required', 'email', 'max:255'],
+            'name' => ['nullable', 'string', 'max:255'],
+        ]);
+
+        $recipient = $delivery->addRecipient(
+            $current_team,
+            $report,
+            $validated['email'],
+            $validated['name'] ?? null,
+            $request->user(),
+        );
+
+        return back()->with('success', "Destinatário {$recipient->email} adicionado com sucesso.");
+    }
+
+    public function resendIndividual(
+        Request $request,
+        Team $current_team,
+        Report $report,
+        ReportRecipient $recipient,
+        ConsolidatedReportService $reports,
+        ReportDeliveryService $delivery,
+    ): RedirectResponse {
+        $this->authorizeAdmin($request);
+        $report = $reports->scopedReport($current_team, $report->id);
+        $delivery->resendIndividual($current_team, $report, $recipient, $request->user());
+
+        return back()->with('success', "Reenvio individual para {$recipient->email} enfileirado.");
+    }
+
     public function revoke(
         Request $request,
         Team $current_team,
@@ -53,7 +94,7 @@ class ReportDeliveryController extends Controller
         $report = $reports->scopedReport($current_team, $report->id);
         $delivery->revoke($current_team, $report, $recipient, $request->user());
 
-        return back()->with('success', 'Acesso revogado.');
+        return back()->with('success', 'Destinatário removido.');
     }
 
     private function authorizeAdmin(Request $request): void

@@ -46,6 +46,8 @@ Route::prefix('{current_team}')
         Route::get('relatorios/{report}/sistemas/{system}/grafico', [ConsolidatedReportSystemController::class, 'chart'])->name('reports.systems.chart');
         Route::post('relatorios/{report}/finalizar', [ReportDeliveryController::class, 'finalize'])->name('reports.finalize');
         Route::post('relatorios/{report}/reenviar', [ReportDeliveryController::class, 'resend'])->name('reports.resend');
+        Route::post('relatorios/{report}/destinatarios', [ReportDeliveryController::class, 'storeRecipient'])->name('reports.recipients.store');
+        Route::post('relatorios/{report}/destinatarios/{recipient}/reenviar', [ReportDeliveryController::class, 'resendIndividual'])->name('reports.recipients.resend');
         Route::delete('relatorios/{report}/destinatarios/{recipient}', [ReportDeliveryController::class, 'revoke'])->name('reports.recipients.destroy');
         Route::post('relatorios/{report}/comentarios', [ReportCommentController::class, 'store'])->name('reports.comments.store');
         Route::post('relatorios/{report}/sugestoes', [ReportSuggestionController::class, 'store'])

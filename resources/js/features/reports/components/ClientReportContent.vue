@@ -11,7 +11,7 @@ import {
     ShieldCheck,
     Users,
 } from '@lucide/vue';
-import { reactive, ref } from 'vue';
+import { computed, reactive, ref } from 'vue';
 import ParameterChartModal from '@/features/reports/components/ParameterChartModal.vue';
 import ReportHorizontalDataTable from '@/features/reports/components/ReportHorizontalDataTable.vue';
 import type { Team } from '@/shared/types';
@@ -69,6 +69,7 @@ interface RecipientInfo {
     last_sent_at?: string | null;
     send_count?: number;
     is_admin?: boolean;
+    revoked_at?: string | null;
 }
 
 const props = withDefaults(
@@ -85,6 +86,7 @@ const props = withDefaults(
         dataBySystem: Record<number, ReportData>;
         recipients?: RecipientInfo[];
         recipient?: RecipientInfo | null;
+        activeRecipientsCount?: number;
         isPreview?: boolean;
         currentTeam?: Team;
         commentSubmitUrlGenerator: (systemItemId?: number) => string;
@@ -99,6 +101,16 @@ const props = withDefaults(
         recipient: null,
         isPreview: false,
     },
+);
+
+const emit = defineEmits<{
+    openRecipients: [];
+}>();
+
+const activeCount = computed(
+    () =>
+        props.activeRecipientsCount ??
+        props.recipients.filter((r) => !r.revoked_at).length,
 );
 
 const commentBodies = reactive<Record<number, string>>({});
@@ -208,13 +220,32 @@ function formatDateOnly(dateStr: string) {
                 >
             </div>
 
-            <a
-                v-if="currentTeam"
-                :href="`/${currentTeam.slug}/relatorios/${report.id}`"
-                class="inline-flex items-center gap-1.5 rounded-xl border border-amber-300 bg-white px-3 py-1.5 text-xs font-semibold text-amber-950 shadow-2xs transition hover:bg-amber-100 dark:border-amber-800 dark:bg-neutral-900 dark:text-amber-200 dark:hover:bg-neutral-800"
-            >
-                <ArrowLeft class="size-3.5" /> Voltar ao Painel do Administrador
-            </a>
+            <div class="flex items-center gap-2">
+                <button
+                    type="button"
+                    class="inline-flex items-center gap-1.5 rounded-xl border border-amber-400 bg-white px-3 py-1.5 text-xs font-semibold text-amber-950 shadow-2xs transition hover:bg-amber-100 dark:border-amber-800 dark:bg-neutral-900 dark:text-amber-200 dark:hover:bg-neutral-800"
+                    @click="emit('openRecipients')"
+                >
+                    <Mail class="size-3.5 text-amber-700 dark:text-amber-400" />
+                    <span>Destinatários</span>
+                    <span
+                        class="inline-flex items-center rounded-full bg-amber-500/15 px-2 py-0.5 text-[10px] font-bold text-amber-900 dark:text-amber-300"
+                    >
+                        {{ activeCount }} ativo{{
+                            activeCount === 1 ? '' : 's'
+                        }}
+                    </span>
+                </button>
+
+                <a
+                    v-if="currentTeam"
+                    :href="`/${currentTeam.slug}/relatorios/${report.id}`"
+                    class="inline-flex items-center gap-1.5 rounded-xl border border-amber-300 bg-white px-3 py-1.5 text-xs font-semibold text-amber-950 shadow-2xs transition hover:bg-amber-100 dark:border-amber-800 dark:bg-neutral-900 dark:text-amber-200 dark:hover:bg-neutral-800"
+                >
+                    <ArrowLeft class="size-3.5" /> Voltar ao Painel do
+                    Administrador
+                </a>
+            </div>
         </aside>
 
         <!-- Cabeçalho Executivo -->
@@ -328,10 +359,22 @@ function formatDateOnly(dateStr: string) {
                             class="flex items-center gap-2 text-[11px] font-semibold tracking-wider text-muted-foreground uppercase"
                         >
                             <Users class="size-3.5" />
-                            Destinatários Enviados
+                            {{
+                                isPreview
+                                    ? 'Destinatários'
+                                    : 'Destinatários Enviados'
+                            }}
                         </div>
                         <button
-                            v-if="recipients.length > 0"
+                            v-if="isPreview"
+                            type="button"
+                            class="text-[11px] font-medium text-primary hover:underline"
+                            @click="emit('openRecipients')"
+                        >
+                            Gerenciar
+                        </button>
+                        <button
+                            v-else-if="recipients.length > 0"
                             type="button"
                             class="text-[11px] font-medium text-primary hover:underline"
                             @click="showRecipientsList = !showRecipientsList"
@@ -342,7 +385,10 @@ function formatDateOnly(dateStr: string) {
                     <strong
                         class="mt-1 block text-xl font-bold text-foreground"
                     >
-                        {{ recipients.length }} destinatário(s)
+                        {{
+                            isPreview ? activeCount : recipients.length
+                        }}
+                        destinatário(s)
                     </strong>
                 </div>
             </div>

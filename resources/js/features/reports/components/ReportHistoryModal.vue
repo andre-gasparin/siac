@@ -24,6 +24,25 @@ function formatDate(value: string | null) {
           }).format(new Date(value))
         : '—';
 }
+
+function formatAction(action: string): string {
+    const map: Record<string, string> = {
+        'public.accessed': 'Acessou o relatório público',
+        'report.created': 'Criou o relatório',
+        'report.finalized': 'Finalizou o relatório',
+        'delivery.queued': 'Disparou envio por e-mail',
+        'delivery.sent': 'E-mail entregue com sucesso',
+        'delivery.failed': 'Falha no envio de e-mail',
+        'recipient.added': 'Adicionou destinatário',
+        'recipient.revoked': 'Removeu destinatário',
+        'recipient.deleted': 'Excluiu destinatário',
+        'comment.created': 'Publicou comentário',
+        'suggestion.applied': 'Aplicou sugestão da IA',
+        'suggestion.dismissed': 'Rejeitou sugestão da IA',
+    };
+
+    return map[action] ?? action;
+}
 </script>
 
 <template>
@@ -62,7 +81,9 @@ function formatDate(value: string | null) {
                     <strong class="text-foreground">{{
                         activity.actor
                     }}</strong>
-                    <p class="text-foreground/80">{{ activity.action }}</p>
+                    <p class="text-foreground/80">
+                        {{ formatAction(activity.action) }}
+                    </p>
                     <time class="text-xs text-muted-foreground">{{
                         formatDate(activity.created_at)
                     }}</time>

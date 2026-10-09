@@ -33,13 +33,13 @@ class ReportDeliveryService
                     ]);
                 }
 
-                if (! $team->members()->exists()) {
+                $recipients = $this->syncRecipients($team, $locked);
+                if ($recipients->isEmpty()) {
                     throw ValidationException::withMessages([
-                        'recipients' => 'A empresa não possui membros para receber o relatório.',
+                        'recipients' => 'Adicione ao menos um destinatário para receber o relatório.',
                     ]);
                 }
 
-                $recipients = $this->syncRecipients($team, $locked);
                 $recipientIds = $this->recipientIds($recipients);
                 $shouldSend = $locked->status !== 'completed';
 
@@ -79,9 +79,100 @@ class ReportDeliveryService
         return $report->refresh();
     }
 
+    public function addRecipient(Team $team, Report $report, string $email, ?string $name, User $user): ReportRecipient
+    {
+        abort_unless($report->team_id === $team->id, 404);
+
+        $email = trim(mb_strtolower($email));
+        $name = trim($name ?? '');
+
+        $matchedUser = $team->members()->where('users.email', $email)->first()
+            ?? User::query()->where('email', $email)->first();
+
+        if ($name === '') {
+            if ($matchedUser) {
+                $name = $matchedUser->name;
+            } else {
+                $part = explode('@', $email)[0];
+                $name = ucwords(str_replace(['.', '_', '-'], ' ', $part));
+            }
+        }
+
+        $recipient = ReportRecipient::query()
+            ->whereBelongsTo($report)
+            ->where('email', $email)
+            ->first();
+
+        if ($recipient) {
+            if ($recipient->revoked_at === null) {
+                throw ValidationException::withMessages([
+                    'email' => 'Este e-mail já está ativo na lista de destinatários.',
+                ]);
+            }
+
+            $recipient->update([
+                'user_id' => $matchedUser?->id ?? $recipient->user_id,
+                'name' => $name,
+                'revoked_at' => null,
+            ]);
+        } else {
+            $token = Str::random(64);
+            $recipient = ReportRecipient::query()->create([
+                'team_id' => $team->id,
+                'report_id' => $report->id,
+                'user_id' => $matchedUser?->id,
+                'name' => $name,
+                'email' => $email,
+                'access_token' => $token,
+                'token_hash' => hash('sha256', $token),
+            ]);
+        }
+
+        $this->reports->record($report, 'recipient.added', $user, recipient: $recipient, metadata: [
+            'email' => $recipient->email,
+            'name' => $recipient->name,
+        ]);
+
+        return $recipient;
+    }
+
+    public function resendIndividual(Team $team, Report $report, ReportRecipient $recipient, User $user): void
+    {
+        abort_unless($recipient->report_id === $report->id && $report->team_id === $team->id, 404);
+
+        if ($report->status !== 'completed') {
+            throw ValidationException::withMessages(['report' => 'Finalize o relatório antes de reenviá-lo.']);
+        }
+
+        if ($recipient->revoked_at !== null) {
+            throw ValidationException::withMessages(['recipient' => 'Não é possível reenviar para um destinatário revogado.']);
+        }
+
+        $batch = (string) Str::uuid();
+        $this->reports->record($report, 'delivery.queued', $user, recipient: $recipient, metadata: [
+            'batch' => $batch,
+            'recipient_count' => 1,
+            'individual' => true,
+            'email' => $recipient->email,
+        ]);
+
+        SendReportRecipientEmail::dispatch($recipient->id, $batch)->afterCommit();
+    }
+
     public function revoke(Team $team, Report $report, ReportRecipient $recipient, User $user): void
     {
         abort_unless($recipient->report_id === $report->id && $report->team_id === $team->id, 404);
+
+        if ($recipient->send_count === 0) {
+            $recipient->delete();
+            $this->reports->record($report, 'recipient.deleted', $user, metadata: [
+                'email' => $recipient->email,
+                'name' => $recipient->name,
+            ]);
+
+            return;
+        }
+
         $recipient->update(['revoked_at' => now()]);
         $this->reports->record($report, 'recipient.revoked', $user, recipient: $recipient, metadata: [
             'email' => $recipient->email,
@@ -89,40 +180,24 @@ class ReportDeliveryService
     }
 
     /** @return Collection<int, ReportRecipient> */
-    private function syncRecipients(Team $team, Report $report): Collection
+    public function syncRecipients(Team $team, Report $report): Collection
     {
-        $members = $team->members()->get(['users.id', 'users.name', 'users.email']);
-        $activeUserIds = $members->pluck('id')->all();
+        if ($report->recipients()->doesntExist()) {
+            $this->reports->ensureRecipientsInitialized($team, $report);
 
-        $report->recipients()
-            ->whereNotNull('user_id')
-            ->whereNotIn('user_id', $activeUserIds)
-            ->whereNull('revoked_at')
-            ->update(['revoked_at' => now()]);
-
-        foreach ($members as $member) {
-            $recipient = ReportRecipient::query()
-                ->whereBelongsTo($report)
-                ->where('email', $member->email)
-                ->first();
-
-            if (! $recipient) {
-                $token = Str::random(64);
-                $recipient = ReportRecipient::query()->create([
-                    'team_id' => $team->id,
-                    'report_id' => $report->id,
-                    'user_id' => $member->id,
-                    'name' => $member->name,
-                    'email' => $member->email,
-                    'access_token' => $token,
-                    'token_hash' => hash('sha256', $token),
-                ]);
-            } else {
-                $recipient->update([
-                    'user_id' => $member->id,
-                    'name' => $member->name,
-                    'revoked_at' => null,
-                ]);
+            if ($report->recipients()->doesntExist()) {
+                foreach ($team->members()->orderBy('users.name')->get(['users.id', 'users.name', 'users.email']) as $member) {
+                    $token = Str::random(64);
+                    ReportRecipient::query()->create([
+                        'team_id' => $team->id,
+                        'report_id' => $report->id,
+                        'user_id' => $member->id,
+                        'name' => $member->name,
+                        'email' => $member->email,
+                        'access_token' => $token,
+                        'token_hash' => hash('sha256', $token),
+                    ]);
+                }
             }
         }
 

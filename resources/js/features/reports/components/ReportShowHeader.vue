@@ -36,6 +36,7 @@ const props = defineProps<{
     currentTeam: Team;
     sections: SystemSectionItem[];
     intendedRecipientsCount?: number;
+    activeRecipientsCount?: number;
     pendingDate: string;
     datePrompt: {
         open: boolean;
@@ -346,7 +347,24 @@ function formatDateBr(value: string | null): string {
                     class="inline-flex h-9 items-center gap-2 rounded-xl border bg-muted/50 px-3 text-xs font-medium text-foreground transition hover:bg-muted"
                     @click="emit('openRecipients')"
                 >
-                    <Mail class="size-4" /> Destinatários
+                    <Mail class="size-4 text-muted-foreground" />
+                    <span>Destinatários</span>
+                    <span
+                        class="inline-flex items-center rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-semibold text-primary"
+                    >
+                        {{
+                            activeRecipientsCount ??
+                            intendedRecipientsCount ??
+                            0
+                        }}
+                        ativo{{
+                            (activeRecipientsCount ??
+                                intendedRecipientsCount ??
+                                0) === 1
+                                ? ''
+                                : 's'
+                        }}
+                    </span>
                 </button>
                 <button
                     v-if="report.status === 'completed'"

@@ -15,7 +15,6 @@ import {
     show as showReport,
     store as storeReport,
 } from '@/routes/reports';
-import { destroy as revokeRecipient } from '@/routes/reports/recipients';
 import { update as updateSuggestion } from '@/routes/reports/suggestions';
 import {
     chart as chartRoute,
@@ -110,6 +109,7 @@ const props = defineProps<{
         created_at: string;
     }>;
     currentTeam: Team;
+    activeRecipientsCount?: number;
     existingReportsByDate?: Record<string, number>;
 }>();
 
@@ -665,6 +665,10 @@ onMounted(() =>
             :current-team="currentTeam"
             :sections="sortedSections"
             :intended-recipients-count="intendedRecipients.length"
+            :active-recipients-count="
+                activeRecipientsCount ??
+                recipients.filter((r) => !r.revoked_at).length
+            "
             :pending-date="pendingDate"
             :date-prompt="datePrompt"
             @date-change="onDateInputChange"
@@ -720,19 +724,11 @@ onMounted(() =>
     <!-- Modal de Destinatários do Relatório -->
     <ReportRecipientsModal
         :show="recipientsOpen"
-        :intended-recipients="intendedRecipients"
         :recipients="recipients"
+        :team-slug="currentTeam.slug"
+        :report-id="report.id"
+        :report-status="report.status"
         @close="recipientsOpen = false"
-        @revoke="
-            (recipientId) =>
-                router.delete(
-                    revokeRecipient.url({
-                        current_team: currentTeam.slug,
-                        report: report.id,
-                        recipient: recipientId,
-                    }),
-                )
-        "
     />
 
     <!-- Agente Consolidado de IA Flutuante -->
