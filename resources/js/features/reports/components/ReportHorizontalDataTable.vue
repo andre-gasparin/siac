@@ -146,6 +146,7 @@ function getAverageFormatted(parameter: Parameter): string {
         <ReportGroupedSystemsFilter
             :parameters="parameters"
             v-model:disabled-system-ids="disabledSystemIds"
+            :bordered="true"
         />
 
         <div

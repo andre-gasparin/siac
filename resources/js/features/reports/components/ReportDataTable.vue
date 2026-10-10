@@ -4,10 +4,11 @@ import {
     Check,
     ChevronDown,
     LineChart,
+    Loader2,
     SlidersHorizontal,
     Tag,
 } from '@lucide/vue';
-import { computed, ref } from 'vue';
+import { computed, ref, watch } from 'vue';
 import ReportGroupedSystemsFilter from '@/features/reports/components/ReportGroupedSystemsFilter.vue';
 
 interface Parameter {
@@ -30,19 +31,77 @@ interface Row {
     values: Record<number, number>;
 }
 
-const props = defineProps<{
-    parameters: Parameter[];
-    rows: Row[];
-}>();
+interface GroupedChild {
+    id: number;
+    name: string;
+    [key: string]: any;
+}
+
+const props = withDefaults(
+    defineProps<{
+        parameters: Parameter[];
+        rows: Row[];
+        startDate?: string;
+        endDate?: string;
+        isLoadingData?: boolean;
+        groupedChildren?: GroupedChild[];
+    }>(),
+    {
+        startDate: '',
+        endDate: '',
+        isLoadingData: false,
+        groupedChildren: () => [],
+    },
+);
 
 const emit = defineEmits<{
     chart: [parameterId: number, type: 'line' | 'bar'];
+    'update:startDate': [value: string];
+    'update:endDate': [value: string];
+    loadData: [dates?: { start_date: string; end_date: string }];
+    ungroupChild: [child: GroupedChild];
 }>();
 
 const copiedParameterId = ref<number | null>(null);
 const hiddenParameterIds = ref<number[]>([]);
 const disabledSystemIds = ref<number[]>([]);
 const isMenuOpen = ref(false);
+
+const localStartDate = ref(props.startDate);
+const localEndDate = ref(props.endDate);
+
+watch(
+    () => props.startDate,
+    (val) => {
+        localStartDate.value = val;
+    },
+);
+
+watch(
+    () => props.endDate,
+    (val) => {
+        localEndDate.value = val;
+    },
+);
+
+function handleUpdateDates(): void {
+    emit('loadData', {
+        start_date: localStartDate.value,
+        end_date: localEndDate.value,
+    });
+}
+
+const isGroupedTable = computed(() => {
+    const ids = new Set<number>();
+
+    for (const p of props.parameters) {
+        if (p.monitored_system_id) {
+            ids.add(p.monitored_system_id);
+        }
+    }
+
+    return ids.size > 1;
+});
 
 const systemFilteredParameters = computed(() => {
     if (disabledSystemIds.value.length === 0) {
@@ -142,112 +201,154 @@ function copyTag(parameter: Parameter): void {
 
 <template>
     <div class="flex flex-col gap-3">
-        <ReportGroupedSystemsFilter
-            :parameters="parameters"
-            v-model:disabled-system-ids="disabledSystemIds"
-        />
-
+        <!-- Bloco Unificado de Controles: Agrupamento + Período/Colunas -->
         <div
-            v-if="parameters.length > 0"
-            class="flex items-center justify-between gap-2 px-1 text-xs"
+            class="flex flex-col gap-2.5 rounded-xl border border-border/70 bg-muted/20 p-2.5"
         >
-            <div class="flex items-center gap-2 text-muted-foreground">
-                <span>
-                    Parâmetros:
-                    <strong class="font-semibold text-foreground">
-                        {{ visibleParameters.length }}/{{
-                            systemFilteredParameters.length
-                        }}
-                    </strong>
-                </span>
-            </div>
+            <!-- Linha 1: Agrupamento (visível se houver mais de 1 sistema no agrupamento) -->
+            <ReportGroupedSystemsFilter
+                v-if="isGroupedTable"
+                :parameters="parameters"
+                :grouped-children="groupedChildren"
+                v-model:disabled-system-ids="disabledSystemIds"
+                @ungroup-child="(child) => emit('ungroupChild', child)"
+            />
 
-            <div class="relative">
-                <button
-                    type="button"
-                    class="inline-flex items-center gap-1.5 rounded-lg border border-border bg-card px-2.5 py-1 text-xs font-medium text-foreground shadow-2xs transition hover:bg-muted focus:outline-hidden"
-                    @click="isMenuOpen = !isMenuOpen"
-                >
-                    <SlidersHorizontal class="size-3.5 text-muted-foreground" />
-                    <span>Colunas</span>
-                    <ChevronDown class="size-3 text-muted-foreground" />
-                </button>
+            <!-- Divisor quando há Agrupamento e Período juntos -->
+            <div v-if="isGroupedTable" class="border-t border-border/50" />
 
-                <div
-                    v-if="isMenuOpen"
-                    class="absolute right-0 z-50 mt-1.5 w-64 rounded-xl border border-border bg-popover p-2 shadow-lg ring-1 ring-black/5 dark:ring-white/10"
-                >
-                    <div
-                        class="mb-2 flex items-center justify-between border-b pb-1.5 text-xs"
+            <!-- Linha 2 (ou única linha se não houver agrupamento): Período à esquerda e Colunas à direita -->
+            <div
+                class="flex flex-wrap items-center justify-between gap-3 text-xs"
+            >
+                <!-- Esquerda: Período (entra no lugar de Parâmetros: 32/32) -->
+                <div class="flex flex-wrap items-center gap-2">
+                    <span class="font-medium text-muted-foreground"
+                        >Período:</span
                     >
-                        <span class="font-medium text-popover-foreground">
-                            Exibir / Ocultar Parâmetros
-                        </span>
-                        <div class="flex gap-1.5">
-                            <button
-                                type="button"
-                                class="text-[11px] text-emerald-600 hover:underline dark:text-emerald-400"
-                                @click="showAllParameters"
-                            >
-                                Todos
-                            </button>
-                            <span class="text-muted-foreground">|</span>
-                            <button
-                                type="button"
-                                class="text-[11px] text-muted-foreground hover:underline"
-                                @click="hideAllParameters"
-                            >
-                                Nenhum
-                            </button>
-                        </div>
-                    </div>
+                    <input
+                        type="date"
+                        v-model="localStartDate"
+                        class="h-8 rounded-lg border border-input bg-background px-2 text-xs text-foreground shadow-2xs focus:border-primary focus:outline-hidden"
+                        @change="emit('update:startDate', localStartDate)"
+                    />
+                    <span class="text-muted-foreground">até</span>
+                    <input
+                        type="date"
+                        v-model="localEndDate"
+                        class="h-8 rounded-lg border border-input bg-background px-2 text-xs text-foreground shadow-2xs focus:border-primary focus:outline-hidden"
+                        @change="emit('update:endDate', localEndDate)"
+                    />
+                    <button
+                        type="button"
+                        class="inline-flex h-8 items-center gap-1.5 rounded-lg bg-primary px-3 text-xs font-semibold text-primary-foreground transition hover:bg-primary/90 disabled:opacity-50"
+                        :disabled="isLoadingData"
+                        @click="handleUpdateDates"
+                    >
+                        <Loader2
+                            v-if="isLoadingData"
+                            class="size-3 animate-spin"
+                        />
+                        <span>Atualizar</span>
+                    </button>
+                </div>
 
-                    <div class="max-h-56 space-y-1 overflow-y-auto pr-1">
+                <!-- Direita: Menu Colunas -->
+                <div v-if="parameters.length > 0" class="relative">
+                    <button
+                        type="button"
+                        class="inline-flex items-center gap-1.5 rounded-lg border border-border bg-card px-2.5 py-1 text-xs font-medium text-foreground shadow-2xs transition hover:bg-muted focus:outline-hidden"
+                        @click="isMenuOpen = !isMenuOpen"
+                    >
+                        <SlidersHorizontal
+                            class="size-3.5 text-muted-foreground"
+                        />
+                        <span>Colunas</span>
+                        <ChevronDown class="size-3 text-muted-foreground" />
+                    </button>
+
+                    <div
+                        v-if="isMenuOpen"
+                        class="absolute right-0 z-50 mt-1.5 w-64 rounded-lg border border-border bg-popover p-2 shadow-lg ring-1 ring-black/5 dark:ring-white/10"
+                    >
                         <div
-                            v-for="parameter in systemFilteredParameters"
-                            :key="parameter.id"
-                            class="flex items-center justify-between gap-2 rounded-md px-2 py-1.5 text-xs text-popover-foreground hover:bg-muted"
+                            class="mb-2 flex items-center justify-between border-b pb-1.5 text-xs"
                         >
-                            <div
-                                class="flex min-w-0 flex-1 items-center gap-1.5"
-                            >
-                                <span class="truncate font-medium">
-                                    {{ parameter.name }}
-                                </span>
-                                <span
-                                    v-if="parameter.system_name"
-                                    class="shrink-0 text-[10px] font-normal text-muted-foreground"
+                            <span class="font-medium text-popover-foreground">
+                                Colunas ({{ visibleParameters.length }}/{{
+                                    systemFilteredParameters.length
+                                }})
+                            </span>
+                            <div class="flex gap-1.5">
+                                <button
+                                    type="button"
+                                    class="text-[11px] text-primary hover:underline"
+                                    @click="showAllParameters"
                                 >
-                                    ({{ parameter.system_name }})
-                                </span>
+                                    Todas
+                                </button>
+                                <span class="text-muted-foreground">|</span>
+                                <button
+                                    type="button"
+                                    class="text-[11px] text-muted-foreground hover:underline"
+                                    @click="hideAllParameters"
+                                >
+                                    Nenhuma
+                                </button>
                             </div>
+                        </div>
 
-                            <button
-                                type="button"
-                                role="switch"
-                                :aria-checked="
-                                    !hiddenParameterIds.includes(parameter.id)
-                                "
-                                class="relative inline-flex h-4 w-7 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-hidden"
-                                :class="
-                                    !hiddenParameterIds.includes(parameter.id)
-                                        ? 'bg-emerald-600'
-                                        : 'bg-muted-foreground/30'
-                                "
-                                @click="toggleParameter(parameter.id)"
+                        <div class="max-h-56 space-y-1 overflow-y-auto pr-1">
+                            <div
+                                v-for="parameter in systemFilteredParameters"
+                                :key="parameter.id"
+                                class="flex items-center justify-between gap-2 rounded-md px-2 py-1.5 text-xs text-popover-foreground hover:bg-muted"
                             >
-                                <span
-                                    aria-hidden="true"
-                                    class="pointer-events-none inline-block size-3 transform rounded-full bg-white shadow-md transition duration-200 ease-in-out"
+                                <div
+                                    class="flex min-w-0 flex-1 items-center gap-1.5"
+                                >
+                                    <span class="truncate font-medium">
+                                        {{ parameter.name }}
+                                    </span>
+                                    <span
+                                        v-if="parameter.system_name"
+                                        class="shrink-0 text-[10px] font-normal text-muted-foreground"
+                                    >
+                                        ({{ parameter.system_name }})
+                                    </span>
+                                </div>
+
+                                <button
+                                    type="button"
+                                    role="switch"
+                                    :aria-checked="
+                                        !hiddenParameterIds.includes(
+                                            parameter.id,
+                                        )
+                                    "
+                                    class="relative inline-flex h-4 w-7 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-hidden"
                                     :class="
                                         !hiddenParameterIds.includes(
                                             parameter.id,
                                         )
-                                            ? 'translate-x-3'
-                                            : 'translate-x-0'
+                                            ? 'bg-primary'
+                                            : 'bg-muted-foreground/30'
                                     "
-                                />
-                            </button>
+                                    @click="toggleParameter(parameter.id)"
+                                >
+                                    <span
+                                        aria-hidden="true"
+                                        class="pointer-events-none inline-block size-3 transform rounded-full bg-white shadow-md transition duration-200 ease-in-out"
+                                        :class="
+                                            !hiddenParameterIds.includes(
+                                                parameter.id,
+                                            )
+                                                ? 'translate-x-3'
+                                                : 'translate-x-0'
+                                        "
+                                    />
+                                </button>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -256,7 +357,7 @@ function copyTag(parameter: Parameter): void {
 
         <div
             v-if="visibleParameters.length === 0"
-            class="rounded-2xl border border-dashed border-border/80 bg-muted/15 px-4 py-12 text-center text-xs text-muted-foreground"
+            class="rounded-xl border border-dashed border-border/80 bg-muted/15 px-4 py-12 text-center text-xs text-muted-foreground"
         >
             {{
                 systemFilteredParameters.length === 0

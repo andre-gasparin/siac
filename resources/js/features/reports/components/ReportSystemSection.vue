@@ -96,15 +96,23 @@ watch(
     },
     { deep: true },
 );
+
+function handleUngroupChild(child: { id: number; name: string }): void {
+    const fullChild = props.groupedChildren.find((c) => c.id === child.id);
+
+    if (fullChild) {
+        emit('ungroupChild', fullChild);
+    }
+}
 </script>
 
 <template>
     <section
         :data-report-system-id="system.id"
-        class="overflow-hidden rounded-3xl border bg-card shadow-sm transition duration-300"
+        class="overflow-hidden rounded-xl border bg-card shadow-sm transition duration-300"
         :class="[
             system.item?.show_data_results
-                ? 'border-emerald-500/60 bg-emerald-500/[0.015] shadow-sm ring-1 ring-emerald-500/25'
+                ? 'border-emerald-500/60 shadow-sm ring-1 ring-emerald-500/25'
                 : 'border-border/70 opacity-80 hover:opacity-100',
             isHighlighted &&
                 'shadow-xl ring-4 shadow-violet-950/15 ring-violet-400/50',
@@ -114,7 +122,7 @@ watch(
             class="flex flex-wrap items-center justify-between gap-3 border-b px-4 py-2.5"
             :class="
                 system.item?.show_data_results
-                    ? 'border-emerald-500/20 bg-emerald-500/10 text-foreground'
+                    ? 'border-border/60 bg-muted/20 text-foreground'
                     : 'border-border/50 bg-muted/20 text-muted-foreground'
             "
         >
@@ -123,39 +131,11 @@ watch(
                     {{ combinedTitle }}
                 </h2>
                 <span
-                    v-if="system.item?.show_data_results"
-                    class="rounded-full bg-emerald-500/20 px-2 py-0.5 text-[11px] font-semibold text-emerald-700 ring-1 ring-emerald-500/30 dark:text-emerald-300"
-                >
-                    Habilitado
-                </span>
-                <span
-                    v-else
+                    v-if="!system.item?.show_data_results"
                     class="rounded-full bg-muted px-2 py-0.5 text-[11px] font-medium text-muted-foreground"
                 >
                     Desabilitado
                 </span>
-
-                <!-- Ungrouping chips for child systems -->
-                <div
-                    v-if="groupedChildren.length > 0"
-                    class="flex flex-wrap items-center gap-1.5"
-                >
-                    <span
-                        v-for="child in groupedChildren"
-                        :key="child.id"
-                        class="inline-flex items-center gap-1 rounded-full bg-emerald-500/15 px-2.5 py-0.5 text-[11px] font-medium text-emerald-800 ring-1 ring-emerald-500/30 dark:text-emerald-300"
-                    >
-                        {{ child.name }}
-                        <button
-                            type="button"
-                            class="ml-0.5 inline-flex size-3.5 items-center justify-center rounded-full transition hover:bg-emerald-500/30 hover:text-red-600"
-                            title="Desagrupar sistema"
-                            @click="emit('ungroupChild', child)"
-                        >
-                            <X class="size-2.5" />
-                        </button>
-                    </span>
-                </div>
             </div>
             <div class="flex items-center gap-2.5">
                 <button
@@ -169,12 +149,15 @@ watch(
                     Agrupar
                 </button>
 
-                <span class="text-xs font-medium text-foreground">
-                    Habilitado
-                </span>
                 <button
                     type="button"
                     role="switch"
+                    aria-label="Habilitar ou desabilitar sistema"
+                    :title="
+                        system.item?.show_data_results
+                            ? 'Sistema habilitado'
+                            : 'Sistema desabilitado'
+                    "
                     :aria-checked="system.item?.show_data_results ?? false"
                     :disabled="
                         Boolean(
@@ -214,50 +197,34 @@ watch(
             class="p-4"
         >
             <div
-                class="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-border/70 bg-muted/20 p-3"
+                v-if="isLoadingData && !systemData"
+                class="grid h-32 place-items-center"
             >
-                <div class="flex flex-wrap items-center gap-2 text-xs">
-                    <span class="font-medium text-muted-foreground"
-                        >Período:</span
-                    >
-                    <input
-                        type="date"
-                        v-model="localStartDate"
-                        class="h-8 rounded-lg border border-input bg-background px-2 text-xs text-foreground shadow-sm"
-                    />
-                    <span class="text-muted-foreground">até</span>
-                    <input
-                        type="date"
-                        v-model="localEndDate"
-                        class="h-8 rounded-lg border border-input bg-background px-2 text-xs text-foreground shadow-sm"
-                    />
-                    <button
-                        type="button"
-                        class="inline-flex h-8 items-center gap-1.5 rounded-lg bg-primary px-3 text-xs font-semibold text-primary-foreground transition hover:bg-primary/90 disabled:opacity-50"
-                        :disabled="isLoadingData"
-                        @click="
-                            emit('loadData', system, true, {
-                                start_date: localStartDate,
-                                end_date: localEndDate,
-                            })
-                        "
-                    >
-                        <Loader2
-                            v-if="isLoadingData"
-                            class="size-3 animate-spin"
-                        />
-                        <span>Atualizar</span>
-                    </button>
-                </div>
-            </div>
-
-            <div v-if="isLoadingData" class="grid h-32 place-items-center">
-                <Loader2 class="size-6 animate-spin text-emerald-600" />
+                <Loader2 class="size-6 animate-spin text-primary" />
             </div>
             <ReportDataTable
                 v-else-if="systemData"
                 :parameters="systemData.parameters"
                 :rows="systemData.rows"
+                :start-date="localStartDate"
+                :end-date="localEndDate"
+                :is-loading-data="isLoadingData"
+                :grouped-children="groupedChildren"
+                @update:start-date="(val) => (localStartDate = val)"
+                @update:end-date="(val) => (localEndDate = val)"
+                @load-data="
+                    (dates) =>
+                        emit(
+                            'loadData',
+                            system,
+                            true,
+                            dates ?? {
+                                start_date: localStartDate,
+                                end_date: localEndDate,
+                            },
+                        )
+                "
+                @ungroup-child="handleUngroupChild"
                 @chart="
                     (parameterId, type) =>
                         emit('chart', system, parameterId, type)
@@ -289,12 +256,12 @@ watch(
             </div>
             <div
                 v-if="system.item.comment"
-                class="prose prose-sm dark:prose-invert mt-4 max-w-none rounded-2xl border bg-card p-4 text-foreground"
+                class="prose prose-sm dark:prose-invert mt-4 max-w-none rounded-xl border bg-card p-4 text-foreground"
                 v-html="system.item.comment"
             />
             <p
                 v-else
-                class="mt-4 rounded-2xl border border-dashed bg-card/60 p-4 text-xs text-muted-foreground"
+                class="mt-4 rounded-xl border border-dashed bg-card/60 p-4 text-xs text-muted-foreground"
             >
                 Nenhuma consideração registrada para este sistema.
             </p>

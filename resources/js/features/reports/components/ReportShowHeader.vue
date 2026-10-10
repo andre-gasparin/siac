@@ -110,14 +110,14 @@ function formatDateBr(value: string | null): string {
 
 <template>
     <header
-        class="overflow-visible rounded-3xl border border-border bg-card p-4 text-card-foreground shadow-sm lg:p-6"
+        class="overflow-visible rounded-xl border border-border bg-card p-4 text-card-foreground shadow-sm lg:p-6"
     >
         <!-- Topo do Card: Identificação à esquerda e Histórico no canto superior direito -->
         <div class="flex flex-wrap items-start justify-between gap-4">
             <div>
                 <div class="flex flex-wrap items-center gap-2">
                     <h1
-                        class="text-2xl font-semibold tracking-tight text-foreground lg:text-3xl"
+                        class="text-lg font-semibold tracking-tight text-foreground lg:text-xl"
                     >
                         {{ report.title }}
                     </h1>
@@ -149,7 +149,7 @@ function formatDateBr(value: string | null): string {
             <!-- Botão de Histórico no canto superior direito -->
             <button
                 type="button"
-                class="inline-flex h-9 items-center gap-2 rounded-xl border border-border bg-muted/50 px-3 text-xs font-medium text-foreground transition hover:bg-muted"
+                class="inline-flex h-9 items-center gap-2 rounded-lg border border-border bg-muted/50 px-3 text-xs font-medium text-foreground transition hover:bg-muted"
                 title="Histórico de atividades"
                 aria-label="Histórico de atividades"
                 @click="emit('openHistory')"
@@ -166,7 +166,7 @@ function formatDateBr(value: string | null): string {
             <!-- Seletor de Data com Tooltip de Confirmação -->
             <div class="relative">
                 <div
-                    class="flex items-center gap-1.5 rounded-xl border border-border bg-muted/40 px-2.5 py-1.5 text-xs shadow-2xs"
+                    class="flex items-center gap-1.5 rounded-lg border border-border bg-muted/40 px-2.5 py-1.5 text-xs shadow-2xs"
                 >
                     <Calendar class="size-3.5 text-muted-foreground" />
                     <span class="font-medium text-muted-foreground">Data:</span>
@@ -181,7 +181,7 @@ function formatDateBr(value: string | null): string {
                 <!-- Date Switch Tooltip / Confirmation -->
                 <div
                     v-if="datePrompt?.open"
-                    class="absolute top-full left-0 z-50 mt-2 w-72 rounded-2xl border border-border bg-popover p-3.5 text-popover-foreground shadow-xl ring-1 ring-border/50 sm:w-80"
+                    class="absolute top-full left-0 z-50 mt-2 w-72 rounded-xl border border-border bg-popover p-3.5 text-popover-foreground shadow-xl ring-1 ring-border/50 sm:w-80"
                 >
                     <p
                         class="text-xs leading-relaxed font-medium text-foreground"
@@ -231,7 +231,7 @@ function formatDateBr(value: string | null): string {
             <div ref="systemsPopoverRef" class="relative">
                 <button
                     type="button"
-                    class="group relative inline-flex h-9 items-center gap-2 overflow-hidden rounded-xl border bg-card px-3 text-xs font-medium text-foreground shadow-2xs transition hover:bg-muted/60"
+                    class="group relative inline-flex h-9 items-center gap-2 overflow-hidden rounded-lg border bg-card px-3 text-xs font-medium text-foreground shadow-2xs transition hover:bg-muted/60"
                     :class="systemsPopoverOpen ? 'ring-2 ring-primary/40' : ''"
                     title="Ver sistemas monitorados"
                     @click="systemsPopoverOpen = !systemsPopoverOpen"
@@ -263,7 +263,7 @@ function formatDateBr(value: string | null): string {
                 <!-- Popover Dropdown de Sistemas -->
                 <div
                     v-if="systemsPopoverOpen"
-                    class="absolute top-full left-0 z-50 mt-2 w-72 rounded-2xl border border-border bg-popover p-3 text-popover-foreground shadow-xl ring-1 ring-border/50 sm:w-80"
+                    class="absolute top-full left-0 z-50 mt-2 w-72 rounded-xl border border-border bg-popover p-3 text-popover-foreground shadow-xl ring-1 ring-border/50 sm:w-80"
                 >
                     <div
                         class="flex items-center justify-between border-b border-border/50 pb-2"
@@ -329,7 +329,7 @@ function formatDateBr(value: string | null): string {
             <a
                 :href="`/${currentTeam.slug}/relatorios/${report.id}/preview`"
                 target="_blank"
-                class="inline-flex h-9 items-center gap-2 rounded-xl border border-primary/25 bg-primary/5 px-3 text-xs font-medium text-foreground transition hover:bg-primary/10"
+                class="inline-flex h-9 items-center gap-2 rounded-lg border border-primary/25 bg-primary/5 px-3 text-xs font-medium text-foreground transition hover:bg-primary/10"
                 title="Visualizar relatório como o cliente visualiza em nova aba"
             >
                 <ExternalLink class="size-4 text-primary" /> Visualizar como
@@ -339,7 +339,7 @@ function formatDateBr(value: string | null): string {
             <!-- Destinatários -->
             <button
                 type="button"
-                class="inline-flex h-9 items-center gap-2 rounded-xl border bg-muted/50 px-3 text-xs font-medium text-foreground transition hover:bg-muted"
+                class="inline-flex h-9 items-center gap-2 rounded-lg border bg-muted/50 px-3 text-xs font-medium text-foreground transition hover:bg-muted"
                 @click="emit('openRecipients')"
             >
                 <Mail class="size-4 text-muted-foreground" />
@@ -362,7 +362,7 @@ function formatDateBr(value: string | null): string {
             <button
                 v-if="report.status === 'completed'"
                 type="button"
-                class="inline-flex h-9 items-center gap-2 rounded-xl border bg-primary px-4 text-xs font-medium text-primary-foreground shadow-sm transition hover:bg-primary/90"
+                class="inline-flex h-9 items-center gap-2 rounded-lg border bg-primary px-4 text-xs font-medium text-primary-foreground shadow-sm transition hover:bg-primary/90"
                 @click="emit('sendAgain')"
             >
                 <RefreshCw class="size-4" /> Reenviar
@@ -371,7 +371,7 @@ function formatDateBr(value: string | null): string {
                 v-else
                 type="button"
                 data-test="finalize-report"
-                class="inline-flex h-9 items-center gap-2 rounded-xl bg-emerald-600 px-4 text-xs font-medium text-white shadow-sm transition hover:bg-emerald-500"
+                class="inline-flex h-9 items-center gap-2 rounded-lg bg-emerald-600 px-4 text-xs font-medium text-white shadow-sm transition hover:bg-emerald-500"
                 @click="emit('finish')"
             >
                 <ShieldCheck class="size-4" /> Finalizar relatório

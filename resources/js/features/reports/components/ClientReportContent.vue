@@ -385,9 +385,7 @@ function formatDateOnly(dateStr: string) {
                     <strong
                         class="mt-1 block text-xl font-bold text-foreground"
                     >
-                        {{
-                            isPreview ? activeCount : recipients.length
-                        }}
+                        {{ isPreview ? activeCount : recipients.length }}
                         destinatário(s)
                     </strong>
                 </div>
