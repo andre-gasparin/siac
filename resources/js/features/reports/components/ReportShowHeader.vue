@@ -1,5 +1,4 @@
 <script setup lang="ts">
-import { Link } from '@inertiajs/vue3';
 import {
     Calendar,
     Check,
@@ -7,13 +6,11 @@ import {
     History,
     Layers,
     Mail,
-    PanelTop,
     RefreshCw,
     ShieldCheck,
     X,
 } from '@lucide/vue';
 import { computed, onMounted, onUnmounted, ref } from 'vue';
-import { index as reportsIndex } from '@/routes/reports';
 import type { Team } from '@/shared/types';
 
 interface SystemSectionItem {
@@ -115,7 +112,8 @@ function formatDateBr(value: string | null): string {
     <header
         class="overflow-visible rounded-3xl border border-border bg-card p-4 text-card-foreground shadow-sm lg:p-6"
     >
-        <div class="flex flex-wrap items-center justify-between gap-4">
+        <!-- Topo do Card: Identificação à esquerda e Histórico no canto superior direito -->
+        <div class="flex flex-wrap items-start justify-between gap-4">
             <div>
                 <div class="flex flex-wrap items-center gap-2">
                     <h1
@@ -147,243 +145,237 @@ function formatDateBr(value: string | null): string {
                     }}
                 </p>
             </div>
-            <div class="flex flex-wrap items-center gap-2">
-                <!-- Seletor de Data com Tooltip de Confirmação -->
-                <div class="relative">
-                    <div
-                        class="flex items-center gap-1.5 rounded-xl border border-border bg-muted/40 px-2.5 py-1.5 text-xs shadow-2xs"
-                    >
-                        <Calendar class="size-3.5 text-muted-foreground" />
-                        <span class="font-medium text-muted-foreground"
-                            >Data:</span
-                        >
-                        <input
-                            :value="pendingDate"
-                            type="date"
-                            class="h-6 rounded-md border border-input bg-background px-1.5 text-xs font-semibold text-foreground"
-                            @change="emit('dateChange', $event)"
-                        />
-                    </div>
 
-                    <!-- Date Switch Tooltip / Confirmation -->
-                    <div
-                        v-if="datePrompt?.open"
-                        class="absolute top-full left-0 z-50 mt-2 w-72 rounded-2xl border border-border bg-popover p-3.5 text-popover-foreground shadow-xl ring-1 ring-border/50 sm:w-80"
-                    >
-                        <p
-                            class="text-xs leading-relaxed font-medium text-foreground"
-                        >
-                            <template v-if="datePrompt.exists">
-                                Deseja visualizar o relatório de
-                                <strong class="text-primary">{{
-                                    formatDateBr(datePrompt.date)
-                                }}</strong
-                                >?
-                            </template>
-                            <template v-else>
-                                Relatório não encontrado para
-                                <strong
-                                    class="text-amber-600 dark:text-amber-400"
-                                    >{{ formatDateBr(datePrompt.date) }}</strong
-                                >. Deseja criar um?
-                            </template>
-                        </p>
+            <!-- Botão de Histórico no canto superior direito -->
+            <button
+                type="button"
+                class="inline-flex h-9 items-center gap-2 rounded-xl border border-border bg-muted/50 px-3 text-xs font-medium text-foreground transition hover:bg-muted"
+                title="Histórico de atividades"
+                aria-label="Histórico de atividades"
+                @click="emit('openHistory')"
+            >
+                <History class="size-4 text-muted-foreground" />
+                <span>Histórico</span>
+            </button>
+        </div>
 
-                        <div class="mt-3 flex items-center justify-end gap-1.5">
-                            <button
-                                type="button"
-                                class="inline-flex size-7 items-center justify-center rounded-lg border border-border bg-muted/60 text-muted-foreground transition hover:bg-muted hover:text-foreground"
-                                title="Cancelar"
-                                @click="emit('cancelDatePrompt')"
-                            >
-                                <X class="size-3.5" />
-                            </button>
-                            <button
-                                type="button"
-                                class="inline-flex size-7 items-center justify-center rounded-lg bg-emerald-600 text-white shadow-xs transition hover:bg-emerald-700"
-                                :title="
-                                    datePrompt.exists
-                                        ? 'Visualizar relatório'
-                                        : 'Criar relatório'
-                                "
-                                @click="emit('confirmDatePrompt')"
-                            >
-                                <Check class="size-3.5" />
-                            </button>
-                        </div>
-                    </div>
+        <!-- Barra inferior: ferramentas e ações do relatório -->
+        <div
+            class="mt-4 flex flex-wrap items-center gap-2 border-t border-border/50 pt-4"
+        >
+            <!-- Seletor de Data com Tooltip de Confirmação -->
+            <div class="relative">
+                <div
+                    class="flex items-center gap-1.5 rounded-xl border border-border bg-muted/40 px-2.5 py-1.5 text-xs shadow-2xs"
+                >
+                    <Calendar class="size-3.5 text-muted-foreground" />
+                    <span class="font-medium text-muted-foreground">Data:</span>
+                    <input
+                        :value="pendingDate"
+                        type="date"
+                        class="h-6 rounded-md border border-input bg-background px-1.5 text-xs font-semibold text-foreground"
+                        @change="emit('dateChange', $event)"
+                    />
                 </div>
 
-                <!-- Botão de Sistemas Incluídos com Barra de Progresso e Dropdown -->
-                <div ref="systemsPopoverRef" class="relative">
-                    <button
-                        type="button"
-                        class="group relative inline-flex h-9 items-center gap-2 overflow-hidden rounded-xl border bg-card px-3 text-xs font-medium text-foreground shadow-2xs transition hover:bg-muted/60"
-                        :class="
-                            systemsPopoverOpen ? 'ring-2 ring-primary/40' : ''
-                        "
-                        title="Ver sistemas monitorados"
-                        @click="systemsPopoverOpen = !systemsPopoverOpen"
+                <!-- Date Switch Tooltip / Confirmation -->
+                <div
+                    v-if="datePrompt?.open"
+                    class="absolute top-full left-0 z-50 mt-2 w-72 rounded-2xl border border-border bg-popover p-3.5 text-popover-foreground shadow-xl ring-1 ring-border/50 sm:w-80"
+                >
+                    <p
+                        class="text-xs leading-relaxed font-medium text-foreground"
                     >
-                        <Layers
-                            class="size-3.5 text-muted-foreground transition group-hover:text-foreground"
-                        />
-                        <span class="font-medium">Sistemas:</span>
-                        <span
-                            class="font-semibold text-emerald-600 dark:text-emerald-400"
-                        >
-                            {{ enabledSystems }}/{{ totalSystems }}
-                        </span>
-                        <span class="text-[11px] text-muted-foreground"
-                            >({{ percentage }}%)</span
-                        >
+                        <template v-if="datePrompt.exists">
+                            Deseja visualizar o relatório de
+                            <strong class="text-primary">{{
+                                formatDateBr(datePrompt.date)
+                            }}</strong
+                            >?
+                        </template>
+                        <template v-else>
+                            Relatório não encontrado para
+                            <strong
+                                class="text-amber-600 dark:text-amber-400"
+                                >{{ formatDateBr(datePrompt.date) }}</strong
+                            >. Deseja criar um?
+                        </template>
+                    </p>
 
-                        <!-- Mini barra de progresso na base do botão -->
-                        <span
-                            class="absolute bottom-0 left-0 h-1 w-full bg-muted/80"
+                    <div class="mt-3 flex items-center justify-end gap-1.5">
+                        <button
+                            type="button"
+                            class="inline-flex size-7 items-center justify-center rounded-lg border border-border bg-muted/60 text-muted-foreground transition hover:bg-muted hover:text-foreground"
+                            title="Cancelar"
+                            @click="emit('cancelDatePrompt')"
                         >
-                            <span
-                                class="block h-full bg-emerald-500 transition-all duration-300"
-                                :style="{ width: `${percentage}%` }"
-                            />
-                        </span>
-                    </button>
-
-                    <!-- Popover Dropdown de Sistemas -->
-                    <div
-                        v-if="systemsPopoverOpen"
-                        class="absolute top-full left-0 z-50 mt-2 w-72 rounded-2xl border border-border bg-popover p-3 text-popover-foreground shadow-xl ring-1 ring-border/50 sm:w-80"
-                    >
-                        <div
-                            class="flex items-center justify-between border-b border-border/50 pb-2"
+                            <X class="size-3.5" />
+                        </button>
+                        <button
+                            type="button"
+                            class="inline-flex size-7 items-center justify-center rounded-lg bg-emerald-600 text-white shadow-xs transition hover:bg-emerald-700"
+                            :title="
+                                datePrompt.exists
+                                    ? 'Visualizar relatório'
+                                    : 'Criar relatório'
+                            "
+                            @click="emit('confirmDatePrompt')"
                         >
-                            <div>
-                                <h3
-                                    class="text-xs font-semibold text-foreground"
-                                >
-                                    Sistemas Monitorados
-                                </h3>
-                                <p class="text-[11px] text-muted-foreground">
-                                    {{ enabledSystems }} de
-                                    {{ totalSystems }} habilitados ({{
-                                        percentage
-                                    }}%)
-                                </p>
-                            </div>
-                            <button
-                                type="button"
-                                class="rounded p-1 text-muted-foreground transition hover:bg-muted hover:text-foreground"
-                                title="Fechar"
-                                @click="systemsPopoverOpen = false"
-                            >
-                                <X class="size-3.5" />
-                            </button>
-                        </div>
-
-                        <div
-                            class="mt-2 max-h-60 space-y-1 overflow-y-auto pr-1"
-                        >
-                            <button
-                                v-for="system in sections"
-                                :key="system.id"
-                                type="button"
-                                class="group flex w-full items-center justify-between gap-2 rounded-lg px-2.5 py-1.5 text-left text-xs transition hover:bg-muted/70"
-                                @click="scrollToSystem(system.id)"
-                            >
-                                <span
-                                    class="truncate font-medium text-foreground group-hover:text-primary"
-                                >
-                                    {{ system.name }}
-                                </span>
-                                <span
-                                    v-if="system.item?.show_data_results"
-                                    class="inline-flex shrink-0 items-center gap-1 rounded-full bg-emerald-500/15 px-2 py-0.5 text-[10px] font-semibold text-emerald-600 dark:text-emerald-400"
-                                >
-                                    <span
-                                        class="size-1.5 rounded-full bg-emerald-500"
-                                    />
-                                    Habilitado
-                                </span>
-                                <span
-                                    v-else
-                                    class="inline-flex shrink-0 items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium text-muted-foreground"
-                                >
-                                    <span
-                                        class="size-1.5 rounded-full bg-muted-foreground/50"
-                                    />
-                                    Desabilitado
-                                </span>
-                            </button>
-                        </div>
+                            <Check class="size-3.5" />
+                        </button>
                     </div>
                 </div>
+            </div>
 
-                <Link
-                    :href="reportsIndex.url({ current_team: currentTeam.slug })"
-                    class="inline-flex h-9 items-center gap-2 rounded-xl border bg-muted/50 px-3 text-xs font-medium text-foreground transition hover:bg-muted"
-                >
-                    <PanelTop class="size-4" /> Todos os relatórios
-                </Link>
-                <a
-                    :href="`/${currentTeam.slug}/relatorios/${report.id}/preview`"
-                    target="_blank"
-                    class="inline-flex h-9 items-center gap-2 rounded-xl border border-primary/25 bg-primary/5 px-3 text-xs font-medium text-foreground transition hover:bg-primary/10"
-                    title="Visualizar relatório como o cliente visualiza em nova aba"
-                >
-                    <ExternalLink class="size-4 text-primary" /> Visualizar como
-                    cliente
-                </a>
+            <!-- Botão de Sistemas Incluídos com Barra de Progresso e Dropdown -->
+            <div ref="systemsPopoverRef" class="relative">
                 <button
                     type="button"
-                    class="inline-flex size-9 items-center justify-center rounded-xl border bg-muted/50 text-foreground transition hover:bg-muted"
-                    title="Histórico de atividades"
-                    aria-label="Histórico de atividades"
-                    @click="emit('openHistory')"
+                    class="group relative inline-flex h-9 items-center gap-2 overflow-hidden rounded-xl border bg-card px-3 text-xs font-medium text-foreground shadow-2xs transition hover:bg-muted/60"
+                    :class="systemsPopoverOpen ? 'ring-2 ring-primary/40' : ''"
+                    title="Ver sistemas monitorados"
+                    @click="systemsPopoverOpen = !systemsPopoverOpen"
                 >
-                    <History class="size-4" />
-                </button>
-                <button
-                    type="button"
-                    class="inline-flex h-9 items-center gap-2 rounded-xl border bg-muted/50 px-3 text-xs font-medium text-foreground transition hover:bg-muted"
-                    @click="emit('openRecipients')"
-                >
-                    <Mail class="size-4 text-muted-foreground" />
-                    <span>Destinatários</span>
+                    <Layers
+                        class="size-3.5 text-muted-foreground transition group-hover:text-foreground"
+                    />
+                    <span class="font-medium">Sistemas:</span>
                     <span
-                        class="inline-flex items-center rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-semibold text-primary"
+                        class="font-semibold text-emerald-600 dark:text-emerald-400"
                     >
-                        {{
-                            activeRecipientsCount ??
-                            intendedRecipientsCount ??
-                            0
-                        }}
-                        ativo{{
-                            (activeRecipientsCount ??
-                                intendedRecipientsCount ??
-                                0) === 1
-                                ? ''
-                                : 's'
-                        }}
+                        {{ enabledSystems }}/{{ totalSystems }}
+                    </span>
+                    <span class="text-[11px] text-muted-foreground"
+                        >({{ percentage }}%)</span
+                    >
+
+                    <!-- Mini barra de progresso na base do botão -->
+                    <span
+                        class="absolute bottom-0 left-0 h-1 w-full bg-muted/80"
+                    >
+                        <span
+                            class="block h-full bg-emerald-500 transition-all duration-300"
+                            :style="{ width: `${percentage}%` }"
+                        />
                     </span>
                 </button>
-                <button
-                    v-if="report.status === 'completed'"
-                    type="button"
-                    class="inline-flex h-9 items-center gap-2 rounded-xl border bg-primary px-4 text-xs font-medium text-primary-foreground shadow-sm transition hover:bg-primary/90"
-                    @click="emit('sendAgain')"
+
+                <!-- Popover Dropdown de Sistemas -->
+                <div
+                    v-if="systemsPopoverOpen"
+                    class="absolute top-full left-0 z-50 mt-2 w-72 rounded-2xl border border-border bg-popover p-3 text-popover-foreground shadow-xl ring-1 ring-border/50 sm:w-80"
                 >
-                    <RefreshCw class="size-4" /> Reenviar
-                </button>
-                <button
-                    v-else
-                    type="button"
-                    data-test="finalize-report"
-                    class="inline-flex h-9 items-center gap-2 rounded-xl bg-emerald-600 px-4 text-xs font-medium text-white shadow-sm transition hover:bg-emerald-500"
-                    @click="emit('finish')"
-                >
-                    <ShieldCheck class="size-4" /> Finalizar relatório
-                </button>
+                    <div
+                        class="flex items-center justify-between border-b border-border/50 pb-2"
+                    >
+                        <div>
+                            <h3 class="text-xs font-semibold text-foreground">
+                                Sistemas Monitorados
+                            </h3>
+                            <p class="text-[11px] text-muted-foreground">
+                                {{ enabledSystems }} de
+                                {{ totalSystems }} habilitados ({{
+                                    percentage
+                                }}%)
+                            </p>
+                        </div>
+                        <button
+                            type="button"
+                            class="rounded p-1 text-muted-foreground transition hover:bg-muted hover:text-foreground"
+                            title="Fechar"
+                            @click="systemsPopoverOpen = false"
+                        >
+                            <X class="size-3.5" />
+                        </button>
+                    </div>
+
+                    <div class="mt-2 max-h-60 space-y-1 overflow-y-auto pr-1">
+                        <button
+                            v-for="system in sections"
+                            :key="system.id"
+                            type="button"
+                            class="group flex w-full items-center justify-between gap-2 rounded-lg px-2.5 py-1.5 text-left text-xs transition hover:bg-muted/70"
+                            @click="scrollToSystem(system.id)"
+                        >
+                            <span
+                                class="truncate font-medium text-foreground group-hover:text-primary"
+                            >
+                                {{ system.name }}
+                            </span>
+                            <span
+                                v-if="system.item?.show_data_results"
+                                class="inline-flex shrink-0 items-center gap-1 rounded-full bg-emerald-500/15 px-2 py-0.5 text-[10px] font-semibold text-emerald-600 dark:text-emerald-400"
+                            >
+                                <span
+                                    class="size-1.5 rounded-full bg-emerald-500"
+                                />
+                                Habilitado
+                            </span>
+                            <span
+                                v-else
+                                class="inline-flex shrink-0 items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium text-muted-foreground"
+                            >
+                                <span
+                                    class="size-1.5 rounded-full bg-muted-foreground/50"
+                                />
+                                Desabilitado
+                            </span>
+                        </button>
+                    </div>
+                </div>
             </div>
+
+            <!-- Visualizar como cliente -->
+            <a
+                :href="`/${currentTeam.slug}/relatorios/${report.id}/preview`"
+                target="_blank"
+                class="inline-flex h-9 items-center gap-2 rounded-xl border border-primary/25 bg-primary/5 px-3 text-xs font-medium text-foreground transition hover:bg-primary/10"
+                title="Visualizar relatório como o cliente visualiza em nova aba"
+            >
+                <ExternalLink class="size-4 text-primary" /> Visualizar como
+                cliente
+            </a>
+
+            <!-- Destinatários -->
+            <button
+                type="button"
+                class="inline-flex h-9 items-center gap-2 rounded-xl border bg-muted/50 px-3 text-xs font-medium text-foreground transition hover:bg-muted"
+                @click="emit('openRecipients')"
+            >
+                <Mail class="size-4 text-muted-foreground" />
+                <span>Destinatários</span>
+                <span
+                    class="inline-flex items-center rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-semibold text-primary"
+                >
+                    {{ activeRecipientsCount ?? intendedRecipientsCount ?? 0 }}
+                    ativo{{
+                        (activeRecipientsCount ??
+                            intendedRecipientsCount ??
+                            0) === 1
+                            ? ''
+                            : 's'
+                    }}
+                </span>
+            </button>
+
+            <!-- Finalizar relatório / Reenviar -->
+            <button
+                v-if="report.status === 'completed'"
+                type="button"
+                class="inline-flex h-9 items-center gap-2 rounded-xl border bg-primary px-4 text-xs font-medium text-primary-foreground shadow-sm transition hover:bg-primary/90"
+                @click="emit('sendAgain')"
+            >
+                <RefreshCw class="size-4" /> Reenviar
+            </button>
+            <button
+                v-else
+                type="button"
+                data-test="finalize-report"
+                class="inline-flex h-9 items-center gap-2 rounded-xl bg-emerald-600 px-4 text-xs font-medium text-white shadow-sm transition hover:bg-emerald-500"
+                @click="emit('finish')"
+            >
+                <ShieldCheck class="size-4" /> Finalizar relatório
+            </button>
         </div>
     </header>
 </template>
