@@ -1,4 +1,5 @@
-import { computed, ref } from 'vue';
+import { computed, onBeforeUnmount, ref } from 'vue';
+import { toast } from 'vue-sonner';
 import type {
     ActiveEditingCell,
     ActiveEditingRowDate,
@@ -7,6 +8,10 @@ import type {
     ParameterItem,
     SystemColorStyle,
 } from '@/features/data-table/types';
+import { data as tableData } from '@/routes/data-table';
+import { update as updateCell } from '@/routes/data-table/cell';
+import { destroy as destroyRow } from '@/routes/data-table/rows';
+import { update as updateTimestamp } from '@/routes/data-table/rows/timestamp';
 
 export const SYSTEM_COLORS: SystemColorStyle[] = [
     {
@@ -53,6 +58,11 @@ export function useDataTable(teamSlugGetter: () => string) {
     const endDate = ref<string>('');
     const collapsedSystemIds = ref<number[]>([]);
 
+    const ewmaOutsideLimits = ref(true);
+    const ewmaAll = ref(false);
+    const fitToScreen = ref(true);
+    let loadController: AbortController | null = null;
+    onBeforeUnmount(() => loadController?.abort());
     const isLoading = ref(false);
     const parameters = ref<ParameterItem[]>([]);
     const rows = ref<DataRow[]>([]);
@@ -169,12 +179,17 @@ export function useDataTable(teamSlugGetter: () => string) {
     }
 
     async function loadData() {
+        loadController?.abort();
+        const controller = new AbortController();
+        loadController = controller;
+
         if (selectedSystemIds.value.length === 0) {
             parameters.value = [];
             rows.value = [];
             averages.value = {};
             isMultiSystem.value = false;
             cacheStatus.value = 'nenhum sistema selecionado';
+            isLoading.value = false;
 
             return;
         }
@@ -182,22 +197,20 @@ export function useDataTable(teamSlugGetter: () => string) {
         isLoading.value = true;
 
         try {
-            const queryParams = new URLSearchParams();
-            selectedSystemIds.value.forEach((id) =>
-                queryParams.append('system_ids[]', id.toString()),
+            const url = tableData.url(
+                { current_team: teamSlugGetter() },
+                {
+                    query: {
+                        system_ids: selectedSystemIds.value,
+                        start_date: startDate.value || undefined,
+                        end_date: endDate.value || undefined,
+                        ewma_outside_limits: Number(ewmaOutsideLimits.value),
+                        ewma_all: Number(ewmaAll.value),
+                    },
+                },
             );
-
-            if (startDate.value) {
-                queryParams.append('start_date', startDate.value);
-            }
-
-            if (endDate.value) {
-                queryParams.append('end_date', endDate.value);
-            }
-
-            const teamSlug = teamSlugGetter();
-            const url = `/${teamSlug}/tabela-dados/data?${queryParams.toString()}`;
             const response = await fetch(url, {
+                signal: controller.signal,
                 headers: {
                     Accept: 'application/json',
                     'X-Requested-With': 'XMLHttpRequest',
@@ -209,6 +222,11 @@ export function useDataTable(teamSlugGetter: () => string) {
             }
 
             const data = await response.json();
+
+            if (loadController !== controller) {
+                return;
+            }
+
             parameters.value = data.parameters || [];
             rows.value = data.rows || [];
             averages.value = data.averages || {};
@@ -224,10 +242,17 @@ export function useDataTable(teamSlugGetter: () => string) {
             });
             cacheStatus.value = `carregado às ${lastLoadedTime.value}`;
         } catch (error) {
+            if (controller.signal.aborted) {
+                return;
+            }
+
             console.error('Falha na requisição:', error);
+            toast.error('Não foi possível carregar os dados.');
             cacheStatus.value = 'erro no carregamento';
         } finally {
-            isLoading.value = false;
+            if (loadController === controller) {
+                isLoading.value = false;
+            }
         }
     }
 
@@ -252,19 +277,22 @@ export function useDataTable(teamSlugGetter: () => string) {
             const parameterIds = parameters.value.map((p) => p.id);
             const teamSlug = teamSlugGetter();
 
-            const response = await fetch(`/${teamSlug}/tabela-dados/rows`, {
-                method: 'DELETE',
-                headers: {
-                    'Content-Type': 'application/json',
-                    Accept: 'application/json',
-                    'X-Requested-With': 'XMLHttpRequest',
-                    'X-CSRF-TOKEN': csrfToken,
+            const response = await fetch(
+                destroyRow.url({ current_team: teamSlug }),
+                {
+                    method: 'DELETE',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        Accept: 'application/json',
+                        'X-Requested-With': 'XMLHttpRequest',
+                        'X-CSRF-TOKEN': csrfToken,
+                    },
+                    body: JSON.stringify({
+                        timestamp: row.timestamp,
+                        parameter_ids: parameterIds,
+                    }),
                 },
-                body: JSON.stringify({
-                    timestamp: row.timestamp,
-                    parameter_ids: parameterIds,
-                }),
-            });
+            );
 
             if (!response.ok) {
                 throw new Error('Falha ao excluir a linha');
@@ -273,10 +301,11 @@ export function useDataTable(teamSlugGetter: () => string) {
             rows.value = rows.value.filter(
                 (r) => r.timestamp !== row.timestamp,
             );
-            recalculateAverages();
+            await loadData();
             confirmingDeleteTimestamp.value = null;
         } catch (error) {
             console.error('Erro ao excluir linha:', error);
+            toast.error('Não foi possível excluir a linha.');
         } finally {
             isDeletingRow.value = null;
         }
@@ -354,20 +383,23 @@ export function useDataTable(teamSlugGetter: () => string) {
                 )?.content || '';
             const teamSlug = teamSlugGetter();
 
-            const response = await fetch(`/${teamSlug}/tabela-dados/cell`, {
-                method: 'PUT',
-                headers: {
-                    'Content-Type': 'application/json',
-                    Accept: 'application/json',
-                    'X-Requested-With': 'XMLHttpRequest',
-                    'X-CSRF-TOKEN': csrfToken,
+            const response = await fetch(
+                updateCell.url({ current_team: teamSlug }),
+                {
+                    method: 'PUT',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        Accept: 'application/json',
+                        'X-Requested-With': 'XMLHttpRequest',
+                        'X-CSRF-TOKEN': csrfToken,
+                    },
+                    body: JSON.stringify({
+                        parameter_id: cell.parameterId,
+                        timestamp: cell.rowTimestamp,
+                        value: numericVal,
+                    }),
                 },
-                body: JSON.stringify({
-                    parameter_id: cell.parameterId,
-                    timestamp: cell.rowTimestamp,
-                    value: numericVal,
-                }),
-            });
+            );
 
             if (!response.ok) {
                 const errData = await response.json().catch(() => ({}));
@@ -389,7 +421,7 @@ export function useDataTable(teamSlugGetter: () => string) {
                 }
             }
 
-            recalculateAverages();
+            await loadData();
             closeCellEdit();
         } catch (err: any) {
             console.error('Erro ao salvar célula:', err);
@@ -474,7 +506,7 @@ export function useDataTable(teamSlugGetter: () => string) {
                 )?.content || '';
 
             const response = await fetch(
-                `/${teamSlug}/tabela-dados/rows/timestamp`,
+                updateTimestamp.url({ current_team: teamSlug }),
                 {
                     method: 'PUT',
                     headers: {
@@ -512,6 +544,7 @@ export function useDataTable(teamSlugGetter: () => string) {
             }
 
             rows.value.sort((a, b) => a.timestamp.localeCompare(b.timestamp));
+            await loadData();
             closeRowDateEdit();
         } catch (err: any) {
             console.error('Erro ao salvar data da linha:', err);
@@ -523,6 +556,9 @@ export function useDataTable(teamSlugGetter: () => string) {
 
     return {
         selectedSystemIds,
+        ewmaOutsideLimits,
+        ewmaAll,
+        fitToScreen,
         startDate,
         endDate,
         collapsedSystemIds,

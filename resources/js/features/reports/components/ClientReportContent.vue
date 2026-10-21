@@ -10,6 +10,7 @@ import {
     MessageSquare,
     ShieldCheck,
     Users,
+    X,
 } from '@lucide/vue';
 import { computed, reactive, ref } from 'vue';
 import ParameterChartModal from '@/features/reports/components/ParameterChartModal.vue';
@@ -116,6 +117,7 @@ const activeCount = computed(
 const commentBodies = reactive<Record<number, string>>({});
 const isSubmittingComment = reactive<Record<number, boolean>>({});
 const showRecipientsList = ref(false);
+const isPreviewBannerDismissed = ref(false);
 
 const chart = ref<{ open: boolean; url: string; title: string }>({
     open: false,
@@ -204,32 +206,34 @@ function formatDateOnly(dateStr: string) {
     <div class="mx-auto grid w-full max-w-[1600px] gap-6 p-4 lg:p-7">
         <!-- Banner de Pré-visualização do Administrador -->
         <aside
-            v-if="isPreview"
+            v-if="isPreview && !isPreviewBannerDismissed"
             aria-label="Aviso de modo de visualização"
-            class="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-amber-300 bg-amber-50 px-5 py-3 text-sm text-amber-900 shadow-sm dark:border-amber-900/60 dark:bg-amber-950/40 dark:text-amber-200"
+            class="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-300/80 bg-amber-50/70 px-4 py-2.5 text-xs text-amber-950 shadow-2xs dark:border-amber-900/60 dark:bg-amber-950/40 dark:text-amber-200"
         >
-            <div class="flex items-center gap-2.5">
+            <div class="flex min-w-0 flex-1 items-center gap-2.5">
                 <span
-                    class="inline-flex size-2.5 animate-pulse rounded-full bg-amber-500"
+                    class="inline-flex size-2 shrink-0 animate-pulse rounded-full bg-amber-500"
                 />
-                <strong>Modo de Pré-visualização do Administrador:</strong>
-                <span
-                    >Você está visualizando o relatório no mesmo formato
-                    acessado pelo cliente. Seus comentários serão identificados
-                    como Consucal.</span
-                >
+                <span class="font-semibold text-amber-900 dark:text-amber-100">
+                    Modo de Pré-visualização do Administrador:
+                </span>
+                <span class="text-amber-800/90 dark:text-amber-300/90">
+                    Você está visualizando o relatório no mesmo formato acessado
+                    pelo cliente. Seus comentários serão identificados como
+                    Consucal.
+                </span>
             </div>
 
             <div class="flex items-center gap-2">
                 <button
                     type="button"
-                    class="inline-flex items-center gap-1.5 rounded-xl border border-amber-400 bg-white px-3 py-1.5 text-xs font-semibold text-amber-950 shadow-2xs transition hover:bg-amber-100 dark:border-amber-800 dark:bg-neutral-900 dark:text-amber-200 dark:hover:bg-neutral-800"
+                    class="inline-flex items-center gap-1.5 rounded-lg border border-amber-400/80 bg-white px-2.5 py-1 text-xs font-semibold text-amber-950 shadow-2xs transition hover:bg-amber-100 dark:border-amber-800 dark:bg-neutral-900 dark:text-amber-200 dark:hover:bg-neutral-800"
                     @click="emit('openRecipients')"
                 >
                     <Mail class="size-3.5 text-amber-700 dark:text-amber-400" />
                     <span>Destinatários</span>
                     <span
-                        class="inline-flex items-center rounded-full bg-amber-500/15 px-2 py-0.5 text-[10px] font-bold text-amber-900 dark:text-amber-300"
+                        class="inline-flex items-center rounded-full bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-bold text-amber-900 dark:text-amber-300"
                     >
                         {{ activeCount }} ativo{{
                             activeCount === 1 ? '' : 's'
@@ -240,17 +244,27 @@ function formatDateOnly(dateStr: string) {
                 <a
                     v-if="currentTeam"
                     :href="`/${currentTeam.slug}/relatorios/${report.id}`"
-                    class="inline-flex items-center gap-1.5 rounded-xl border border-amber-300 bg-white px-3 py-1.5 text-xs font-semibold text-amber-950 shadow-2xs transition hover:bg-amber-100 dark:border-amber-800 dark:bg-neutral-900 dark:text-amber-200 dark:hover:bg-neutral-800"
+                    class="inline-flex items-center gap-1.5 rounded-lg border border-amber-300 bg-white px-2.5 py-1 text-xs font-semibold text-amber-950 shadow-2xs transition hover:bg-amber-100 dark:border-amber-800 dark:bg-neutral-900 dark:text-amber-200 dark:hover:bg-neutral-800"
                 >
                     <ArrowLeft class="size-3.5" /> Voltar ao Painel do
                     Administrador
                 </a>
+
+                <button
+                    type="button"
+                    title="Fechar aviso de pré-visualização"
+                    aria-label="Fechar aviso"
+                    class="inline-flex size-7 items-center justify-center rounded-lg text-amber-700 transition hover:bg-amber-200/60 hover:text-amber-950 dark:text-amber-400 dark:hover:bg-amber-900/40 dark:hover:text-amber-200"
+                    @click="isPreviewBannerDismissed = true"
+                >
+                    <X class="size-4" />
+                </button>
             </div>
         </aside>
 
         <!-- Cabeçalho Executivo -->
         <header
-            class="overflow-hidden rounded-3xl border border-border bg-card p-5 text-card-foreground shadow-sm lg:p-7"
+            class="overflow-hidden rounded-xl border border-border bg-card p-5 text-card-foreground shadow-sm lg:p-6"
         >
             <div class="flex flex-wrap items-start justify-between gap-5">
                 <!-- Identificação do Relatório e Logo -->
@@ -258,12 +272,12 @@ function formatDateOnly(dateStr: string) {
                     <img
                         src="/logo.png"
                         alt="Consucal"
-                        class="h-12 w-auto object-contain"
+                        class="h-11 w-auto object-contain"
                     />
                     <div>
                         <div class="flex flex-wrap items-center gap-2.5">
                             <h1
-                                class="text-2xl font-semibold tracking-tight text-foreground lg:text-3xl"
+                                class="text-lg font-semibold tracking-tight text-foreground lg:text-xl"
                             >
                                 {{ report.title }}
                             </h1>
@@ -303,7 +317,7 @@ function formatDateOnly(dateStr: string) {
                 <!-- Badge de Usuário Ativo / Acesso Individual -->
                 <div
                     v-if="recipient"
-                    class="rounded-2xl border border-emerald-500/30 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-950 dark:text-emerald-200"
+                    class="rounded-xl border border-emerald-500/50 bg-emerald-500/5 px-3.5 py-2.5 text-xs text-emerald-950 dark:text-emerald-200"
                 >
                     <p class="flex items-center gap-2 font-semibold">
                         <ShieldCheck
@@ -323,40 +337,40 @@ function formatDateOnly(dateStr: string) {
 
             <!-- Cards Resumo de Estatísticas -->
             <div
-                class="mt-6 grid grid-cols-1 gap-3 border-t border-border/60 pt-5 sm:grid-cols-3"
+                class="mt-4 grid grid-cols-1 gap-2.5 border-t border-border/60 pt-4 sm:grid-cols-3"
             >
-                <div class="rounded-2xl border bg-muted/25 px-4 py-3">
+                <div class="rounded-xl border bg-muted/20 px-3.5 py-2">
                     <div
-                        class="flex items-center gap-2 text-[11px] font-semibold tracking-wider text-muted-foreground uppercase"
+                        class="flex items-center gap-2 text-[10px] font-semibold tracking-wider text-muted-foreground uppercase"
                     >
                         <Layers class="size-3.5" />
                         Sistemas Habilitados
                     </div>
                     <strong
-                        class="mt-1 block text-xl font-bold text-foreground"
+                        class="mt-0.5 block text-sm font-semibold text-foreground"
                     >
                         {{ systems.length }} sistema(s)
                     </strong>
                 </div>
 
-                <div class="rounded-2xl border bg-muted/25 px-4 py-3">
+                <div class="rounded-xl border bg-muted/20 px-3.5 py-2">
                     <div
-                        class="flex items-center gap-2 text-[11px] font-semibold tracking-wider text-muted-foreground uppercase"
+                        class="flex items-center gap-2 text-[10px] font-semibold tracking-wider text-muted-foreground uppercase"
                     >
                         <CalendarDays class="size-3.5" />
                         Data de Referência
                     </div>
                     <strong
-                        class="mt-1 block text-xl font-bold text-foreground"
+                        class="mt-0.5 block text-sm font-semibold text-foreground"
                     >
                         {{ formatDateOnly(report.date_reference) }}
                     </strong>
                 </div>
 
-                <div class="rounded-2xl border bg-muted/25 px-4 py-3">
+                <div class="rounded-xl border bg-muted/20 px-3.5 py-2">
                     <div class="flex items-center justify-between">
                         <div
-                            class="flex items-center gap-2 text-[11px] font-semibold tracking-wider text-muted-foreground uppercase"
+                            class="flex items-center gap-2 text-[10px] font-semibold tracking-wider text-muted-foreground uppercase"
                         >
                             <Users class="size-3.5" />
                             {{
@@ -368,7 +382,7 @@ function formatDateOnly(dateStr: string) {
                         <button
                             v-if="isPreview"
                             type="button"
-                            class="text-[11px] font-medium text-primary hover:underline"
+                            class="text-[10px] font-medium text-primary hover:underline"
                             @click="emit('openRecipients')"
                         >
                             Gerenciar
@@ -376,14 +390,14 @@ function formatDateOnly(dateStr: string) {
                         <button
                             v-else-if="recipients.length > 0"
                             type="button"
-                            class="text-[11px] font-medium text-primary hover:underline"
+                            class="text-[10px] font-medium text-primary hover:underline"
                             @click="showRecipientsList = !showRecipientsList"
                         >
                             {{ showRecipientsList ? 'Ocultar' : 'Ver todos' }}
                         </button>
                     </div>
                     <strong
-                        class="mt-1 block text-xl font-bold text-foreground"
+                        class="mt-0.5 block text-sm font-semibold text-foreground"
                     >
                         {{ isPreview ? activeCount : recipients.length }}
                         destinatário(s)
@@ -394,7 +408,7 @@ function formatDateOnly(dateStr: string) {
             <!-- Seção Expansível ou Exibição de Destinatários do Envio -->
             <div
                 v-if="recipients.length > 0"
-                class="mt-4 rounded-2xl border border-border/80 bg-muted/15 p-4"
+                class="mt-4 rounded-xl border border-border/80 bg-muted/15 p-3.5"
             >
                 <div class="flex items-center justify-between gap-3">
                     <div class="flex items-center gap-2">
@@ -470,7 +484,7 @@ function formatDateOnly(dateStr: string) {
         <!-- Estado Vazio se nenhum sistema habilitado -->
         <div
             v-if="systems.length === 0"
-            class="flex flex-col items-center justify-center gap-2 rounded-3xl border border-dashed border-border bg-card/60 py-16 text-center"
+            class="flex flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-border bg-card/60 py-16 text-center"
         >
             <p class="text-sm font-medium text-foreground">
                 Nenhum sistema habilitado ou com dados cadastrados neste
@@ -482,26 +496,21 @@ function formatDateOnly(dateStr: string) {
         <section
             v-for="system in systems"
             :key="system.id"
-            class="overflow-hidden rounded-3xl border border-emerald-500/40 bg-card shadow-sm ring-1 ring-emerald-500/20"
+            class="overflow-hidden rounded-xl border border-emerald-500/60 bg-card shadow-sm ring-1 ring-emerald-500/25"
         >
             <!-- Cabeçalho da Seção do Sistema -->
             <header
-                class="flex flex-wrap items-center justify-between gap-3 border-b border-emerald-500/20 bg-emerald-500/10 px-4 py-3"
+                class="flex flex-wrap items-center justify-between gap-3 border-b border-border/60 bg-muted/20 px-4 py-2.5"
             >
                 <div class="flex items-center gap-3">
-                    <h2 class="text-base font-semibold text-foreground">
+                    <h2 class="text-sm font-semibold text-foreground">
                         {{ system.name }}
                     </h2>
-                    <span
-                        class="rounded-full bg-emerald-500/20 px-2 py-0.5 text-[11px] font-semibold text-emerald-700 ring-1 ring-emerald-500/30 dark:text-emerald-300"
-                    >
-                        Habilitado
-                    </span>
                 </div>
 
                 <span
                     v-if="system.item.is_stopped"
-                    class="rounded-full bg-amber-400/20 px-2.5 py-1 text-xs font-semibold text-amber-700 ring-1 ring-amber-500/30 dark:text-amber-300"
+                    class="rounded-full bg-amber-400/20 px-2.5 py-0.5 text-xs font-semibold text-amber-700 ring-1 ring-amber-500/30 dark:text-amber-300"
                 >
                     Sistema parado
                 </span>
@@ -533,7 +542,7 @@ function formatDateOnly(dateStr: string) {
                     </h3>
                 </div>
                 <div
-                    class="prose prose-sm dark:prose-invert max-w-none rounded-2xl border border-blue-200/60 bg-card p-4 leading-relaxed text-foreground shadow-2xs dark:border-blue-900/40"
+                    class="prose prose-sm dark:prose-invert max-w-none rounded-xl border border-blue-200/60 bg-card p-4 leading-relaxed text-foreground shadow-2xs dark:border-blue-900/40"
                     v-html="system.item.comment"
                 />
             </div>
@@ -558,7 +567,7 @@ function formatDateOnly(dateStr: string) {
                 <!-- Lista de comentários existentes -->
                 <div
                     v-if="system.item.comments.length === 0"
-                    class="rounded-2xl border border-dashed border-border/80 p-4 text-center text-xs text-muted-foreground"
+                    class="rounded-xl border border-dashed border-border/80 p-4 text-center text-xs text-muted-foreground"
                 >
                     Nenhum comentário registrado para este sistema ainda.
                 </div>
@@ -566,7 +575,7 @@ function formatDateOnly(dateStr: string) {
                 <div
                     v-for="comment in system.item.comments"
                     :key="comment.id"
-                    class="rounded-2xl border p-3.5 text-sm transition"
+                    class="rounded-xl border p-3.5 text-sm transition"
                     :class="
                         comment.is_consucal
                             ? 'border-blue-200 bg-blue-50/50 dark:border-blue-900/60 dark:bg-blue-950/20'

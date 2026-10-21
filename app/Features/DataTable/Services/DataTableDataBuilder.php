@@ -2,16 +2,20 @@
 
 namespace App\Features\DataTable\Services;
 
+use App\Features\StatisticalAnalysis\Services\EwmaCalculator;
+use App\Features\StatisticalAnalysis\Services\ParameterEwmaService;
 use App\Models\Parameter;
 use App\Models\ParameterValue;
 use App\Models\Team;
+use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Carbon;
-use Illuminate\Support\Collection;
 
 class DataTableDataBuilder
 {
+    public function __construct(private ParameterEwmaService $historyService, private EwmaCalculator $calculator) {}
+
     /**
-     * @param  array{system_ids?: list<int|string>|null, start_date?: string|null, end_date?: string|null}  $filters
+     * @param  array{system_ids?: list<int|string>|null, start_date?: string|null, end_date?: string|null, ewma_outside_limits?: bool|int|string, ewma_all?: bool|int|string, ewma_lookback?: int}  $filters
      * @return array<string, mixed>
      */
     public function build(Team $team, array $filters): array
@@ -46,9 +50,14 @@ class DataTableDataBuilder
             ->whereIn('parameter_id', $parameterIds)
             ->whereBetween('measured_at', [$startDate, $endDate])
             ->orderBy('measured_at')
+            ->orderBy('id')
             ->get();
 
-        [$rows, $averages] = $this->rowsAndAverages($parameters, $values);
+        $outsideLimits = (bool) ($filters['ewma_outside_limits'] ?? true);
+        $allValues = (bool) ($filters['ewma_all'] ?? false);
+        $lookback = (int) ($filters['ewma_lookback'] ?? 20);
+        $history = $outsideLimits || $allValues ? $this->historyService->history($parameters, $startDate, $lookback) : [];
+        [$rows, $averages] = $this->rowsAndAverages($parameters, $values, $history, $outsideLimits, $allValues, $lookback);
 
         return [
             'parameters' => $parameters->map(fn (Parameter $parameter): array => [
@@ -61,6 +70,8 @@ class DataTableDataBuilder
                 'sort_order' => $parameter->sort_order,
                 'alert_1_min' => $parameter->alert_1_min,
                 'alert_1_max' => $parameter->alert_1_max,
+                'ewma_lambda' => $parameter->ewma_lambda,
+                'ewma_level' => $parameter->ewma_level,
                 'monitored_system_id' => $parameter->monitored_system_id,
                 'system_name' => $parameter->monitoredSystem->name,
             ])->all(),
@@ -83,27 +94,33 @@ class DataTableDataBuilder
             ->with(['monitoredSystem:id,name'])
             ->get();
 
-        return $parameters
-            ->sort(function (Parameter $left, Parameter $right) use ($isMultiSystem): int {
-                if ($isMultiSystem) {
-                    return strnatcasecmp($left->name, $right->name)
-                        ?: $left->monitored_system_id <=> $right->monitored_system_id;
-                }
+        $ordered = $parameters->sort(fn (Parameter $left, Parameter $right): int => $left->sort_order <=> $right->sort_order ?: strnatcasecmp($left->name, $right->name))->values();
 
-                return $left->sort_order <=> $right->sort_order
-                    ?: strnatcasecmp($left->name, $right->name);
-            })
-            ->values();
+        if (! $isMultiSystem) {
+            return $ordered;
+        }
+
+        $groups = [];
+        foreach ($systemIds as $systemId) {
+            foreach ($ordered->where('monitored_system_id', $systemId) as $parameter) {
+                $key = mb_strtolower(trim($parameter->name));
+                $groups[$key][] = $parameter;
+            }
+        }
+
+        return new Collection(array_merge(...array_values($groups)));
     }
 
     /**
      * @param  Collection<int, Parameter>  $parameters
      * @param  Collection<int, ParameterValue>  $values
+     * @param  array<int, list<float>>  $history
      * @return array{0: list<array<string, mixed>>, 1: array<int, array{numeric: float|null, formatted: string}>}
      */
-    private function rowsAndAverages(Collection $parameters, Collection $values): array
+    private function rowsAndAverages(Collection $parameters, Collection $values, array $history, bool $outsideLimits, bool $allValues, int $lookback): array
     {
         $parameterIds = $parameters->pluck('id')->all();
+        $byId = $parameters->keyBy('id');
         $columnSums = array_fill_keys($parameterIds, 0.0);
         $columnCounts = array_fill_keys($parameterIds, 0);
         $grouped = [];
@@ -115,6 +132,7 @@ class DataTableDataBuilder
                 'date' => $value->measured_at->format('d/m/Y'),
                 'time' => $value->measured_at->format('H:i'),
                 'values' => [],
+                'ewma' => [],
             ];
 
             if ($value->value === null) {
@@ -122,6 +140,23 @@ class DataTableDataBuilder
             }
 
             $grouped[$timeKey]['values'][$value->parameter_id] = (float) $value->value;
+            $parameter = $byId[$value->parameter_id];
+            $numeric = (float) $value->value;
+            $isOutside = ($parameter->alert_1_min !== null && $numeric < $parameter->alert_1_min)
+                || ($parameter->alert_1_max !== null && $numeric > $parameter->alert_1_max);
+
+            if ($allValues || ($outsideLimits && $isOutside)) {
+                $grouped[$timeKey]['ewma'][$parameter->id] = $this->calculator->evaluate(
+                    $numeric, $history[$parameter->id] ?? [], $parameter->ewma_lambda, $parameter->ewma_level, $lookback,
+                );
+            }
+
+            if ($outsideLimits || $allValues) {
+                $history[$parameter->id][] = $numeric;
+                if (count($history[$parameter->id]) > $lookback) {
+                    array_shift($history[$parameter->id]);
+                }
+            }
             $columnSums[$value->parameter_id] += (float) $value->value;
             $columnCounts[$value->parameter_id]++;
         }

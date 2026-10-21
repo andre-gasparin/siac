@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ChevronDown, Search, X, Check } from '@lucide/vue';
+import { ChevronDown, Search, X } from '@lucide/vue';
 import { ref, computed, onMounted, onUnmounted } from 'vue';
 
 interface SystemItem {
@@ -15,6 +15,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
     (e: 'update:modelValue', value: number[]): void;
+    (e: 'select', id: number): void;
 }>();
 
 const isOpen = ref(false);
@@ -55,6 +56,13 @@ const selectedDisplay = computed(() => {
 
     return `${props.modelValue.length} sistemas selecionados`;
 });
+
+function selectOnly(id: number) {
+    emit('update:modelValue', [id]);
+    isOpen.value = false;
+    searchQuery.value = '';
+    emit('select', id);
+}
 
 function toggleSystem(id: number) {
     let updated: number[];
@@ -107,6 +115,8 @@ onUnmounted(() => {
         <!-- Input Trigger Button -->
         <button
             type="button"
+            aria-label="Selecionar sistemas"
+            :aria-expanded="isOpen"
             @click="isOpen = !isOpen"
             class="flex h-9 w-full items-center rounded-md border border-input bg-background px-2.5 py-1 pr-14 text-xs ring-offset-background placeholder:text-muted-foreground focus:ring-2 focus:ring-ring focus:ring-offset-1 focus:outline-none disabled:cursor-not-allowed disabled:opacity-50"
         >
@@ -174,24 +184,23 @@ onUnmounted(() => {
                 <div
                     v-for="sys in filteredSystems"
                     :key="sys.id"
-                    @click="toggleSystem(sys.id)"
-                    class="flex cursor-pointer items-center justify-between rounded-sm px-2.5 py-1.5 text-sm transition-colors select-none hover:bg-accent hover:text-accent-foreground"
+                    class="flex items-center gap-2 rounded-sm px-2.5 py-1.5 text-sm hover:bg-accent"
                 >
-                    <div class="flex items-center gap-2 overflow-hidden">
-                        <div
-                            class="flex h-4 w-4 items-center justify-center rounded border border-primary transition-colors"
-                            :class="{
-                                'bg-primary text-primary-foreground':
-                                    modelValue.includes(sys.id),
-                            }"
-                        >
-                            <Check
-                                v-if="modelValue.includes(sys.id)"
-                                class="h-3 w-3"
-                            />
-                        </div>
-                        <span class="truncate">{{ sys.name }}</span>
-                    </div>
+                    <input
+                        type="checkbox"
+                        :checked="modelValue.includes(sys.id)"
+                        :aria-label="'Selecionar ' + sys.name"
+                        class="size-4 shrink-0 accent-primary"
+                        @click.stop
+                        @change="toggleSystem(sys.id)"
+                    />
+                    <button
+                        type="button"
+                        class="min-w-0 flex-1 truncate text-left"
+                        @click="selectOnly(sys.id)"
+                    >
+                        {{ sys.name }}
+                    </button>
                 </div>
 
                 <div

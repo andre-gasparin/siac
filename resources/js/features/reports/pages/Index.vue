@@ -17,8 +17,11 @@ import {
     Plus,
     Search,
 } from '@lucide/vue';
-import { computed, reactive, watch } from 'vue';
+import { computed, reactive, ref, watch } from 'vue';
+import CreateReportDialog from '@/features/reports/components/CreateReportDialog.vue';
+import { index as tableIndex } from '@/routes/data-table';
 import { index, show } from '@/routes/reports';
+import { index as teamsIndex } from '@/routes/teams';
 import { Button } from '@/shared/components/ui/button';
 import {
     DropdownMenu,
@@ -69,6 +72,7 @@ type Props = {
 };
 
 const props = defineProps<Props>();
+const createReportOpen = ref(false);
 
 const filterForm = reactive<ReportFilters>({ ...props.filters });
 let searchTimeout: ReturnType<typeof setTimeout> | null = null;
@@ -146,11 +150,11 @@ setLayoutProps({
     breadcrumbs: [
         {
             title: 'Unidades',
-            href: '/unidades',
+            href: teamsIndex.url(),
         },
         {
             title: props.currentTeam.name,
-            href: `/${props.currentTeam.slug}/tabela-dados`,
+            href: tableIndex.url({ current_team: props.currentTeam.slug }),
         },
         {
             title: 'Relatórios',
@@ -163,6 +167,10 @@ setLayoutProps({
 <template>
     <div class="contents">
         <Head title="Relatórios" />
+        <CreateReportDialog
+            v-model:open="createReportOpen"
+            :team-slug="currentTeam.slug"
+        />
 
         <main class="flex flex-1 flex-col bg-background text-foreground">
             <section class="flex flex-col gap-4 px-4 py-3 md:px-6">
@@ -217,14 +225,12 @@ setLayoutProps({
                         </Button>
                     </div>
 
-                    <Link :href="`/${currentTeam.slug}/tabela-dados`">
-                        <Button
-                            class="h-8 w-full rounded-md px-3 text-xs shadow-xs lg:w-auto"
-                        >
-                            <Plus class="size-3.5" />
-                            Novo relatório
-                        </Button>
-                    </Link>
+                    <Button
+                        class="h-8 w-full rounded-md px-3 text-xs shadow-xs lg:w-auto"
+                        @click="createReportOpen = true"
+                    >
+                        <Plus class="size-3.5" />Novo relatório
+                    </Button>
                 </div>
 
                 <InfiniteScroll
@@ -369,20 +375,19 @@ setLayoutProps({
                                     Nenhum relatório encontrado
                                 </p>
                                 <p class="text-xs text-muted-foreground">
-                                    Ajuste os filtros ou crie um novo relatório
-                                    na tabela de dados.
+                                    Ajuste os filtros ou crie um novo relatório.
                                 </p>
                             </div>
                         </div>
 
                         <div class="border-t px-7 py-3">
-                            <Link
-                                :href="`/${currentTeam.slug}/tabela-dados`"
+                            <button
+                                type="button"
                                 class="inline-flex items-center gap-2 text-sm font-medium text-primary hover:underline"
+                                @click="createReportOpen = true"
                             >
-                                <Plus class="size-4" />
-                                Criar relatório
-                            </Link>
+                                <Plus class="size-4" />Criar relatório
+                            </button>
                         </div>
                     </section>
                 </InfiniteScroll>

@@ -41,6 +41,8 @@ class UpdateTeamSystems
                         'decimals' => $parameterData['decimals'],
                         'sort_order' => $parameterData['sort_order'],
                         'is_active' => $parameterData['is_active'],
+                        'ewma_lambda' => $parameterData['ewma_lambda'] ?? $parameter->ewma_lambda,
+                        'ewma_level' => $parameterData['ewma_level'] ?? $parameter->ewma_level,
                         'alert_1_min' => $this->nullableThreshold($parameterData['alert_1_min']),
                         'alert_1_max' => $this->nullableThreshold($parameterData['alert_1_max']),
                         'alert_2_min' => $this->nullableThreshold($parameterData['alert_2_min']),

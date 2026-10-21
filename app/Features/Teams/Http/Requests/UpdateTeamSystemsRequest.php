@@ -37,6 +37,8 @@ class UpdateTeamSystemsRequest extends FormRequest
             'systems.*.parameters.*.decimals' => ['required', 'integer', 'min:0', 'max:10'],
             'systems.*.parameters.*.sort_order' => ['required', 'integer'],
             'systems.*.parameters.*.is_active' => ['required', 'boolean'],
+            'systems.*.parameters.*.ewma_lambda' => ['sometimes', 'required', 'numeric', 'gt:0', 'max:1'],
+            'systems.*.parameters.*.ewma_level' => ['sometimes', 'required', 'numeric', 'gt:0', 'max:100'],
             'systems.*.parameters.*.alert_1_min' => ['nullable', 'numeric'],
             'systems.*.parameters.*.alert_1_max' => ['nullable', 'numeric'],
             'systems.*.parameters.*.alert_2_min' => ['nullable', 'numeric'],

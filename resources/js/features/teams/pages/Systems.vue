@@ -26,6 +26,8 @@ type ParameterData = {
     decimals: number;
     sort_order: number;
     is_active: boolean;
+    ewma_lambda: number;
+    ewma_level: number;
     alert_1_min: number | null;
     alert_1_max: number | null;
     alert_2_min: number | null;
@@ -79,6 +81,8 @@ const sanitizeSystems = (systems: SystemData[]): SystemData[] => {
         parameters: sys.parameters.map((param) => ({
             ...param,
             is_active: Boolean(param.is_active),
+            ewma_lambda: param.ewma_lambda ?? 0.2,
+            ewma_level: param.ewma_level ?? 3,
         })),
     }));
 };
@@ -234,6 +238,16 @@ const save = () => {
             />
         </div>
 
+        <div
+            v-if="form.hasErrors"
+            role="alert"
+            class="rounded border border-destructive p-3 text-sm text-destructive"
+        >
+            <p v-for="(error, field) in form.errors" :key="field">
+                {{ error }}
+            </p>
+        </div>
+
         <!-- Accordion Section -->
         <div class="space-y-4">
             <div
@@ -360,6 +374,12 @@ const save = () => {
                                     <th class="w-[120px] px-4 py-2">Unidade</th>
                                     <th class="w-[90px] px-4 py-2 text-center">
                                         Decimais
+                                    </th>
+                                    <th class="w-28 px-2 py-2 text-center">
+                                        EWMA - λ
+                                    </th>
+                                    <th class="w-28 px-2 py-2 text-center">
+                                        EWMA - Nível
                                     </th>
                                     <th class="w-[80px] px-4 py-2 text-center">
                                         Posição
@@ -514,6 +534,41 @@ const save = () => {
                                             />
                                         </td>
 
+                                        <td class="px-2 py-2 text-center">
+                                            <input
+                                                v-model.number="
+                                                    parameter.ewma_lambda
+                                                "
+                                                type="number"
+                                                min="0.001"
+                                                max="1"
+                                                step="any"
+                                                required
+                                                :aria-label="
+                                                    'EWMA - λ de ' +
+                                                    parameter.name
+                                                "
+                                                class="h-8 w-20 rounded border border-input bg-transparent px-2 text-center text-sm"
+                                            />
+                                        </td>
+                                        <td class="px-2 py-2 text-center">
+                                            <input
+                                                v-model.number="
+                                                    parameter.ewma_level
+                                                "
+                                                type="number"
+                                                min="0.001"
+                                                max="100"
+                                                step="any"
+                                                required
+                                                :aria-label="
+                                                    'EWMA - Nível de ' +
+                                                    parameter.name
+                                                "
+                                                class="h-8 w-20 rounded border border-input bg-transparent px-2 text-center text-sm"
+                                            />
+                                        </td>
+
                                         <!-- Position -->
                                         <td
                                             class="px-4 py-2 text-center align-middle text-sm font-semibold text-muted-foreground select-none"
@@ -562,7 +617,7 @@ const save = () => {
                                         "
                                     >
                                         <td
-                                            colspan="9"
+                                            colspan="11"
                                             class="border-b border-border/80 bg-muted/15 px-6 py-4"
                                         >
                                             <div

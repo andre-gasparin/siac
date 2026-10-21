@@ -1,41 +1,47 @@
 <script setup lang="ts">
-import { Head, router, setLayoutProps } from '@inertiajs/vue3';
-import { Calendar, MessageSquare, Pencil } from '@lucide/vue';
-import { computed, ref } from 'vue';
+import { Head, setLayoutProps } from '@inertiajs/vue3';
+import { computed, defineAsyncComponent, ref } from 'vue';
 import CellEditPopover from '@/features/data-table/components/CellEditPopover.vue';
 import DataTableFilterBar from '@/features/data-table/components/DataTableFilterBar.vue';
 import DataTableGrid from '@/features/data-table/components/DataTableGrid.vue';
 import RowDateEditPopover from '@/features/data-table/components/RowDateEditPopover.vue';
 import { useDataTable } from '@/features/data-table/composables/useDataTable';
-import type { SystemItem } from '@/features/data-table/types';
-import { ReportEditorLauncher } from '@/features/reports';
-import { store as storeReport } from '@/routes/reports';
+import type {
+    DataRow,
+    ParameterItem,
+    SystemItem,
+} from '@/features/data-table/types';
+import { index } from '@/routes/data-table';
 import type { Team } from '@/shared/types';
 
+const DataTableChartDialog = defineAsyncComponent(
+    () => import('@/features/data-table/components/DataTableChartDialog.vue'),
+);
+const DataTableRowDetailsDialog = defineAsyncComponent(
+    () =>
+        import('@/features/data-table/components/DataTableRowDetailsDialog.vue'),
+);
 const props = defineProps<{
     systems: SystemItem[];
     currentTeam: Team;
     defaultStartDate: string;
     defaultEndDate: string;
-    canManageReports: boolean;
-    existingReportDates?: string[];
 }>();
-
 setLayoutProps({
     breadcrumbs: [
         {
             title: 'Tabela de dados',
-            href: props.currentTeam
-                ? `/${props.currentTeam.slug}/tabela-dados`
-                : '/',
+            href: index.url({ current_team: props.currentTeam.slug }),
         },
     ],
 });
-
 const {
     selectedSystemIds,
     startDate,
     endDate,
+    ewmaOutsideLimits,
+    ewmaAll,
+    fitToScreen,
     isLoading,
     parameters,
     rows,
@@ -68,99 +74,37 @@ const {
     isEditingRowDate,
     saveRowDateEdit,
 } = useDataTable(() => props.currentTeam.slug);
-
-// Initial filter values
-selectedSystemIds.value = props.systems.length > 0 ? [props.systems[0].id] : [];
+selectedSystemIds.value = props.systems.length ? [props.systems[0].id] : [];
 startDate.value = props.defaultStartDate;
 endDate.value = props.defaultEndDate;
-
-const editorLauncherDate = ref<string | null>(null);
-
-const effectiveReportDate = computed(() => {
-    if (editorLauncherDate.value && editorLauncherDate.value.trim() !== '') {
-        return editorLauncherDate.value;
-    }
-
-    if (endDate.value && endDate.value.trim() !== '') {
-        return endDate.value;
-    }
-
-    if (rows.value.length > 0) {
-        const lastRowDate =
-            rows.value[0]?.date || rows.value[rows.value.length - 1]?.date;
-
-        if (lastRowDate) {
-            if (lastRowDate.includes('/')) {
-                const parts = lastRowDate.split('/');
-
-                if (parts.length === 3) {
-                    return `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
-                }
-            }
-
-            return lastRowDate;
-        }
-    }
-
-    return props.defaultEndDate;
-});
-
-const hasExistingReportForDate = computed(() => {
-    if (!effectiveReportDate.value || !props.existingReportDates) {
-        return false;
-    }
-
-    return props.existingReportDates.includes(effectiveReportDate.value);
-});
-
-const formattedReportDate = computed(() => {
-    const dateStr = effectiveReportDate.value;
-
-    if (!dateStr) {
-        return '';
-    }
-
-    if (dateStr.includes('/')) {
-        return dateStr;
-    }
-
-    const parts = dateStr.split('-');
-
-    if (parts.length === 3) {
-        return `${parts[2]}/${parts[1]}/${parts[0]}`;
-    }
-
-    return dateStr;
-});
-
-function createConsolidatedReport() {
-    router.post(storeReport.url({ current_team: props.currentTeam.slug }), {
-        date_reference: effectiveReportDate.value,
-    });
-}
-
-async function syncSystemFromReport(systemId: number) {
-    selectedSystemIds.value = [systemId];
-    await loadData();
-}
+const rowDetails = ref<{ row: DataRow; tab: 'history' | 'comments' } | null>(
+    null,
+);
+const chart = ref<{ parameter: ParameterItem; type: 'line' | 'bar' } | null>(
+    null,
+);
+const loadedSystemIds = computed(() => [
+    ...new Set(
+        parameters.value.map((parameter) => parameter.monitored_system_id),
+    ),
+]);
 </script>
 
 <template>
-    <Head title="Tabela de Dados" />
-
     <div class="flex w-full min-w-0 flex-col gap-3 p-3 md:p-4">
-        <!-- Controls Filter Header Bar -->
+        <Head title="Tabela de Dados" />
         <DataTableFilterBar
             v-model:selected-system-ids="selectedSystemIds"
             v-model:start-date="startDate"
             v-model:end-date="endDate"
+            v-model:ewma-outside-limits="ewmaOutsideLimits"
+            v-model:ewma-all="ewmaAll"
+            v-model:fit-to-screen="fitToScreen"
             :systems="systems"
             :is-loading="isLoading"
             :cache-status="cacheStatus"
             @load="loadData"
         />
-
-        <!-- Data Table Container -->
         <DataTableGrid
             :parameters="parameters"
             :visible-parameters="visibleParameters"
@@ -168,6 +112,7 @@ async function syncSystemFromReport(systemId: number) {
             :averages="averages"
             :is-multi-system="isMultiSystem"
             :is-loading="isLoading"
+            :fit-to-screen="fitToScreen"
             :system-color-map="systemColorMap"
             :is-system-collapsed="isSystemCollapsed"
             :get-system-style="getSystemStyle"
@@ -181,55 +126,9 @@ async function syncSystemFromReport(systemId: number) {
             @confirm-delete-row="confirmDeleteRow"
             @open-cell-edit="openCellEdit"
             @open-row-date-edit="openRowDateEdit"
+            @open-details="(row, tab) => (rowDetails = { row, tab })"
+            @open-chart="(parameter, type) => (chart = { parameter, type })"
         />
-
-        <!-- Actions / Report Launcher Bar -->
-        <div
-            v-if="canManageReports"
-            class="mt-3 flex flex-wrap items-center gap-2"
-        >
-            <ReportEditorLauncher
-                :current-team="currentTeam"
-                :systems="systems"
-                :selected-system-ids="selectedSystemIds"
-                :default-date="effectiveReportDate"
-                button-label="Editar considerações Consucal"
-                @system-change="syncSystemFromReport"
-                @date-change="(d) => (editorLauncherDate = d)"
-            />
-
-            <button
-                type="button"
-                data-test="create-report"
-                class="inline-flex h-9 items-center gap-2 rounded-md bg-blue-600 px-4 text-xs font-semibold text-white shadow-sm hover:bg-blue-700"
-                @click="createConsolidatedReport"
-            >
-                <Pencil v-if="hasExistingReportForDate" class="size-4" />
-                <MessageSquare v-else class="size-4" />
-                {{
-                    hasExistingReportForDate
-                        ? 'Editar relatório'
-                        : 'Criar relatório'
-                }}
-            </button>
-
-            <div
-                v-if="formattedReportDate"
-                class="inline-flex h-9 items-center gap-1.5 rounded-md border bg-card px-3 text-xs font-medium text-muted-foreground shadow-sm"
-            >
-                <Calendar
-                    class="size-4 text-emerald-600 dark:text-emerald-400"
-                />
-                <span>
-                    Data do relatório:
-                    <strong class="font-semibold text-foreground">{{
-                        formattedReportDate
-                    }}</strong>
-                </span>
-            </div>
-        </div>
-
-        <!-- Fixed Floating Tooltip/Popover Editor -->
         <CellEditPopover
             :cell="editingCell"
             :is-saving="isSavingCell"
@@ -237,14 +136,28 @@ async function syncSystemFromReport(systemId: number) {
             @close="closeCellEdit"
             @save="saveCellEdit"
         />
-
-        <!-- Fixed Floating Tooltip/Popover for Editing Row Date & Time -->
         <RowDateEditPopover
             :row-date="editingRowDate"
             :is-saving="isSavingRowDate"
             :error="rowDateEditError"
             @close="closeRowDateEdit"
             @save="saveRowDateEdit"
+        />
+        <DataTableRowDetailsDialog
+            v-if="rowDetails"
+            :key="rowDetails.row.timestamp"
+            :team-slug="currentTeam.slug"
+            :row="rowDetails.row"
+            :system-ids="loadedSystemIds"
+            :tab="rowDetails.tab"
+            @close="rowDetails = null"
+        />
+        <DataTableChartDialog
+            v-if="chart"
+            :parameter="chart.parameter"
+            :rows="rows"
+            :type="chart.type"
+            @close="chart = null"
         />
     </div>
 </template>

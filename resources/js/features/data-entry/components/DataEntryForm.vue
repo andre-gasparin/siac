@@ -10,7 +10,9 @@ import {
     User,
 } from '@lucide/vue';
 import { computed, nextTick, ref, watch } from 'vue';
+import { useEwmaPreview } from '@/features/data-entry/composables/useEwmaPreview';
 import DatePicker from '@/shared/components/DatePicker.vue';
+import EwmaAlert from '@/shared/components/EwmaAlert.vue';
 import { Button } from '@/shared/components/ui/button';
 import { Input } from '@/shared/components/ui/input';
 
@@ -24,6 +26,8 @@ export interface ParameterItem {
     unit?: string | null;
     decimals: number;
     sort_order: number;
+    ewma_lambda: number;
+    ewma_level: number;
     alert_1_min: number | null;
     alert_1_max: number | null;
 }
@@ -37,6 +41,7 @@ export interface SystemItem {
 }
 
 const props = defineProps<{
+    teamSlug: string;
     currentSystem?: SystemItem;
     collectionDate: string;
     collectionTime: string;
@@ -59,6 +64,19 @@ const emit = defineEmits<{
     (e: 'send'): void;
     (e: 'openHistory'): void;
 }>();
+
+const { results: ewmaResults, error: ewmaError } = useEwmaPreview(() => ({
+    teamSlug: props.teamSlug,
+    collectedAt:
+        props.collectionDate && props.collectionTime
+            ? props.collectionDate + ' ' + props.collectionTime
+            : '',
+    values: (props.currentSystem?.parameters ?? []).flatMap((parameter) => {
+        const value = parseNumber(props.paramInputs[parameter.id]);
+
+        return value === null ? [] : [{ parameter_id: parameter.id, value }];
+    }),
+}));
 
 const textareaRef = ref<HTMLTextAreaElement | null>(null);
 
@@ -365,30 +383,46 @@ const hasAnyOutOfLimits = computed<boolean>(() => {
                             <!-- Nome do Parâmetro -->
                             <td class="px-2 py-3 font-semibold text-foreground">
                                 {{ param.name }}
+                                <span
+                                    v-if="param.tag || param.code"
+                                    class="block text-xs font-normal text-muted-foreground"
+                                    >{{ param.tag || param.code }}</span
+                                >
                             </td>
 
                             <!-- Resultado (Input) -->
                             <td class="px-2 py-2.5 text-left">
-                                <input
-                                    :value="paramInputs[param.id] || ''"
-                                    @keydown="handleKeydown"
-                                    @input="
-                                        (e) =>
-                                            handleParamInput(
-                                                param.id,
-                                                (e.target as HTMLInputElement)
-                                                    .value,
-                                            )
-                                    "
-                                    type="text"
-                                    inputmode="decimal"
-                                    class="h-9 w-32 rounded-md border bg-background px-3 text-left text-sm font-medium transition-all outline-none"
-                                    :class="[
-                                        isParamOutOfLimits(param)
-                                            ? 'border-red-500 bg-red-50/20 font-bold text-red-600 ring-2 ring-red-500/20 dark:bg-red-950/20 dark:text-red-400'
-                                            : 'border-border/80 text-foreground focus:border-primary focus:ring-2 focus:ring-primary/20',
-                                    ]"
-                                />
+                                <div class="flex items-center gap-2">
+                                    <input
+                                        :value="paramInputs[param.id] || ''"
+                                        @keydown="handleKeydown"
+                                        @input="
+                                            (e) =>
+                                                handleParamInput(
+                                                    param.id,
+                                                    (
+                                                        e.target as HTMLInputElement
+                                                    ).value,
+                                                )
+                                        "
+                                        type="text"
+                                        inputmode="decimal"
+                                        :aria-label="
+                                            'Resultado de ' + param.name
+                                        "
+                                        class="h-9 w-32 rounded-md border bg-background px-3 text-left text-sm font-medium transition-all outline-none"
+                                        :class="[
+                                            isParamOutOfLimits(param)
+                                                ? 'border-red-500 bg-red-50/20 font-bold text-red-600 ring-2 ring-red-500/20 dark:bg-red-950/20 dark:text-red-400'
+                                                : 'border-border/80 text-foreground focus:border-primary focus:ring-2 focus:ring-primary/20',
+                                        ]"
+                                    />
+                                    <EwmaAlert
+                                        v-if="ewmaResults[param.id]"
+                                        :result="ewmaResults[param.id]"
+                                        :parameter-name="param.name"
+                                    />
+                                </div>
                             </td>
 
                             <!-- Unidade -->
@@ -439,6 +473,14 @@ const hasAnyOutOfLimits = computed<boolean>(() => {
                     </tbody>
                 </table>
             </div>
+
+            <p
+                v-if="ewmaError"
+                role="status"
+                class="text-sm text-amber-700 dark:text-amber-400"
+            >
+                {{ ewmaError }}
+            </p>
 
             <!-- Seção de Comentário -->
             <div class="flex flex-col items-start gap-4 pt-2 sm:flex-row">

@@ -5,6 +5,50 @@ namespace App\Features\StatisticalAnalysis\Services;
 class EwmaCalculator
 {
     /**
+     * @param  list<float>  $history  Readings in chronological order, strictly before the current reading.
+     * @return array<string, mixed>
+     */
+    public function evaluate(float $value, array $history, float $lambda = 0.2, float $level = 3.0, int $lookback = 20): array
+    {
+        if ($lambda <= 0 || $lambda > 1 || $level <= 0 || $lookback < 2) {
+            throw new \InvalidArgumentException('Configuração EWMA inválida.');
+        }
+
+        $history = array_slice($history, -$lookback);
+        $count = count($history);
+        $settings = ['lambda' => $lambda, 'level' => $level, 'lookback' => $lookback, 'history_count' => $count];
+
+        if ($count < 2) {
+            return $settings + ['available' => false, 'is_alert' => false, 'reason' => 'São necessárias ao menos duas leituras anteriores.'];
+        }
+
+        $mean = array_sum($history) / $count;
+        $variance = array_sum(array_map(fn (float $reading): float => ($reading - $mean) ** 2, $history)) / ($count - 1);
+        $sigma = sqrt($variance);
+        $points = array_map(fn (float $reading): array => [
+            'timestamp' => '', 'date' => '', 'time' => '', 'value' => $reading,
+        ], [...$history, $value]);
+        $series = $this->calculate($points, $mean, $sigma, $lambda, [$level]);
+        $current = $series['series'][$count];
+
+        return $settings + [
+            'available' => true,
+            'value' => $value,
+            'ewma' => $current['z_value'],
+            'previous_ewma' => $current['memorial']['previous_z'],
+            'mean' => $mean,
+            'sigma' => $sigma,
+            'sigma_z' => $current['sigma_z'],
+            'step' => $count + 1,
+            'lower_limit' => $current['levels'][0]['lcl'],
+            'upper_limit' => $current['levels'][0]['ucl'],
+            'is_alert' => $current['alert_level'] > 0,
+            'side' => $current['violated_side'],
+            'calculation' => $current['memorial']['substitution_str'],
+        ];
+    }
+
+    /**
      * @param  list<array{timestamp: string, date: string, time: string, value: float}>  $points
      * @param  list<float>  $multipliers
      * @return array{

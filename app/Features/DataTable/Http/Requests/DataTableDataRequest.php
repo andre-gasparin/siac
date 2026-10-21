@@ -25,6 +25,9 @@ class DataTableDataRequest extends FormRequest
             'system_ids.*' => ['integer'],
             'start_date' => ['nullable', 'date'],
             'end_date' => ['nullable', 'date'],
+            'ewma_outside_limits' => ['sometimes', 'boolean'],
+            'ewma_all' => ['sometimes', 'boolean'],
+            'ewma_lookback' => ['sometimes', 'integer', 'min:2', 'max:500'],
         ];
     }
 }

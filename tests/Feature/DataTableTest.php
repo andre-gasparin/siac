@@ -101,7 +101,7 @@ test('data table data endpoint returns the established empty payload without sel
         ]);
 });
 
-test('data table data endpoint orders parameters by character approximation across multiple systems', function () {
+test('data table follows the first selected system order and pairs matching parameters', function () {
     $system1 = MonitoredSystem::create([
         'team_id' => $this->team->id,
         'name' => 'Sistema 1',
@@ -172,9 +172,10 @@ test('data table data endpoint orders parameters by character approximation acro
     $data = $response->json();
     $this->assertCount(4, $data['parameters']);
 
-    // Ordered naturally by name: "Condutividade", "pH @ 25°C" (Sys1), "pH @ 25°C" (Sys2), "Sílica"
+    // Preserve the first system order and place matching names together.
     $paramNames = array_column($data['parameters'], 'name');
-    $this->assertEquals(['Condutividade', 'pH @ 25°C', 'pH @ 25°C', 'Sílica'], $paramNames);
+    $this->assertEquals(['Sílica', 'pH @ 25°C', 'pH @ 25°C', 'Condutividade'], $paramNames);
+    expect(array_column($data['parameters'], 'id'))->toBe([$sys1ParamSilica->id, $sys1ParamPh->id, $sys2ParamPh->id, $sys2ParamCondutividade->id]);
 });
 
 test('data table calculates column averages correctly', function () {

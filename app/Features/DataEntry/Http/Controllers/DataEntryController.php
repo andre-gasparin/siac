@@ -41,6 +41,8 @@ class DataEntryController extends Controller
                             'sort_order',
                             'alert_1_min',
                             'alert_1_max',
+                            'ewma_lambda',
+                            'ewma_level',
                         ]);
                 },
             ])

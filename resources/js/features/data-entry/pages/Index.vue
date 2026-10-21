@@ -727,6 +727,7 @@ async function handleSubmitBatch() {
 
             <!-- Painel Direito: Formulário e Ações -->
             <DataEntryForm
+                :team-slug="currentTeam.slug"
                 :current-system="currentSystem"
                 v-model:collection-date="collectionDate"
                 v-model:collection-time="collectionTime"

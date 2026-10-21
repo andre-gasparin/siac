@@ -4,21 +4,17 @@ namespace App\Features\DataTable\Http\Controllers;
 
 use App\Features\DataTable\Http\Requests\DeleteDataTableRowRequest;
 use App\Features\DataTable\Http\Requests\UpdateDataTableRowTimestampRequest;
+use App\Features\DataTable\Services\DataTableMutationService;
 use App\Http\Controllers\Controller;
-use App\Models\ParameterValue;
 use App\Models\Team;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Carbon;
 
 class DataTableRowController extends Controller
 {
-    public function destroy(DeleteDataTableRowRequest $request, Team $current_team): JsonResponse
+    public function destroy(DeleteDataTableRowRequest $request, Team $current_team, DataTableMutationService $mutations): JsonResponse
     {
-        $deletedCount = ParameterValue::query()
-            ->where('team_id', $current_team->id)
-            ->whereIn('parameter_id', $request->validated('parameter_ids'))
-            ->where('measured_at', Carbon::parse($request->validated('timestamp')))
-            ->delete();
+        $deletedCount = $mutations->deleteRow($current_team, $request->user(), Carbon::parse($request->validated('timestamp')), $request->validated('parameter_ids'));
 
         return response()->json([
             'success' => true,
@@ -27,20 +23,13 @@ class DataTableRowController extends Controller
         ]);
     }
 
-    public function updateTimestamp(UpdateDataTableRowTimestampRequest $request, Team $current_team): JsonResponse
+    public function updateTimestamp(UpdateDataTableRowTimestampRequest $request, Team $current_team, DataTableMutationService $mutations): JsonResponse
     {
         $validated = $request->validated();
         $oldMeasuredAt = Carbon::parse($validated['old_timestamp']);
         $newMeasuredAt = Carbon::parse($validated['new_timestamp']);
 
-        $updatedCount = ParameterValue::query()
-            ->where('team_id', $current_team->id)
-            ->whereIn('parameter_id', $validated['parameter_ids'])
-            ->where('measured_at', $oldMeasuredAt)
-            ->update([
-                'measured_at' => $newMeasuredAt,
-                'measured_date' => $newMeasuredAt->toDateString(),
-            ]);
+        $updatedCount = $mutations->moveRow($current_team, $request->user(), $oldMeasuredAt, $newMeasuredAt, $validated['parameter_ids']);
 
         return response()->json([
             'success' => true,

@@ -1,17 +1,18 @@
 <script setup lang="ts">
 import {
     ArrowUpDown,
+    ChartColumn,
     Check,
     Database,
     Eye,
     EyeOff,
-    Info,
+    History,
     LineChart,
     Loader2,
     MessageSquare,
     Pencil,
     Trash2,
-    X as XIcon,
+    X,
 } from '@lucide/vue';
 import type {
     AverageInfo,
@@ -19,6 +20,7 @@ import type {
     ParameterItem,
     SystemColorStyle,
 } from '@/features/data-table/types';
+import EwmaAlert from '@/shared/components/EwmaAlert.vue';
 
 defineProps<{
     parameters: ParameterItem[];
@@ -27,6 +29,7 @@ defineProps<{
     averages: Record<number, AverageInfo>;
     isMultiSystem: boolean;
     isLoading: boolean;
+    fitToScreen: boolean;
     systemColorMap: Record<number, SystemColorStyle>;
     isSystemCollapsed: (sysId: number) => boolean;
     getSystemStyle: (sysId: number) => SystemColorStyle;
@@ -43,28 +46,29 @@ const emit = defineEmits<{
     confirmDeleteRow: [row: DataRow];
     openCellEdit: [row: DataRow, param: ParameterItem, event: MouseEvent];
     openRowDateEdit: [row: DataRow, event: MouseEvent];
+    openDetails: [row: DataRow, tab: 'history' | 'comments'];
+    openChart: [parameter: ParameterItem, type: 'line' | 'bar'];
 }>();
 
-function formatValue(val: number | null | undefined, decimals: number): string {
-    if (val === null || val === undefined || isNaN(val)) {
-        return '';
-    }
-
-    return val.toLocaleString('pt-BR', {
-        minimumFractionDigits: decimals,
-        maximumFractionDigits: decimals,
-    });
+function formatValue(
+    value: number | null | undefined,
+    decimals: number,
+): string {
+    return value == null || !Number.isFinite(value)
+        ? ''
+        : value.toLocaleString('pt-BR', {
+              minimumFractionDigits: decimals,
+              maximumFractionDigits: decimals,
+          });
 }
+function isOutside(row: DataRow, parameter: ParameterItem): boolean {
+    const value = row.values[parameter.id];
 
-function formatLimit(val: number | null | undefined, decimals: number): string {
-    if (val === null || val === undefined || isNaN(val)) {
-        return '';
-    }
-
-    return val.toLocaleString('pt-BR', {
-        minimumFractionDigits: decimals,
-        maximumFractionDigits: decimals,
-    });
+    return (
+        value != null &&
+        ((parameter.alert_1_min != null && value < parameter.alert_1_min) ||
+            (parameter.alert_1_max != null && value > parameter.alert_1_max))
+    );
 }
 </script>
 
@@ -72,416 +76,333 @@ function formatLimit(val: number | null | undefined, decimals: number): string {
     <div
         class="flex w-full min-w-0 flex-col overflow-hidden rounded-lg border bg-card shadow-sm"
     >
-        <!-- Systems Summary Header Bar if loaded -->
         <div
-            v-if="parameters.length > 0"
-            class="flex shrink-0 flex-wrap items-center justify-between gap-2 border-b bg-muted/20 px-3 py-2 text-xs font-medium"
+            v-if="parameters.length"
+            class="flex flex-wrap items-center justify-between gap-2 border-b bg-muted/20 px-3 py-2 text-xs"
         >
             <div class="flex flex-wrap items-center gap-2">
-                <span class="font-semibold text-foreground">Sistema:</span>
-                <span v-if="!isMultiSystem" class="font-bold text-primary">
-                    {{ parameters[0]?.system_name }}
-                </span>
-                <span v-else class="flex flex-wrap items-center gap-1.5">
+                <strong>Sistema:</strong>
+                <strong v-if="!isMultiSystem" class="text-primary">{{
+                    parameters[0]?.system_name
+                }}</strong>
+                <template v-else>
                     <button
-                        v-for="(sysColor, sysId) in systemColorMap"
-                        :key="sysId"
+                        v-for="(style, systemId) in systemColorMap"
+                        :key="systemId"
                         type="button"
-                        @click="emit('toggleCollapseSystem', Number(sysId))"
-                        class="inline-flex cursor-pointer items-center gap-1 rounded border px-2 py-1 text-[11px] font-semibold transition-all select-none hover:scale-[1.02]"
+                        class="inline-flex items-center gap-1 rounded border px-2 py-1 text-[11px]"
                         :class="
-                            isSystemCollapsed(Number(sysId))
-                                ? 'border-dashed border-muted-foreground/40 bg-muted/80 text-muted-foreground line-through opacity-70'
+                            isSystemCollapsed(Number(systemId))
+                                ? 'border-dashed text-muted-foreground line-through'
                                 : [
-                                      sysColor.headerBg,
-                                      sysColor.headerText,
-                                      sysColor.borderCol,
+                                      style.headerBg,
+                                      style.headerText,
+                                      style.borderCol,
                                   ]
                         "
                         :title="
-                            isSystemCollapsed(Number(sysId))
-                                ? 'Clique para reexibir colunas'
-                                : 'Clique para ocultar colunas'
+                            isSystemCollapsed(Number(systemId))
+                                ? 'Exibir sistema'
+                                : 'Ocultar sistema'
                         "
+                        @click="emit('toggleCollapseSystem', Number(systemId))"
                     >
                         <EyeOff
-                            v-if="isSystemCollapsed(Number(sysId))"
-                            class="h-3 w-3 opacity-60"
-                        />
-                        <Eye v-else class="h-3 w-3 opacity-70" />
-                        <span>{{
+                            v-if="isSystemCollapsed(Number(systemId))"
+                            class="size-3"
+                        /><Eye v-else class="size-3" />
+                        {{
                             parameters.find(
-                                (p) => p.monitored_system_id === Number(sysId),
+                                (p) =>
+                                    p.monitored_system_id === Number(systemId),
                             )?.system_name
-                        }}</span>
+                        }}
                     </button>
-                </span>
+                </template>
             </div>
-            <div class="text-[11px] text-muted-foreground">
-                Exibindo {{ visibleParameters.length }} de
-                {{ parameters.length }} colunas
-            </div>
+            <span class="text-muted-foreground"
+                >{{ visibleParameters.length }} de
+                {{ parameters.length }} colunas</span
+            >
         </div>
-
-        <!-- Empty State Prompt Before Clicking Carregar -->
         <div
-            v-if="parameters.length === 0 && !isLoading"
-            class="p-10 text-center text-muted-foreground"
+            v-if="isLoading"
+            class="flex items-center justify-center gap-2 p-10 text-xs text-muted-foreground"
         >
-            <div class="mb-3 flex justify-center">
-                <div
-                    class="flex size-9 items-center justify-center rounded-md bg-muted/50"
-                >
-                    <Database class="size-4 text-muted-foreground/70" />
-                </div>
-            </div>
-            <p class="text-xs font-medium">
-                Selecione o(s) sistema(s) e o intervalo de datas acima.
-            </p>
-            <p class="mt-1 text-[11px] text-muted-foreground/80">
-                Clique no botão
-                <span
-                    class="font-semibold text-emerald-600 dark:text-emerald-400"
-                    >"Carregar"</span
-                >
-                para visualizar a tabela de dados.
-            </p>
+            <Loader2 class="size-5 animate-spin" />Carregando dados da tabela...
         </div>
-
-        <!-- Loading State -->
         <div
-            v-else-if="isLoading"
-            class="flex flex-col items-center justify-center gap-2 p-10 text-center text-muted-foreground"
+            v-else-if="!parameters.length"
+            class="p-10 text-center text-xs text-muted-foreground"
         >
-            <Loader2
-                class="h-5 w-5 animate-spin text-emerald-600 dark:text-emerald-400"
-            />
-            <p class="text-xs font-medium">Carregando dados da tabela...</p>
+            <Database class="mx-auto mb-3 size-5" />Selecione os sistemas e o
+            período e clique em Carregar.
         </div>
-
-        <!-- Table with Sticky Header & Standardized Scrollbar -->
         <div
-            v-else-if="parameters.length > 0"
-            class="relative max-h-[calc(100vh-210px)] w-full overflow-x-auto overflow-y-auto"
+            v-else
+            class="relative max-h-[calc(100vh-210px)] w-full overflow-auto"
         >
             <table
-                class="w-full min-w-max border-collapse text-left text-[11px]"
+                class="w-full border-collapse text-center text-[11px]"
+                :class="fitToScreen ? 'min-w-[500px] table-fixed' : 'min-w-max'"
+                data-test="data-table-grid"
             >
+                <colgroup>
+                    <col class="w-20" />
+                    <col class="w-20" />
+                    <col class="w-12" />
+                    <col v-for="param in visibleParameters" :key="param.id" />
+                </colgroup>
                 <thead class="sticky top-0 z-20 bg-card shadow-sm">
-                    <!-- Header Row 1: System Names -->
-                    <tr
-                        v-if="isMultiSystem"
-                        class="border-b bg-muted/90 font-semibold backdrop-blur-sm"
-                    >
-                        <th
-                            class="w-8 border-r bg-card px-1 py-1 text-center"
-                            rowspan="1"
-                        ></th>
-                        <th
-                            class="w-20 border-r bg-card px-2 py-1"
-                            rowspan="1"
-                        ></th>
-                        <th
-                            class="w-12 border-r bg-card px-2 py-1"
-                            rowspan="1"
-                        ></th>
-
+                    <tr v-if="isMultiSystem" class="border-b">
+                        <th colspan="3" class="border-r bg-card"></th>
                         <th
                             v-for="param in visibleParameters"
-                            :key="'sys-' + param.id"
-                            @click="
-                                emit(
-                                    'toggleCollapseSystem',
-                                    param.monitored_system_id,
-                                )
-                            "
-                            class="cursor-pointer border-r px-2 py-1 text-center text-[10px] font-bold tracking-tight uppercase transition-all select-none hover:brightness-95"
+                            :key="param.id"
+                            class="border-r px-1 py-1 text-[10px] font-bold wrap-anywhere"
                             :class="[
                                 getSystemStyle(param.monitored_system_id)
                                     .headerBg,
                                 getSystemStyle(param.monitored_system_id)
                                     .headerText,
-                                getSystemStyle(param.monitored_system_id)
-                                    .borderCol,
                             ]"
-                            title="Clique para ocultar colunas deste sistema"
                         >
                             {{ param.system_name }}
                         </th>
-
-                        <th class="w-12 bg-card px-1 py-1" rowspan="1"></th>
                     </tr>
-
-                    <!-- Header Row 2: Parameter Names & Units -->
-                    <tr class="border-b bg-card font-semibold">
-                        <th class="w-8 border-r bg-card px-1 py-1 text-center">
-                            <Trash2
-                                class="mx-auto h-3 w-3 text-muted-foreground"
-                                title="Excluir linha"
-                            />
-                        </th>
-                        <th
-                            class="w-20 border-r bg-card px-2 py-1 text-foreground"
-                        >
-                            Data
-                        </th>
-                        <th
-                            class="w-12 border-r bg-card px-2 py-1 text-foreground"
-                        >
-                            Hora
-                        </th>
-
+                    <tr class="border-b">
+                        <th class="border-r bg-card px-1 py-2">Ações</th>
+                        <th class="border-r bg-card px-1 py-2">Data</th>
+                        <th class="border-r bg-card px-1 py-2">Hora</th>
                         <th
                             v-for="param in visibleParameters"
-                            :key="'param-' + param.id"
-                            class="min-w-[90px] border-r px-2 py-1 text-center transition-colors"
+                            :key="param.id"
+                            class="border-r px-1 py-2 align-top"
                             :class="[
                                 getSystemStyle(param.monitored_system_id).colBg,
+                                !fitToScreen && 'min-w-[90px]',
                             ]"
                         >
-                            <div class="flex flex-col items-center gap-0.5">
-                                <span
-                                    class="leading-tight font-bold text-foreground"
-                                    >{{ param.name }}</span
+                            <div class="space-y-0.5 wrap-anywhere">
+                                <div class="leading-tight font-bold">
+                                    {{ param.name }}
+                                </div>
+                                <div
+                                    v-if="param.tag || param.code"
+                                    class="text-[10px] font-medium text-primary"
                                 >
-                                <span
-                                    v-if="param.unit"
-                                    class="text-[10px] leading-tight font-normal text-muted-foreground"
+                                    {{ param.tag || param.code }}
+                                </div>
+                                <div
+                                    class="text-[10px] font-normal text-muted-foreground"
                                 >
                                     {{ param.unit }}
-                                </span>
-                                <div
-                                    class="flex items-center gap-1 text-muted-foreground"
-                                >
-                                    <LineChart
-                                        class="h-2.5 w-2.5 cursor-pointer transition-colors hover:text-primary"
-                                        title="Ver Gráfico"
-                                    />
+                                </div>
+                                <div class="flex justify-center gap-1">
+                                    <button
+                                        type="button"
+                                        class="rounded p-1 text-muted-foreground hover:bg-accent hover:text-primary"
+                                        :aria-label="
+                                            'Gráfico de linha de ' + param.name
+                                        "
+                                        @click="
+                                            emit('openChart', param, 'line')
+                                        "
+                                    >
+                                        <LineChart class="size-3" />
+                                    </button>
+                                    <button
+                                        type="button"
+                                        class="rounded p-1 text-muted-foreground hover:bg-accent hover:text-primary"
+                                        :aria-label="
+                                            'Gráfico de barras de ' + param.name
+                                        "
+                                        @click="emit('openChart', param, 'bar')"
+                                    >
+                                        <ChartColumn class="size-3" />
+                                    </button>
                                 </div>
                             </div>
                         </th>
-
-                        <th class="w-12 bg-card px-1 py-1 text-center"></th>
                     </tr>
-
-                    <!-- Header Row 3: Limite Min Al.1 -->
-                    <tr class="border-b bg-card text-muted-foreground">
-                        <th class="border-r bg-card px-1 py-0.5"></th>
+                    <tr
+                        v-for="limit in ['min', 'max'] as const"
+                        :key="limit"
+                        class="border-b text-[10px] text-muted-foreground"
+                    >
                         <th
-                            class="border-r bg-card px-2 py-0.5 text-[10px] font-medium"
-                            colspan="2"
+                            colspan="3"
+                            class="border-r bg-card px-2 py-1 text-left font-medium"
                         >
-                            Limite Min Al.1
+                            Limite
+                            {{ limit === 'min' ? 'mínimo' : 'máximo' }} Al.1
                         </th>
                         <th
                             v-for="param in visibleParameters"
-                            :key="'min-' + param.id"
-                            class="border-r px-2 py-0.5 text-center text-[10px] font-normal"
-                            :class="[
-                                getSystemStyle(param.monitored_system_id).colBg,
-                            ]"
+                            :key="param.id"
+                            class="border-r px-1 py-1 font-normal wrap-anywhere"
+                            :class="
+                                getSystemStyle(param.monitored_system_id).colBg
+                            "
                         >
-                            {{ formatLimit(param.alert_1_min, param.decimals) }}
+                            {{
+                                formatValue(
+                                    limit === 'min'
+                                        ? param.alert_1_min
+                                        : param.alert_1_max,
+                                    param.decimals,
+                                )
+                            }}
                         </th>
-                        <th class="bg-card px-1 py-0.5"></th>
-                    </tr>
-
-                    <!-- Header Row 4: Limite Max Al.1 -->
-                    <tr class="border-b bg-card text-muted-foreground">
-                        <th class="border-r bg-card px-1 py-0.5"></th>
-                        <th
-                            class="border-r bg-card px-2 py-0.5 text-[10px] font-medium"
-                            colspan="2"
-                        >
-                            Limite Max Al.1
-                        </th>
-                        <th
-                            v-for="param in visibleParameters"
-                            :key="'max-' + param.id"
-                            class="border-r px-2 py-0.5 text-center text-[10px] font-normal"
-                            :class="[
-                                getSystemStyle(param.monitored_system_id).colBg,
-                            ]"
-                        >
-                            {{ formatLimit(param.alert_1_max, param.decimals) }}
-                        </th>
-                        <th class="bg-card px-1 py-0.5"></th>
                     </tr>
                 </thead>
-
-                <!-- Data Body -->
                 <tbody>
                     <tr
-                        v-for="row in rows"
+                        v-for="(row, index) in rows"
                         :key="row.timestamp"
-                        class="border-b transition-colors hover:bg-muted/30"
+                        class="group/row border-b hover:[&>td]:bg-accent/70"
+                        :class="{
+                            '[&>td]:border-t-2 [&>td]:border-t-foreground/40':
+                                index > 0 && row.date !== rows[index - 1].date,
+                            'opacity-50': isDeletingRow === row.timestamp,
+                        }"
+                        :data-day-start="
+                            index > 0 && row.date !== rows[index - 1].date
+                        "
                     >
-                        <!-- Delete Row Column with Confirmation Check -->
-                        <td class="border-r bg-card px-1 py-1 text-center">
-                            <Loader2
-                                v-if="isDeletingRow === row.timestamp"
-                                class="mx-auto h-3.5 w-3.5 animate-spin text-muted-foreground"
-                            />
-
+                        <td class="border-r bg-card px-1 py-1">
                             <div
-                                v-else-if="
-                                    confirmingDeleteTimestamp === row.timestamp
-                                "
-                                class="flex items-center justify-center gap-1"
+                                class="flex items-center justify-center gap-0.5"
                             >
-                                <button
-                                    type="button"
-                                    @click.stop="emit('confirmDeleteRow', row)"
-                                    class="rounded p-0.5 font-bold text-emerald-600 transition-all hover:bg-emerald-50 hover:text-emerald-700 dark:hover:bg-emerald-950"
-                                    title="Confirmar exclusão da linha"
+                                <template
+                                    v-if="
+                                        confirmingDeleteTimestamp ===
+                                        row.timestamp
+                                    "
                                 >
-                                    <Check
-                                        class="mx-auto h-3.5 w-3.5 stroke-[2.5]"
-                                    />
+                                    <button
+                                        type="button"
+                                        class="rounded p-1 text-destructive"
+                                        title="Confirmar exclusão"
+                                        :disabled="isDeletingRow !== null"
+                                        @click="emit('confirmDeleteRow', row)"
+                                    >
+                                        <Check class="size-3.5" />
+                                    </button>
+                                    <button
+                                        type="button"
+                                        class="rounded p-1"
+                                        title="Cancelar exclusão"
+                                        @click="emit('cancelDeleteRow')"
+                                    >
+                                        <X class="size-3.5" />
+                                    </button>
+                                </template>
+                                <button
+                                    v-else
+                                    type="button"
+                                    class="rounded p-1 text-muted-foreground hover:text-destructive"
+                                    title="Excluir linha"
+                                    :disabled="isDeletingRow !== null"
+                                    @click="
+                                        emit('startDeleteRow', row.timestamp)
+                                    "
+                                >
+                                    <Trash2 class="size-3.5" />
                                 </button>
                                 <button
                                     type="button"
-                                    @click.stop="emit('cancelDeleteRow')"
-                                    class="rounded p-0.5 text-muted-foreground transition-all hover:bg-muted hover:text-foreground"
-                                    title="Cancelar"
+                                    class="rounded p-1 text-muted-foreground hover:text-primary"
+                                    title="Histórico de alterações"
+                                    @click="emit('openDetails', row, 'history')"
                                 >
-                                    <XIcon class="mx-auto h-3 w-3" />
+                                    <History class="size-3.5" />
+                                </button>
+                                <button
+                                    type="button"
+                                    class="rounded p-1 text-muted-foreground hover:text-primary"
+                                    title="Comentários"
+                                    @click="
+                                        emit('openDetails', row, 'comments')
+                                    "
+                                >
+                                    <MessageSquare class="size-3.5" />
                                 </button>
                             </div>
-
-                            <button
-                                v-else
-                                type="button"
-                                @click.stop="
-                                    emit('startDeleteRow', row.timestamp)
-                                "
-                                class="rounded p-0.5 text-muted-foreground transition-colors hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-950/30"
-                                title="Excluir esta linha de leituras"
-                            >
-                                <Trash2 class="mx-auto h-3.5 w-3.5" />
-                            </button>
                         </td>
-
-                        <!-- Date Column -->
                         <td
-                            @click="emit('openRowDateEdit', row, $event)"
-                            class="group cursor-pointer border-r bg-card px-2 py-1 font-medium whitespace-nowrap text-foreground transition-colors hover:bg-emerald-50/70 dark:hover:bg-emerald-950/40"
+                            class="relative cursor-pointer border-r bg-card px-1 py-2 font-medium"
                             :class="{
-                                'bg-emerald-100/90 font-bold ring-2 ring-emerald-500 ring-inset dark:bg-emerald-900/70':
+                                'ring-2 ring-primary ring-inset':
                                     isEditingRowDate(row.timestamp),
                             }"
-                            title="Clique para editar a data/hora da linha"
-                        >
-                            <div class="flex items-center gap-1">
-                                <span>{{ row.date }}</span>
-                                <Pencil
-                                    class="h-2.5 w-2.5 text-emerald-600 opacity-0 transition-opacity group-hover:opacity-70 dark:text-emerald-400"
-                                />
-                            </div>
-                        </td>
-
-                        <!-- Time Column -->
-                        <td
+                            title="Editar data e hora"
                             @click="emit('openRowDateEdit', row, $event)"
-                            class="group cursor-pointer border-r bg-card px-2 py-1 whitespace-nowrap text-muted-foreground transition-colors hover:bg-emerald-50/70 dark:hover:bg-emerald-950/40"
-                            :class="{
-                                'bg-emerald-100/90 font-bold ring-2 ring-emerald-500 ring-inset dark:bg-emerald-900/70':
-                                    isEditingRowDate(row.timestamp),
-                            }"
-                            title="Clique para editar a data/hora da linha"
                         >
-                            <div class="flex items-center gap-1">
-                                <span>{{ row.time }}</span>
-                                <Pencil
-                                    class="h-2.5 w-2.5 text-emerald-600 opacity-0 transition-opacity group-hover:opacity-70 dark:text-emerald-400"
-                                />
-                            </div>
+                            {{ row.date }}
                         </td>
-
-                        <!-- Parameter Values -->
+                        <td
+                            class="cursor-pointer border-r bg-card px-1 py-2 text-muted-foreground"
+                            title="Editar data e hora"
+                            @click="emit('openRowDateEdit', row, $event)"
+                        >
+                            {{ row.time }}
+                        </td>
                         <td
                             v-for="param in visibleParameters"
-                            :key="'val-' + param.id"
-                            @click="emit('openCellEdit', row, param, $event)"
-                            class="group relative cursor-pointer border-r px-2 py-1 text-center font-mono text-[11px] transition-all select-none hover:bg-emerald-50/80 hover:font-bold dark:hover:bg-emerald-950/60"
+                            :key="param.id"
+                            class="group/cell relative cursor-pointer border-r px-1 py-2 text-center font-mono tabular-nums"
                             :class="[
                                 getSystemStyle(param.monitored_system_id).colBg,
-                                isEditingThisCell(row.timestamp, param.id)
-                                    ? 'bg-emerald-100/90 font-bold ring-2 ring-emerald-500 ring-inset dark:bg-emerald-900/70'
-                                    : '',
+                                isOutside(row, param) &&
+                                    'font-bold text-red-600 dark:text-red-400',
+                                isEditingThisCell(row.timestamp, param.id) &&
+                                    'ring-2 ring-primary ring-inset',
                             ]"
                             title="Clique para editar este valor"
+                            @click="emit('openCellEdit', row, param, $event)"
                         >
-                            <div class="flex items-center justify-center gap-1">
-                                <span>{{
-                                    formatValue(
-                                        row.values[param.id],
-                                        param.decimals,
-                                    )
-                                }}</span>
-                                <Pencil
-                                    class="h-2.5 w-2.5 text-emerald-600 opacity-0 transition-opacity group-hover:opacity-70 dark:text-emerald-400"
-                                />
-                            </div>
-                        </td>
-
-                        <!-- Actions (Info / Comment) -->
-                        <td
-                            class="bg-card px-1 py-1 text-center whitespace-nowrap"
-                        >
-                            <div
-                                class="flex items-center justify-center gap-1 text-muted-foreground"
-                            >
-                                <Info
-                                    class="h-3 w-3 cursor-pointer transition-colors hover:text-primary"
-                                    title="Informações"
-                                />
-                                <MessageSquare
-                                    class="h-3 w-3 cursor-pointer transition-colors hover:text-primary"
-                                    title="Observações"
-                                />
-                            </div>
+                            <span class="block wrap-anywhere">{{
+                                formatValue(
+                                    row.values[param.id],
+                                    param.decimals,
+                                )
+                            }}</span>
+                            <span
+                                v-if="row.ewma?.[param.id]"
+                                class="absolute top-0.5 right-0.5"
+                                ><EwmaAlert
+                                    :result="row.ewma[param.id]"
+                                    :parameter-name="param.name"
+                            /></span>
+                            <Pencil
+                                v-else
+                                class="pointer-events-none absolute top-0.5 right-0.5 size-2.5 opacity-0 group-hover/cell:opacity-60"
+                            />
                         </td>
                     </tr>
-
-                    <!-- Empty rows message if parameters exist but no readings in period -->
-                    <tr v-if="rows.length === 0">
+                    <tr v-if="!rows.length">
                         <td
-                            :colspan="visibleParameters.length + 4"
-                            class="p-6 text-center text-xs text-muted-foreground"
+                            :colspan="visibleParameters.length + 3"
+                            class="p-6 text-muted-foreground"
                         >
                             Sem registros de leitura no período selecionado.
                         </td>
                     </tr>
                 </tbody>
-
-                <!-- Table Footer: Média (Sticky Bottom) -->
-                <tfoot class="sticky bottom-0 z-10 bg-card shadow-md">
-                    <tr
-                        class="border-t-2 bg-muted/90 font-bold backdrop-blur-sm"
-                    >
-                        <td class="border-r px-1 py-1 text-center">
-                            <ArrowUpDown
-                                class="mx-auto h-3 w-3 text-muted-foreground"
-                            />
+                <tfoot class="sticky bottom-0 z-10 bg-card shadow-sm">
+                    <tr class="border-t-2 bg-muted font-bold">
+                        <td class="border-r p-2">
+                            <ArrowUpDown class="mx-auto size-3" />
                         </td>
-                        <td
-                            class="border-r px-2 py-1 text-foreground"
-                            colspan="2"
-                        >
-                            Média
-                        </td>
+                        <td colspan="2" class="border-r p-2">Média</td>
                         <td
                             v-for="param in visibleParameters"
-                            :key="'avg-' + param.id"
-                            class="border-r px-2 py-1 text-center font-mono text-[11px] text-foreground transition-colors"
-                            :class="[
-                                getSystemStyle(param.monitored_system_id).colBg,
-                            ]"
+                            :key="param.id"
+                            class="border-r px-1 py-2 text-center font-mono wrap-anywhere tabular-nums"
                         >
                             {{ averages[param.id]?.formatted || 'SR' }}
                         </td>
-                        <td class="px-1 py-1"></td>
                     </tr>
                 </tfoot>
             </table>

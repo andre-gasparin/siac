@@ -25,6 +25,8 @@ use Illuminate\Support\Carbon;
  * @property bool $is_active
  * @property float|null $alert_1_min
  * @property float|null $alert_1_max
+ * @property float $ewma_lambda
+ * @property float $ewma_level
  * @property float|null $alert_2_min
  * @property float|null $alert_2_max
  * @property float|null $alert_3_min
@@ -53,6 +55,8 @@ use Illuminate\Support\Carbon;
     'is_active',
     'alert_1_min',
     'alert_1_max',
+    'ewma_lambda',
+    'ewma_level',
     'alert_2_min',
     'alert_2_max',
     'alert_3_min',
@@ -64,6 +68,9 @@ class Parameter extends Model
 {
     /** @use HasFactory<Factory<static>> */
     use HasFactory, SoftDeletes;
+
+    /** @var array<string, mixed> */
+    protected $attributes = ['ewma_lambda' => 0.2, 'ewma_level' => 3];
 
     /**
      * Get the team that owns the parameter.
@@ -138,6 +145,8 @@ class Parameter extends Model
             'is_active' => 'boolean',
             'alert_1_min' => 'double',
             'alert_1_max' => 'double',
+            'ewma_lambda' => 'double',
+            'ewma_level' => 'double',
             'alert_2_min' => 'double',
             'alert_2_max' => 'double',
             'alert_3_min' => 'double',

@@ -1,3 +1,5 @@
+import type { EwmaResult } from '@/shared/types/ewma';
+
 export interface SystemItem {
     id: number;
     name: string;
@@ -8,6 +10,9 @@ export interface ParameterItem {
     id: number;
     name: string;
     code?: string;
+    tag?: string | null;
+    ewma_lambda: number;
+    ewma_level: number;
     unit?: string;
     decimals: number;
     sort_order: number;
@@ -22,6 +27,7 @@ export interface DataRow {
     date: string;
     time: string;
     values: Record<number, number>;
+    ewma: Record<number, EwmaResult>;
 }
 
 export interface AverageInfo {

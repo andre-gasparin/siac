@@ -46,6 +46,8 @@ class TeamSystemController extends Controller
                             'decimals' => $parameter->decimals,
                             'sort_order' => $parameter->sort_order,
                             'is_active' => (bool) $parameter->is_active,
+                            'ewma_lambda' => $parameter->ewma_lambda,
+                            'ewma_level' => $parameter->ewma_level,
                             'alert_1_min' => $parameter->alert_1_min,
                             'alert_1_max' => $parameter->alert_1_max,
                             'alert_2_min' => $parameter->alert_2_min,
