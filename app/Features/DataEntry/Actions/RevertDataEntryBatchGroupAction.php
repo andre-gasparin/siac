@@ -2,6 +2,7 @@
 
 namespace App\Features\DataEntry\Actions;
 
+use App\Features\Calculations\Services\ParameterCalculationService;
 use App\Models\DataEntryBatch;
 use App\Models\Team;
 use App\Models\User;
@@ -12,6 +13,7 @@ class RevertDataEntryBatchGroupAction
 {
     public function __construct(
         private readonly RevertDataEntryBatchAction $revertBatchAction,
+        private readonly ParameterCalculationService $calculator,
     ) {}
 
     /**
@@ -60,17 +62,24 @@ class RevertDataEntryBatchGroupAction
         }
 
         return DB::transaction(function () use ($team, $user, $completedBatches, $batchGroupUuid): array {
+            $this->calculator->lock($team);
             $revertedCount = 0;
+            $parameterIds = [];
+            $timestamps = [];
 
             foreach ($completedBatches as $batch) {
-                $this->revertBatchAction->execute($team, $user, $batch);
+                $this->revertBatchAction->execute($team, $user, $batch, false);
+                array_push($parameterIds, ...($batch->parameter_ids ?? []));
+                $timestamps[] = $batch->collected_at->toDateTimeString();
                 $revertedCount++;
             }
+
+            $this->calculator->execute($team, $parameterIds, $timestamps, $user);
 
             return [
                 'reverted_count' => $revertedCount,
                 'batch_group_uuid' => $batchGroupUuid,
             ];
-        });
+        }, 3);
     }
 }

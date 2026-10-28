@@ -2,6 +2,7 @@
 
 namespace App\Features\DataEntry\Actions;
 
+use App\Features\Calculations\Services\ParameterCalculationService;
 use App\Models\DataEntryBatch;
 use App\Models\Parameter;
 use App\Models\ParameterValue;
@@ -14,7 +15,9 @@ use Illuminate\Validation\ValidationException;
 
 class RevertDataEntryBatchAction
 {
-    public function execute(Team $team, User $user, DataEntryBatch $batch): DataEntryBatch
+    public function __construct(private readonly ParameterCalculationService $calculator) {}
+
+    public function execute(Team $team, User $user, DataEntryBatch $batch, bool $recalculate = true): DataEntryBatch
     {
         if ($batch->team_id !== $team->id) {
             throw ValidationException::withMessages([
@@ -36,7 +39,8 @@ class RevertDataEntryBatchAction
             ]);
         }
 
-        return DB::transaction(function () use ($team, $user, $batch): DataEntryBatch {
+        return DB::transaction(function () use ($team, $user, $batch, $recalculate): DataEntryBatch {
+            $this->calculator->lock($team);
             $parameterIds = $batch->parameter_ids ?? [];
 
             $parameters = Parameter::query()
@@ -97,7 +101,11 @@ class RevertDataEntryBatchAction
                 'snapshot' => $snapshot,
             ]);
 
+            if ($recalculate) {
+                $this->calculator->execute($team, array_values($parameterIds), [$batch->collected_at->toDateTimeString()], $user);
+            }
+
             return $batch->fresh(['user', 'revertedBy', 'monitoredSystem']);
-        });
+        }, 3);
     }
 }

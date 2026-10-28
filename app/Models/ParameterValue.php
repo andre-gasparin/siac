@@ -18,6 +18,7 @@ use Illuminate\Support\Carbon;
  * @property Carbon $measured_date
  * @property float|null $value
  * @property string $source_type
+ * @property int|null $calculation_rule_id
  * @property int|null $created_by
  * @property int|null $updated_by
  * @property Carbon|null $created_at
@@ -38,6 +39,7 @@ use Illuminate\Support\Carbon;
     'source_type',
     'created_by',
     'updated_by',
+    'calculation_rule_id',
 ])]
 class ParameterValue extends Model
 {

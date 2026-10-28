@@ -2,6 +2,7 @@
 
 namespace App\Features\SpreadsheetImports\Actions;
 
+use App\Features\Calculations\Services\ParameterCalculationService;
 use App\Models\ParameterValue;
 use App\Models\SpreadsheetImportBatch;
 use App\Models\SpreadsheetTemplate;
@@ -11,11 +12,13 @@ use Illuminate\Support\Facades\DB;
 
 class ExecuteSpreadsheetImportAction
 {
+    public function __construct(private readonly ParameterCalculationService $calculator) {}
+
     /**
      * @param array<int, array{
      *     system_id: int,
      *     parameter_id: int,
-     *     final_value: float|null,
+     *     final_value?: float|null,
      *     measured_at: string,
      *     measured_date: string,
      *     status?: string,
@@ -37,6 +40,7 @@ class ExecuteSpreadsheetImportAction
         array $items,
     ): array {
         return DB::transaction(function () use ($team, $user, $template, $fileName, $filePath, $referenceDate, $items) {
+            $this->calculator->lock($team);
             $batch = SpreadsheetImportBatch::create([
                 'team_id' => $team->id,
                 'user_id' => $user->id,
@@ -50,6 +54,7 @@ class ExecuteSpreadsheetImportAction
             ]);
 
             $snapshot = [];
+            $affected = [];
             $createdCount = 0;
             $updatedCount = 0;
 
@@ -59,6 +64,7 @@ class ExecuteSpreadsheetImportAction
                 }
 
                 $finalValue = $item['final_value'] !== null ? (float) $item['final_value'] : null;
+                $affected[$item['measured_at']][] = $item['parameter_id'];
 
                 $existing = ParameterValue::query()
                     ->where('team_id', $team->id)
@@ -71,6 +77,8 @@ class ExecuteSpreadsheetImportAction
                         'action' => 'update',
                         'id' => $existing->id,
                         'previous_value' => $existing->value,
+                        'previous_source_type' => $existing->source_type,
+                        'previous_calculation_rule_id' => $existing->getAttribute('calculation_rule_id'),
                         'new_value' => $finalValue,
                         'parameter_id' => $existing->parameter_id,
                         'measured_at' => $existing->measured_at->format('Y-m-d H:i:s'),
@@ -79,6 +87,8 @@ class ExecuteSpreadsheetImportAction
                     $existing->update([
                         'value' => $finalValue,
                         'updated_by' => $user->id,
+                        'source_type' => 'spreadsheet',
+                        'calculation_rule_id' => null,
                     ]);
 
                     $updatedCount++;
@@ -122,12 +132,16 @@ class ExecuteSpreadsheetImportAction
                 ],
             ]);
 
+            foreach ($affected as $timestamp => $parameterIds) {
+                $this->calculator->execute($team, $parameterIds, [$timestamp], $user);
+            }
+
             return [
                 'batch_id' => $batch->id,
                 'saved_count' => $totalSaved,
                 'created_count' => $createdCount,
                 'updated_count' => $updatedCount,
             ];
-        });
+        }, 3);
     }
 }

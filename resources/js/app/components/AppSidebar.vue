@@ -3,6 +3,7 @@ import { Link, usePage } from '@inertiajs/vue3';
 import {
     Activity,
     Building2,
+    Calculator,
     ClipboardEdit,
     FileSpreadsheet,
     FileText,
@@ -15,6 +16,7 @@ import NavMain from '@/app/components/NavMain.vue';
 import NavUser from '@/app/components/NavUser.vue';
 import TeamSwitcher from '@/features/teams/components/TeamSwitcher.vue';
 import { dashboard } from '@/routes';
+import { index as calculationsIndex } from '@/routes/calculations';
 import { index as dataEntryIndex } from '@/routes/data-entry';
 import { index as reportsIndex } from '@/routes/reports';
 import { index as spreadsheetImportsIndex } from '@/routes/spreadsheet-imports';
@@ -115,6 +117,16 @@ const mainNavItems = computed<NavItem[]>(() => {
             icon: Building2,
         },
     ];
+
+    if (isAdmin.value && page.props.currentTeam) {
+        items.splice(5, 0, {
+            title: 'Cálculos',
+            href: calculationsIndex.url({
+                current_team: page.props.currentTeam.slug,
+            }),
+            icon: Calculator,
+        });
+    }
 
     return items;
 });

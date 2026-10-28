@@ -2,6 +2,7 @@
 
 namespace App\Features\DataEntry\Actions;
 
+use App\Features\Calculations\Services\ParameterCalculationService;
 use App\Models\DataEntryBatch;
 use App\Models\MonitoredSystem;
 use App\Models\Parameter;
@@ -15,6 +16,8 @@ use Illuminate\Validation\ValidationException;
 
 class StoreDataEntryAction
 {
+    public function __construct(private readonly ParameterCalculationService $calculator) {}
+
     /**
      * @param  list<array{parameter_id: int, value: float|int|string|null}>  $values
      * @return array{saved_count: int, cleared_count: int, has_comment: bool, measured_at: string, batch_id: int, batch_group_uuid: ?string}
@@ -28,8 +31,10 @@ class StoreDataEntryAction
         ?string $comment = null,
         ?string $responsible = null,
         ?string $batchGroupUuid = null,
+        bool $recalculate = true,
     ): array {
-        return DB::transaction(function () use ($team, $user, $monitoredSystemId, $collectedAt, $values, $comment, $responsible, $batchGroupUuid): array {
+        return DB::transaction(function () use ($team, $user, $monitoredSystemId, $collectedAt, $values, $comment, $responsible, $batchGroupUuid, $recalculate): array {
+            $this->calculator->lock($team);
             $system = MonitoredSystem::query()
                 ->where('team_id', $team->id)
                 ->where('id', $monitoredSystemId)
@@ -48,7 +53,7 @@ class StoreDataEntryAction
             $rawClearedIds = [];
 
             foreach ($values as $item) {
-                $parameterId = (int) ($item['parameter_id'] ?? 0);
+                $parameterId = (int) $item['parameter_id'];
                 if (! $parameterId) {
                     continue;
                 }
@@ -120,6 +125,7 @@ class StoreDataEntryAction
                             'measured_date' => $measuredDate,
                             'value' => $numericValue,
                             'source_type' => 'manual',
+                            'calculation_rule_id' => null,
                             'updated_by' => $user->id,
                         ]);
                     } else {
@@ -182,6 +188,10 @@ class StoreDataEntryAction
                 'comment' => $trimmedComment !== '' ? $trimmedComment : null,
             ]);
 
+            if ($recalculate) {
+                $this->calculator->execute($team, $paramIds, [$measuredAt->toDateTimeString()], $user);
+            }
+
             return [
                 'saved_count' => count($validValues),
                 'cleared_count' => count($clearedParamIds),
@@ -190,6 +200,6 @@ class StoreDataEntryAction
                 'batch_id' => $batch->id,
                 'batch_group_uuid' => $batchGroupUuid,
             ];
-        });
+        }, 3);
     }
 }

@@ -2,8 +2,10 @@
 
 namespace App\Features\DataEntry\Actions;
 
+use App\Features\Calculations\Services\ParameterCalculationService;
 use App\Models\Team;
 use App\Models\User;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
@@ -12,6 +14,7 @@ class StoreBatchDataEntryAction
 {
     public function __construct(
         private readonly StoreDataEntryAction $storeAction,
+        private readonly ParameterCalculationService $calculator,
     ) {}
 
     /**
@@ -43,13 +46,14 @@ class StoreBatchDataEntryAction
         ?string $responsible = null,
     ): array {
         return DB::transaction(function () use ($team, $user, $collectedAt, $systems, $responsible): array {
+            $this->calculator->lock($team);
             $savedBatches = [];
             $totalValuesSaved = 0;
             $batchGroupUuid = (string) Str::uuid();
 
             foreach ($systems as $systemData) {
                 $monitoredSystemId = (int) $systemData['monitored_system_id'];
-                $values = (array) ($systemData['values'] ?? []);
+                $values = $systemData['values'];
                 $hasCommentKey = array_key_exists('comment', $systemData);
                 $comment = $hasCommentKey ? ($systemData['comment'] !== null ? (string) $systemData['comment'] : '') : null;
 
@@ -63,6 +67,7 @@ class StoreBatchDataEntryAction
                         comment: $comment,
                         responsible: $responsible,
                         batchGroupUuid: $batchGroupUuid,
+                        recalculate: false,
                     );
 
                     $batchResult['monitored_system_id'] = $monitoredSystemId;
@@ -83,12 +88,20 @@ class StoreBatchDataEntryAction
                 ]);
             }
 
+            $parameterIds = [];
+            foreach ($systems as $system) {
+                foreach ($system['values'] as $value) {
+                    $parameterIds[] = (int) $value['parameter_id'];
+                }
+            }
+            $this->calculator->execute($team, $parameterIds, [Carbon::parse($collectedAt)->toDateTimeString()], $user);
+
             return [
                 'batch_group_uuid' => $batchGroupUuid,
                 'total_systems_saved' => count($savedBatches),
                 'total_values_saved' => $totalValuesSaved,
                 'batches' => $savedBatches,
             ];
-        });
+        }, 3);
     }
 }
