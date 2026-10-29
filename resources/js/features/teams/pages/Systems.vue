@@ -125,16 +125,44 @@ const systemDragAllowed = ref(false);
 const dragSystemIndex = ref<number | null>(null);
 const draggedOverSystemIndex = ref<number | null>(null);
 
-const onSystemDragStart = (index: number) => {
+const onSystemDragStart = (e: DragEvent, index: number) => {
     dragSystemIndex.value = index;
+
+    if (e.dataTransfer) {
+        e.dataTransfer.effectAllowed = 'move';
+    }
 };
 
 const onSystemDragOver = (e: DragEvent, index: number) => {
     e.preventDefault();
-    draggedOverSystemIndex.value = index;
+
+    if (e.dataTransfer) {
+        e.dataTransfer.dropEffect = 'move';
+    }
+
+    if (draggedOverSystemIndex.value !== index) {
+        draggedOverSystemIndex.value = index;
+    }
 };
 
-const onSystemDragLeave = () => {
+const onSystemDragLeave = (e: DragEvent) => {
+    const currentTarget = e.currentTarget as HTMLElement | null;
+    const relatedTarget = e.relatedTarget as Node | null;
+
+    if (
+        currentTarget &&
+        relatedTarget &&
+        currentTarget.contains(relatedTarget)
+    ) {
+        return;
+    }
+
+    draggedOverSystemIndex.value = null;
+};
+
+const onSystemDragEnd = () => {
+    systemDragAllowed.value = false;
+    dragSystemIndex.value = null;
     draggedOverSystemIndex.value = null;
 };
 
@@ -156,6 +184,7 @@ const onSystemDrop = (index: number) => {
     });
 
     dragSystemIndex.value = null;
+    systemDragAllowed.value = false;
 };
 
 // Drag and drop state for parameters
@@ -254,17 +283,20 @@ const save = () => {
                 v-for="(system, sysIndex) in form.systems"
                 :key="system.id"
                 :draggable="systemDragAllowed"
-                @dragstart="onSystemDragStart(sysIndex)"
+                @dragstart="onSystemDragStart($event, sysIndex)"
                 @dragover="onSystemDragOver($event, sysIndex)"
                 @dragleave="onSystemDragLeave"
                 @drop="onSystemDrop(sysIndex)"
-                @dragend="systemDragAllowed = false"
-                class="overflow-hidden rounded-lg border border-border bg-card shadow-xs transition-all duration-200"
-                :class="{
-                    'border-primary/40': expandedSystems.includes(system.id),
-                    'border-dashed border-primary bg-primary/5':
-                        draggedOverSystemIndex === sysIndex,
-                }"
+                @dragend="onSystemDragEnd"
+                class="overflow-hidden rounded-lg border bg-card shadow-xs transition-all duration-200"
+                :class="[
+                    draggedOverSystemIndex === sysIndex
+                        ? 'border-2 border-dashed border-primary bg-primary/10 transition-all'
+                        : expandedSystems.includes(system.id)
+                          ? 'border-primary/40'
+                          : 'border-border',
+                    dragSystemIndex === sysIndex ? 'opacity-40' : '',
+                ]"
             >
                 <!-- Accordion Header -->
                 <div
@@ -369,7 +401,6 @@ const save = () => {
                                     <th class="min-w-[200px] px-4 py-2">
                                         Nome do Parâmetro
                                     </th>
-                                    <th class="w-[120px] px-4 py-2">Código</th>
                                     <th class="w-[160px] px-4 py-2">Tag</th>
                                     <th class="w-[120px] px-4 py-2">Unidade</th>
                                     <th class="w-[90px] px-4 py-2 text-center">
@@ -486,16 +517,6 @@ const save = () => {
                                                 class="w-full rounded border-none bg-transparent px-2 py-1 text-sm transition-all hover:bg-muted/50 focus:bg-background focus:ring-1 focus:ring-ring focus:outline-none"
                                                 placeholder="Nome do parâmetro"
                                                 required
-                                            />
-                                        </td>
-
-                                        <!-- Code -->
-                                        <td class="px-4 py-2 align-middle">
-                                            <input
-                                                v-model="parameter.code"
-                                                type="text"
-                                                class="w-full rounded border-none bg-transparent px-2 py-1 text-sm transition-all hover:bg-muted/50 focus:bg-background focus:ring-1 focus:ring-ring focus:outline-none"
-                                                placeholder="Ex: temp"
                                             />
                                         </td>
 
@@ -617,7 +638,7 @@ const save = () => {
                                         "
                                     >
                                         <td
-                                            colspan="11"
+                                            colspan="10"
                                             class="border-b border-border/80 bg-muted/15 px-6 py-4"
                                         >
                                             <div
