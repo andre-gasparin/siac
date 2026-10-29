@@ -84,7 +84,7 @@ async function save(item: RowComment) {
     try {
         await writer.put(updateComment.url({ current_team: props.teamSlug }));
         toast.success('Comentário salvo.');
-        await load();
+        emit('close');
     } catch {
         error.value =
             Object.values(writer.errors).join(' ') ||
@@ -93,6 +93,30 @@ async function save(item: RowComment) {
 }
 function display(value: string | number | null | undefined) {
     return value == null || value === '' ? '(vazio)' : String(value);
+}
+function formatDateTime(dateStr: string | null | undefined): string {
+    if (!dateStr) {
+        return 'data não registrada';
+    }
+
+    const normalized = dateStr.includes('T')
+        ? dateStr
+        : dateStr.replace(' ', 'T');
+    const parsed = new Date(normalized);
+
+    if (Number.isNaN(parsed.getTime())) {
+        return dateStr;
+    }
+
+    return new Intl.DateTimeFormat('pt-BR', {
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+    })
+        .format(parsed)
+        .replace(',', '');
 }
 onMounted(load);
 </script>
@@ -188,7 +212,7 @@ onMounted(load);
                                     : ''
                             }}</strong
                         ><span class="text-xs text-muted-foreground">{{
-                            item.created_at
+                            formatDateTime(item.created_at)
                         }}</span>
                     </div>
                     <p class="text-xs text-muted-foreground">
@@ -236,12 +260,12 @@ onMounted(load);
                         <p>
                             Registrado por
                             {{ reading.creator || 'autor não registrado' }} em
-                            {{ reading.created_at || 'data não registrada' }}.
+                            {{ formatDateTime(reading.created_at) }}.
                         </p>
                         <p>
                             Última atualização por
                             {{ reading.updater || 'autor não registrado' }} em
-                            {{ reading.updated_at || 'data não registrada' }}.
+                            {{ formatDateTime(reading.updated_at) }}.
                         </p>
                     </div>
                 </details>

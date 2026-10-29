@@ -2,6 +2,7 @@
 
 namespace App\Features\DataTable\Http\Controllers;
 
+use App\Features\DataTable\Http\Requests\BatchUpdateDataTableValuesRequest;
 use App\Features\DataTable\Http\Requests\UpdateDataTableValueRequest;
 use App\Features\DataTable\Services\DataTableMutationService;
 use App\Http\Controllers\Controller;
@@ -34,6 +35,27 @@ class DataTableValueController extends Controller
             'timestamp' => $measuredAt->toDateTimeString(),
             'value' => $numericValue,
             'message' => 'Valor atualizado com sucesso.',
+        ]);
+    }
+
+    public function batchUpdate(BatchUpdateDataTableValuesRequest $request, Team $current_team, DataTableMutationService $mutations): JsonResponse
+    {
+        $validated = $request->validated();
+        $rawValue = $validated['value'] ?? null;
+        $numericValue = $rawValue !== null && $rawValue !== '' ? (float) $rawValue : null;
+
+        $updatedCount = $mutations->batchUpdateValues(
+            $current_team,
+            $request->user(),
+            $validated['cells'],
+            $numericValue,
+        );
+
+        return response()->json([
+            'success' => true,
+            'updated_count' => $updatedCount,
+            'value' => $numericValue,
+            'message' => 'Células atualizadas com sucesso.',
         ]);
     }
 }

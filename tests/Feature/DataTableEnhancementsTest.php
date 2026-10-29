@@ -63,12 +63,17 @@ test('invalid EWMA settings are rejected', function (float $lambda, float $level
         ->assertUnprocessable()->assertJsonValidationErrors($lambda <= 0 || $lambda > 1 ? 'systems.0.parameters.0.ewma_lambda' : 'systems.0.parameters.0.ewma_level');
 })->with([[0.0, 3.0], [1.1, 3.0], [0.2, 0.0], [0.2, -1.0]]);
 
-test('table evaluates only outside specification by default and entry preview returns the same EWMA', function () {
+test('table has EWMA disabled by default and evaluates outside specification when enabled', function () {
     seedEwmaHistory($this);
     storeEwmaReading($this, '2026-10-15 09:00:00', 30);
     storeEwmaReading($this, '2026-10-15 10:00:00', 12);
     storeEwmaReading($this, '2026-10-16 09:00:00', 1000);
-    $result = app(DataTableDataBuilder::class)->build($this->team, ewmaTableFilters($this));
+
+    $defaultResult = app(DataTableDataBuilder::class)->build($this->team, ewmaTableFilters($this));
+    expect($defaultResult['rows'][0]['ewma'])->toBe([])
+        ->and($defaultResult['rows'][1]['ewma'])->toBe([]);
+
+    $result = app(DataTableDataBuilder::class)->build($this->team, ewmaTableFilters($this, ['ewma_outside_limits' => true]));
     $analysis = $result['rows'][0]['ewma'][$this->parameter->id];
     expect($analysis['history_count'])->toBe(20)->and($analysis['mean'])->toBe(10.5)->and($analysis['is_alert'])->toBeTrue()
         ->and($result['rows'][1]['ewma'])->toBe([])->and($result['parameters'][0]['tag'])->toBe('PH-01');
@@ -96,7 +101,7 @@ test('table history is loaded in one bounded query for multiple parameters and d
     }
     $queries = [];
     DB::listen(function ($query) use (&$queries) {
-        if (str_starts_with($query->sql, 'select') && str_contains($query->sql, 'parameter_values')) {
+        if (str_starts_with($query->sql, 'select') && str_contains($query->sql, '"parameter_values"')) {
             $queries[] = $query->sql;
         }
     });
@@ -159,4 +164,80 @@ test('row comments and history reject systems from another team', function () {
     $system = MonitoredSystem::query()->create(['team_id' => $team->id, 'name' => 'Privado']);
     $this->putJson(route('data-table.rows.comment', $this->team), ['monitored_system_id' => $system->id, 'timestamp' => '2026-10-15 09:00:00', 'comment' => 'Inválido'])->assertUnprocessable();
     $this->getJson(route('data-table.rows.details', ['current_team' => $this->team, 'timestamp' => '2026-10-15 09:00:00', 'system_ids' => [$system->id]]))->assertUnprocessable();
+});
+
+test('data table flags rows with comments and modifications', function () {
+    storeEwmaReading($this, '2026-10-15 09:00:00', 10);
+    storeEwmaReading($this, '2026-10-15 10:00:00', 12);
+    storeEwmaReading($this, '2026-10-15 11:00:00', 14);
+
+    $this->putJson(route('data-table.rows.comment', $this->team), [
+        'monitored_system_id' => $this->system->id,
+        'timestamp' => '2026-10-15 09:00:00',
+        'comment' => 'Amostra verificada',
+    ])->assertOk();
+
+    $this->putJson(route('data-table.cell.update', $this->team), [
+        'parameter_id' => $this->parameter->id,
+        'timestamp' => '2026-10-15 10:00:00',
+        'value' => 15.5,
+    ])->assertOk();
+
+    $result = app(DataTableDataBuilder::class)->build($this->team, ewmaTableFilters($this));
+
+    expect($result['rows'][0]['has_comments'])->toBeTrue()
+        ->and($result['rows'][0]['has_modifications'])->toBeFalse()
+        ->and($result['rows'][1]['has_comments'])->toBeFalse()
+        ->and($result['rows'][1]['has_modifications'])->toBeTrue()
+        ->and($result['rows'][2]['has_comments'])->toBeFalse()
+        ->and($result['rows'][2]['has_modifications'])->toBeFalse();
+});
+
+test('user can batch update and batch clear multiple cells across timestamps and parameters', function () {
+    $secondParameter = Parameter::query()->create([
+        'team_id' => $this->team->id,
+        'monitored_system_id' => $this->system->id,
+        'name' => 'Condutividade',
+        'decimals' => 1,
+        'sort_order' => 2,
+        'is_active' => true,
+    ]);
+
+    storeEwmaReading($this, '2026-10-15 09:00:00', 7.0, $this->parameter);
+    storeEwmaReading($this, '2026-10-15 10:00:00', 7.2, $this->parameter);
+
+    $cells = [
+        ['parameter_id' => $this->parameter->id, 'timestamp' => '2026-10-15 09:00:00'],
+        ['parameter_id' => $this->parameter->id, 'timestamp' => '2026-10-15 10:00:00'],
+        ['parameter_id' => $secondParameter->id, 'timestamp' => '2026-10-15 09:00:00'],
+    ];
+
+    $this->putJson(route('data-table.cells.batch-update', $this->team), [
+        'cells' => $cells,
+        'value' => 8.5,
+    ])->assertSuccessful()
+        ->assertJson([
+            'success' => true,
+            'updated_count' => 3,
+            'value' => 8.5,
+        ]);
+
+    expect(ParameterValue::query()->where('parameter_id', $this->parameter->id)->pluck('value')->all())
+        ->toBe([8.5, 8.5])
+        ->and(ParameterValue::query()->where('parameter_id', $secondParameter->id)->value('value'))
+        ->toBe(8.5)
+        ->and(ParameterValueRevision::query()->where('action', 'valor')->count())
+        ->toBe(3);
+
+    $this->putJson(route('data-table.cells.batch-update', $this->team), [
+        'cells' => $cells,
+        'value' => null,
+    ])->assertSuccessful()
+        ->assertJson([
+            'success' => true,
+            'updated_count' => 3,
+            'value' => null,
+        ]);
+
+    expect(ParameterValue::query()->count())->toBe(0);
 });

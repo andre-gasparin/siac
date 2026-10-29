@@ -16,6 +16,7 @@ Route::prefix('{current_team}')
         Route::get('tabela-dados/rows/details', [DataTableRowDetailsController::class, 'show'])->name('data-table.rows.details');
         Route::put('tabela-dados/rows/comment', [DataTableRowDetailsController::class, 'updateComment'])->name('data-table.rows.comment');
         Route::put('tabela-dados/cell', [DataTableValueController::class, 'update'])->name('data-table.cell.update');
+        Route::put('tabela-dados/cells/batch', [DataTableValueController::class, 'batchUpdate'])->name('data-table.cells.batch-update');
         Route::put('tabela-dados/rows/timestamp', [DataTableRowController::class, 'updateTimestamp'])->name('data-table.rows.timestamp.update');
         Route::delete('tabela-dados/rows', [DataTableRowController::class, 'destroy'])->name('data-table.rows.destroy');
     });

@@ -28,6 +28,8 @@ const series = computed<ChartSeries[]>(() => [
         color: '#059669',
         stroke_width: 2,
         axis_position: 'left',
+        min_val: props.parameter.alert_1_min,
+        max_val: props.parameter.alert_1_max,
         unit: props.parameter.unit,
         data: props.rows.flatMap((row) =>
             row.values[props.parameter.id] == null

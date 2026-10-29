@@ -29,6 +29,94 @@ const chartElement = ref<HTMLDivElement | null>(null);
 let chart: echarts.ECharts | null = null;
 let resizeObserver: ResizeObserver | null = null;
 
+function formatAxisDate(value: number | string): string {
+    const date = new Date(value);
+
+    if (Number.isNaN(date.getTime())) {
+        return String(value);
+    }
+
+    const day = String(date.getDate()).padStart(2, '0');
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+
+    return `${day}/${month}`;
+}
+
+function formatTooltipDateTime(value: number | string): string {
+    const date = new Date(value);
+
+    if (Number.isNaN(date.getTime())) {
+        return String(value);
+    }
+
+    const day = String(date.getDate()).padStart(2, '0');
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const year = date.getFullYear();
+    const hours = String(date.getHours()).padStart(2, '0');
+    const minutes = String(date.getMinutes()).padStart(2, '0');
+
+    return `${day}/${month}/${year} ${hours}:${minutes}`;
+}
+
+function formatNumericValue(value: number): string {
+    return Number.isFinite(value)
+        ? value.toLocaleString('pt-BR', { maximumFractionDigits: 4 })
+        : '';
+}
+
+function computeAxisBounds(axisSeries: ChartSeries[]): {
+    min: number | undefined;
+    max: number | undefined;
+} {
+    const allValues = axisSeries.flatMap((s) =>
+        s.data.map((d) => d.value).filter((v) => Number.isFinite(v)),
+    );
+    const minLimits = axisSeries
+        .map((s) => s.min_val)
+        .filter((v): v is number => v != null && Number.isFinite(v));
+    const maxLimits = axisSeries
+        .map((s) => s.max_val)
+        .filter((v): v is number => v != null && Number.isFinite(v));
+
+    const hasPh = axisSeries.some((s) => s.label.toLowerCase().includes('ph'));
+    const hasNegative =
+        allValues.some((v) => v < 0) || minLimits.some((v) => v < 0);
+
+    let computedMin: number | undefined = 0;
+
+    if (hasPh || hasNegative) {
+        const candidates = [...allValues, ...minLimits];
+
+        if (candidates.length > 0) {
+            const lowest = Math.min(...candidates);
+            const highest = Math.max(...allValues, ...maxLimits, lowest);
+            const span = Math.max(
+                Math.abs(highest - lowest),
+                Math.abs(lowest),
+                1,
+            );
+            computedMin = Number((lowest - span * 0.15).toFixed(2));
+        } else {
+            computedMin = undefined;
+        }
+    } else if (minLimits.length > 0 && allValues.length > 0) {
+        const lowest = Math.min(...allValues, ...minLimits);
+        computedMin = lowest < 0 ? Number((lowest * 1.15).toFixed(2)) : 0;
+    }
+
+    let computedMax: number | undefined = undefined;
+    const maxCandidates = [...allValues, ...maxLimits];
+
+    if (maxCandidates.length > 0 && maxLimits.length > 0) {
+        const highest = Math.max(...maxCandidates);
+        const lowest = computedMin ?? Math.min(...allValues, ...minLimits, 0);
+        const span = Math.max(Math.abs(highest - lowest), 1);
+        computedMax = Number((highest + span * 0.1).toFixed(2));
+    }
+
+    return { min: computedMin, max: computedMax };
+}
+
 function renderChart() {
     if (!chartElement.value) {
         return;
@@ -37,6 +125,14 @@ function renderChart() {
     chart ??= echarts.init(chartElement.value);
     const axes = new Map<string, number>();
     const yAxis: echarts.YAXisComponentOption[] = [];
+    const seriesByAxis = new Map<string, ChartSeries[]>();
+
+    for (const s of props.series) {
+        const key = s.axis_position ?? 'left';
+        const group = seriesByAxis.get(key) ?? [];
+        group.push(s);
+        seriesByAxis.set(key, group);
+    }
 
     const renderedSeries = props.series.map((series) => {
         const key = series.axis_position ?? 'left';
@@ -45,11 +141,14 @@ function renderChart() {
         if (axisIndex === undefined) {
             axisIndex = yAxis.length;
             axes.set(key, axisIndex);
+            const group = seriesByAxis.get(key) ?? [series];
+            const bounds = computeAxisBounds(group);
+
             yAxis.push({
                 type: 'value',
                 position: key,
-                min: series.min_val ?? undefined,
-                max: series.max_val ?? undefined,
+                min: bounds.min,
+                max: bounds.max,
                 name: series.unit ?? '',
                 splitLine: { show: axisIndex === 0 },
             });
@@ -57,12 +156,59 @@ function renderChart() {
 
         const isBar = series.chart_type === 'bar';
         const isArea = series.chart_type === 'area';
+        const minVal = series.min_val;
+        const maxVal = series.max_val;
+
+        const markLineData: Array<Record<string, unknown>> = [];
+
+        if (minVal != null && Number.isFinite(minVal)) {
+            markLineData.push({
+                yAxis: minVal,
+                name: 'Limite Mín.',
+                lineStyle: { color: '#ef4444', type: 'dashed', width: 1.5 },
+                label: {
+                    formatter: `Mín: ${formatNumericValue(minVal)}`,
+                    position: 'insideStartTop',
+                    color: '#ef4444',
+                    fontSize: 10,
+                },
+            });
+        }
+
+        if (maxVal != null && Number.isFinite(maxVal)) {
+            markLineData.push({
+                yAxis: maxVal,
+                name: 'Limite Máx.',
+                lineStyle: { color: '#ef4444', type: 'dashed', width: 1.5 },
+                label: {
+                    formatter: `Máx: ${formatNumericValue(maxVal)}`,
+                    position: 'insideEndTop',
+                    color: '#ef4444',
+                    fontSize: 10,
+                },
+            });
+        }
+
+        const dataPoints = series.data.map((point) => {
+            const isOutOfBounds =
+                (minVal != null && point.value < minVal) ||
+                (maxVal != null && point.value > maxVal);
+
+            if (isBar && isOutOfBounds) {
+                return {
+                    value: [point.timestamp, point.value],
+                    itemStyle: { color: '#ef4444' },
+                };
+            }
+
+            return [point.timestamp, point.value];
+        });
 
         return {
             name: series.label,
             type: isBar ? ('bar' as const) : ('line' as const),
             yAxisIndex: axisIndex,
-            data: series.data.map((point) => [point.timestamp, point.value]),
+            data: dataPoints,
             showSymbol: series.show_points ?? true,
             symbol: 'circle',
             symbolSize: 6,
@@ -76,17 +222,63 @@ function renderChart() {
             areaStyle: isArea
                 ? { opacity: 0.2, color: series.color }
                 : undefined,
+            markLine:
+                markLineData.length > 0
+                    ? {
+                          symbol: ['none', 'none'],
+                          silent: true,
+                          data: markLineData,
+                      }
+                    : undefined,
         };
     });
 
     chart.setOption(
         {
             animation: false,
-            tooltip: { trigger: 'axis' },
+            tooltip: {
+                trigger: 'axis',
+                formatter: (params: unknown) => {
+                    const items = Array.isArray(params) ? params : [params];
+
+                    if (!items.length) {
+                        return '';
+                    }
+
+                    const first = items[0] as {
+                        axisValue?: number | string;
+                        value?: unknown;
+                    };
+                    const rawTime = Array.isArray(first.value)
+                        ? first.value[0]
+                        : first.axisValue;
+                    const header = `<div style="font-weight:600;margin-bottom:4px;">Data/Hora: ${formatTooltipDateTime(rawTime as number | string)}</div>`;
+
+                    const lines = items.map((item: any) => {
+                        const val = Array.isArray(item.value)
+                            ? item.value[1]
+                            : item.value;
+                        const matchedSeries =
+                            props.series[item.seriesIndex ?? 0];
+                        const unit = matchedSeries?.unit
+                            ? ` ${matchedSeries.unit}`
+                            : '';
+
+                        return `<div>${item.marker ?? ''} <span>${item.seriesName}:</span> <strong>${formatNumericValue(Number(val))}${unit}</strong></div>`;
+                    });
+
+                    return header + lines.join('');
+                },
+            },
             legend: { type: 'scroll', top: 0 },
-            grid: { left: 52, right: 52, top: 32, bottom: 58 },
-            xAxis: { type: 'time' },
-            yAxis: yAxis.length > 0 ? yAxis : [{ type: 'value' }],
+            grid: { left: 56, right: 56, top: 36, bottom: 58 },
+            xAxis: {
+                type: 'time',
+                axisLabel: {
+                    formatter: (value: number) => formatAxisDate(value),
+                },
+            },
+            yAxis: yAxis.length > 0 ? yAxis : [{ type: 'value', min: 0 }],
             dataZoom: [
                 { type: 'inside' },
                 { type: 'slider', height: 18, bottom: 10 },

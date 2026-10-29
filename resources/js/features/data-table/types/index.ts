@@ -28,6 +28,13 @@ export interface DataRow {
     time: string;
     values: Record<number, number>;
     ewma: Record<number, EwmaResult>;
+    has_comments?: boolean;
+    has_modifications?: boolean;
+}
+
+export interface SelectedCellItem {
+    timestamp: string;
+    parameterId: number;
 }
 
 export interface AverageInfo {

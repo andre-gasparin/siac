@@ -42,6 +42,8 @@ const {
     ewmaOutsideLimits,
     ewmaAll,
     fitToScreen,
+    batchSelectionEnabled,
+    isSavingBatch,
     isLoading,
     parameters,
     rows,
@@ -73,6 +75,7 @@ const {
     closeRowDateEdit,
     isEditingRowDate,
     saveRowDateEdit,
+    batchUpdateCells,
 } = useDataTable(() => props.currentTeam.slug);
 selectedSystemIds.value = props.systems.length ? [props.systems[0].id] : [];
 startDate.value = props.defaultStartDate;
@@ -100,6 +103,7 @@ const loadedSystemIds = computed(() => [
             v-model:ewma-outside-limits="ewmaOutsideLimits"
             v-model:ewma-all="ewmaAll"
             v-model:fit-to-screen="fitToScreen"
+            v-model:batch-selection-enabled="batchSelectionEnabled"
             :systems="systems"
             :is-loading="isLoading"
             :cache-status="cacheStatus"
@@ -113,6 +117,8 @@ const loadedSystemIds = computed(() => [
             :is-multi-system="isMultiSystem"
             :is-loading="isLoading"
             :fit-to-screen="fitToScreen"
+            :batch-selection-enabled="batchSelectionEnabled"
+            :is-saving-batch="isSavingBatch"
             :system-color-map="systemColorMap"
             :is-system-collapsed="isSystemCollapsed"
             :get-system-style="getSystemStyle"
@@ -128,6 +134,8 @@ const loadedSystemIds = computed(() => [
             @open-row-date-edit="openRowDateEdit"
             @open-details="(row, tab) => (rowDetails = { row, tab })"
             @open-chart="(parameter, type) => (chart = { parameter, type })"
+            @apply-batch-value="(cells, val) => batchUpdateCells(cells, val)"
+            @clear-batch-cells="(cells) => batchUpdateCells(cells, null)"
         />
         <CellEditPopover
             :cell="editingCell"
@@ -150,7 +158,10 @@ const loadedSystemIds = computed(() => [
             :row="rowDetails.row"
             :system-ids="loadedSystemIds"
             :tab="rowDetails.tab"
-            @close="rowDetails = null"
+            @close="
+                rowDetails = null;
+                loadData();
+            "
         />
         <DataTableChartDialog
             v-if="chart"

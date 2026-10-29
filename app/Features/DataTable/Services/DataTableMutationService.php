@@ -44,6 +44,106 @@ class DataTableMutationService
         }, 3);
     }
 
+    /**
+     * @param  list<array{parameter_id: int|string, timestamp: string}>  $cells
+     */
+    public function batchUpdateValues(Team $team, User $user, array $cells, ?float $value): int
+    {
+        return DB::transaction(function () use ($team, $user, $cells, $value): int {
+            $this->calculator->lock($team);
+
+            $parameterIds = array_values(array_unique(array_map(
+                fn (array $cell): int => (int) $cell['parameter_id'],
+                $cells,
+            )));
+
+            $parameters = Parameter::query()
+                ->where('team_id', $team->id)
+                ->whereIn('id', $parameterIds)
+                ->get()
+                ->keyBy('id');
+
+            if ($parameters->isEmpty()) {
+                return 0;
+            }
+
+            $affectedParameterIds = [];
+            $affectedTimestamps = [];
+            $updatedCount = 0;
+
+            foreach ($cells as $cell) {
+                $parameterId = (int) $cell['parameter_id'];
+                $parameter = $parameters->get($parameterId);
+
+                if (! $parameter) {
+                    continue;
+                }
+
+                $at = Carbon::parse($cell['timestamp']);
+                $existing = ParameterValue::query()
+                    ->where('team_id', $team->id)
+                    ->where('parameter_id', $parameter->id)
+                    ->where('measured_at', $at)
+                    ->lockForUpdate()
+                    ->first();
+
+                $previous = $existing?->value;
+
+                if ($previous === $value) {
+                    continue;
+                }
+
+                if ($value === null) {
+                    $existing?->delete();
+                } elseif ($existing) {
+                    $existing->update([
+                        'value' => $value,
+                        'updated_by' => $user->id,
+                        'source_type' => 'manual',
+                        'calculation_rule_id' => null,
+                    ]);
+                } else {
+                    ParameterValue::query()->create([
+                        'team_id' => $team->id,
+                        'monitored_system_id' => $parameter->monitored_system_id,
+                        'parameter_id' => $parameter->id,
+                        'measured_at' => $at,
+                        'measured_date' => $at->toDateString(),
+                        'value' => $value,
+                        'source_type' => 'manual',
+                        'created_by' => $user->id,
+                        'updated_by' => $user->id,
+                    ]);
+                }
+
+                $this->record(
+                    $team,
+                    $user,
+                    $parameter->monitored_system_id,
+                    $at,
+                    'valor',
+                    ['parameter' => $parameter->name, 'before' => $previous, 'after' => $value],
+                    $parameter->id,
+                );
+
+                $affectedParameterIds[$parameter->id] = $parameter->id;
+                $affectedTimestamps[$at->toDateTimeString()] = $at->toDateTimeString();
+                $updatedCount++;
+            }
+
+            if ($affectedParameterIds !== [] && $affectedTimestamps !== []) {
+                $this->calculator->execute(
+                    $team,
+                    array_values($affectedParameterIds),
+                    array_values($affectedTimestamps),
+                    $user,
+                );
+            }
+
+            return $updatedCount;
+        }, 3);
+    }
+
     public function updateComment(Team $team, User $user, int $systemId, Carbon $at, ?string $comment): void
     {
         DB::transaction(function () use ($team, $user, $systemId, $at, $comment): void {

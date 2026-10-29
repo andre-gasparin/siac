@@ -6,12 +6,15 @@ import type {
     AverageInfo,
     DataRow,
     ParameterItem,
+    SelectedCellItem,
     SystemColorStyle,
 } from '@/features/data-table/types';
 import { data as tableData } from '@/routes/data-table';
 import { update as updateCell } from '@/routes/data-table/cell';
+import { batchUpdate as batchUpdateCellsRoute } from '@/routes/data-table/cells';
 import { destroy as destroyRow } from '@/routes/data-table/rows';
 import { update as updateTimestamp } from '@/routes/data-table/rows/timestamp';
+import { useSidebar } from '@/shared/components/ui/sidebar';
 
 export const SYSTEM_COLORS: SystemColorStyle[] = [
     {
@@ -53,14 +56,28 @@ export const SYSTEM_COLORS: SystemColorStyle[] = [
 ];
 
 export function useDataTable(teamSlugGetter: () => string) {
+    let setSidebarOpen: ((value: boolean) => void) | null = null;
+
+    try {
+        const sidebar = useSidebar(null);
+
+        if (sidebar?.setOpen) {
+            setSidebarOpen = sidebar.setOpen;
+        }
+    } catch {
+        setSidebarOpen = null;
+    }
+
     const selectedSystemIds = ref<number[]>([]);
     const startDate = ref<string>('');
     const endDate = ref<string>('');
     const collapsedSystemIds = ref<number[]>([]);
 
-    const ewmaOutsideLimits = ref(true);
+    const ewmaOutsideLimits = ref(false);
     const ewmaAll = ref(false);
     const fitToScreen = ref(true);
+    const batchSelectionEnabled = ref(false);
+    const isSavingBatch = ref(false);
     let loadController: AbortController | null = null;
     onBeforeUnmount(() => loadController?.abort());
     const isLoading = ref(false);
@@ -194,6 +211,7 @@ export function useDataTable(teamSlugGetter: () => string) {
             return;
         }
 
+        setSidebarOpen?.(false);
         isLoading.value = true;
 
         try {
@@ -554,11 +572,94 @@ export function useDataTable(teamSlugGetter: () => string) {
         }
     }
 
+    async function batchUpdateCells(
+        cells: SelectedCellItem[],
+        rawValue: string | null,
+    ): Promise<boolean> {
+        if (cells.length === 0) {
+            return false;
+        }
+
+        let numericVal: number | null = null;
+
+        if (rawValue !== null) {
+            const trimmedVal = rawValue.trim();
+
+            if (trimmedVal !== '') {
+                numericVal = parseFloat(trimmedVal.replace(',', '.'));
+
+                if (Number.isNaN(numericVal)) {
+                    toast.error('Por favor, insira um número válido.');
+
+                    return false;
+                }
+            }
+        }
+
+        isSavingBatch.value = true;
+
+        try {
+            const csrfToken =
+                (
+                    document.querySelector(
+                        'meta[name="csrf-token"]',
+                    ) as HTMLMetaElement
+                )?.content || '';
+            const teamSlug = teamSlugGetter();
+
+            const response = await fetch(
+                batchUpdateCellsRoute.url({ current_team: teamSlug }),
+                {
+                    method: 'PUT',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        Accept: 'application/json',
+                        'X-Requested-With': 'XMLHttpRequest',
+                        'X-CSRF-TOKEN': csrfToken,
+                    },
+                    body: JSON.stringify({
+                        cells: cells.map((cell) => ({
+                            parameter_id: cell.parameterId,
+                            timestamp: cell.timestamp,
+                        })),
+                        value: numericVal,
+                    }),
+                },
+            );
+
+            if (!response.ok) {
+                const errData = await response.json().catch(() => ({}));
+
+                throw new Error(
+                    errData.message || 'Falha ao atualizar células em lote.',
+                );
+            }
+
+            toast.success(
+                numericVal === null
+                    ? `${cells.length} célula(s) limpa(s) com sucesso.`
+                    : `${cells.length} célula(s) atualizada(s) com sucesso.`,
+            );
+            await loadData();
+
+            return true;
+        } catch (err: any) {
+            console.error('Erro ao atualizar células em lote:', err);
+            toast.error(err.message || 'Erro ao atualizar células em lote.');
+
+            return false;
+        } finally {
+            isSavingBatch.value = false;
+        }
+    }
+
     return {
         selectedSystemIds,
         ewmaOutsideLimits,
         ewmaAll,
         fitToScreen,
+        batchSelectionEnabled,
+        isSavingBatch,
         startDate,
         endDate,
         collapsedSystemIds,
@@ -595,5 +696,6 @@ export function useDataTable(teamSlugGetter: () => string) {
         closeRowDateEdit,
         isEditingRowDate,
         saveRowDateEdit,
+        batchUpdateCells,
     };
 }

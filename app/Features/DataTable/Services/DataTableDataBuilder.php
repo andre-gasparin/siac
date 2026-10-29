@@ -6,7 +6,10 @@ use App\Features\StatisticalAnalysis\Services\EwmaCalculator;
 use App\Features\StatisticalAnalysis\Services\ParameterEwmaService;
 use App\Models\Parameter;
 use App\Models\ParameterValue;
+use App\Models\ParameterValueRevision;
+use App\Models\ParameterValuesComment;
 use App\Models\Team;
+use Carbon\CarbonInterface;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Carbon;
 
@@ -53,11 +56,44 @@ class DataTableDataBuilder
             ->orderBy('id')
             ->get();
 
-        $outsideLimits = (bool) ($filters['ewma_outside_limits'] ?? true);
+        $outsideLimits = (bool) ($filters['ewma_outside_limits'] ?? false);
         $allValues = (bool) ($filters['ewma_all'] ?? false);
         $lookback = (int) ($filters['ewma_lookback'] ?? 20);
         $history = $outsideLimits || $allValues ? $this->historyService->history($parameters, $startDate, $lookback) : [];
-        [$rows, $averages] = $this->rowsAndAverages($parameters, $values, $history, $outsideLimits, $allValues, $lookback);
+
+        $commentTimestamps = ParameterValuesComment::query()
+            ->where('team_id', $team->id)
+            ->whereIn('monitored_system_id', $systemIds)
+            ->whereBetween('measured_at', [$startDate, $endDate])
+            ->where('comment', '!=', '')
+            ->pluck('measured_at')
+            ->map(fn (CarbonInterface $at): string => $at->format('Y-m-d H:i'))
+            ->flip()
+            ->all();
+
+        $revisionTimestamps = ParameterValueRevision::query()
+            ->where('team_id', $team->id)
+            ->whereBetween('measured_at', [$startDate, $endDate])
+            ->where(function ($query) use ($parameterIds, $systemIds): void {
+                $query->whereIn('parameter_id', $parameterIds)
+                    ->orWhere(fn ($q) => $q->whereNull('parameter_id')->whereIn('monitored_system_id', $systemIds));
+            })
+            ->where('action', '!=', 'comentário')
+            ->pluck('measured_at')
+            ->map(fn (CarbonInterface $at): string => $at->format('Y-m-d H:i'))
+            ->flip()
+            ->all();
+
+        [$rows, $averages] = $this->rowsAndAverages(
+            $parameters,
+            $values,
+            $history,
+            $outsideLimits,
+            $allValues,
+            $lookback,
+            $commentTimestamps,
+            $revisionTimestamps,
+        );
 
         return [
             'parameters' => $parameters->map(fn (Parameter $parameter): array => [
@@ -115,10 +151,20 @@ class DataTableDataBuilder
      * @param  Collection<int, Parameter>  $parameters
      * @param  Collection<int, ParameterValue>  $values
      * @param  array<int, list<float>>  $history
+     * @param  array<string, int>  $commentTimestamps
+     * @param  array<string, int>  $revisionTimestamps
      * @return array{0: list<array<string, mixed>>, 1: array<int, array{numeric: float|null, formatted: string}>}
      */
-    private function rowsAndAverages(Collection $parameters, Collection $values, array $history, bool $outsideLimits, bool $allValues, int $lookback): array
-    {
+    private function rowsAndAverages(
+        Collection $parameters,
+        Collection $values,
+        array $history,
+        bool $outsideLimits,
+        bool $allValues,
+        int $lookback,
+        array $commentTimestamps = [],
+        array $revisionTimestamps = [],
+    ): array {
         $parameterIds = $parameters->pluck('id')->all();
         $byId = $parameters->keyBy('id');
         $columnSums = array_fill_keys($parameterIds, 0.0);
@@ -133,7 +179,13 @@ class DataTableDataBuilder
                 'time' => $value->measured_at->format('H:i'),
                 'values' => [],
                 'ewma' => [],
+                'has_comments' => isset($commentTimestamps[$timeKey]),
+                'has_modifications' => isset($revisionTimestamps[$timeKey]),
             ];
+
+            if ($value->created_at !== null && $value->updated_at !== null && $value->updated_at->gt($value->created_at)) {
+                $grouped[$timeKey]['has_modifications'] = true;
+            }
 
             if ($value->value === null) {
                 continue;

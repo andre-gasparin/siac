@@ -30,6 +30,9 @@ const ewmaOutsideLimits = defineModel<boolean>('ewmaOutsideLimits', {
 });
 const ewmaAll = defineModel<boolean>('ewmaAll', { required: true });
 const fitToScreen = defineModel<boolean>('fitToScreen', { required: true });
+const batchSelectionEnabled = defineModel<boolean>('batchSelectionEnabled', {
+    default: false,
+});
 const props = defineProps<{
     systems: SystemItem[];
     isLoading: boolean;
@@ -148,6 +151,15 @@ function moveSystem(offset: number) {
                         @select.prevent
                         >Manter largura original (com
                         rolagem)</DropdownMenuCheckboxItem
+                    >
+                    <DropdownMenuCheckboxItem
+                        :model-value="batchSelectionEnabled"
+                        @update:model-value="
+                            batchSelectionEnabled = Boolean($event)
+                        "
+                        @select.prevent
+                        >Habilitar seleção de células em
+                        lote</DropdownMenuCheckboxItem
                     >
                     <p class="px-2 py-1 text-[11px] text-muted-foreground">
                         Por padrão, a tabela se ajusta à tela. As opções EWMA
