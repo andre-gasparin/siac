@@ -257,8 +257,25 @@ const hasAnyOutOfLimits = computed<boolean>(() => {
         </div>
 
         <div class="flex flex-col gap-8">
-            <!-- Seção de Horários (Hora da coleta e Hora do registro) -->
+            <!-- Seção de Horários (Hora do registro, Hora da coleta e Responsável) -->
             <div class="flex max-w-xl flex-col gap-4">
+                <!-- Hora do Registro -->
+                <div
+                    class="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-4"
+                >
+                    <span
+                        class="w-36 shrink-0 text-sm font-bold text-foreground"
+                    >
+                        Hora do registro
+                    </span>
+                    <div
+                        class="flex items-center gap-2 font-mono text-sm font-medium text-muted-foreground"
+                    >
+                        <Clock class="h-4 w-4 opacity-70" />
+                        <span>{{ liveTimestamp }}</span>
+                    </div>
+                </div>
+
                 <!-- Hora da Coleta -->
                 <div
                     class="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-4"
@@ -304,23 +321,6 @@ const hasAnyOutOfLimits = computed<boolean>(() => {
                     </div>
                 </div>
 
-                <!-- Hora do Registro -->
-                <div
-                    class="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-4"
-                >
-                    <span
-                        class="w-36 shrink-0 text-sm font-bold text-foreground"
-                    >
-                        Hora do registro
-                    </span>
-                    <div
-                        class="flex items-center gap-2 font-mono text-sm font-medium text-muted-foreground"
-                    >
-                        <Clock class="h-4 w-4 opacity-70" />
-                        <span>{{ liveTimestamp }}</span>
-                    </div>
-                </div>
-
                 <!-- Responsável -->
                 <div
                     class="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-4"
@@ -361,27 +361,30 @@ const hasAnyOutOfLimits = computed<boolean>(() => {
             </div>
 
             <!-- Tabela de Parâmetros -->
-            <div class="overflow-x-auto">
+            <div
+                class="overflow-x-auto rounded-xl border border-border/80 bg-background/50 shadow-2xs"
+            >
                 <table class="w-full border-collapse text-left text-sm">
                     <thead>
                         <tr
-                            class="border-b border-border/80 text-xs font-bold text-foreground"
+                            class="divide-x divide-border/60 border-b border-border/80 bg-muted/40 text-xs font-bold text-foreground dark:bg-muted/20"
                         >
-                            <th class="w-52 px-2 py-3 text-left">Parâmetro</th>
-                            <th class="w-40 px-2 py-3 text-left">Resultado</th>
-                            <th class="w-28 px-2 py-3 text-center">Unidade</th>
+                            <th class="w-52 px-3 py-3 text-left">Parâmetro</th>
+                            <th class="w-40 px-3 py-3 text-left">Resultado</th>
+                            <th class="w-28 px-2 py-3 text-center">Predição</th>
+                            <th class="w-24 px-2 py-3 text-center">Unidade</th>
                             <th class="w-28 px-2 py-3 text-center">Minimo</th>
                             <th class="w-28 px-2 py-3 text-center">Maximo</th>
                         </tr>
                     </thead>
-                    <tbody class="divide-y divide-border/40">
+                    <tbody class="divide-y divide-border/50">
                         <tr
                             v-for="param in currentSystem?.parameters || []"
                             :key="param.id"
-                            class="transition-colors hover:bg-muted/10"
+                            class="divide-x divide-border/50 transition-colors hover:bg-muted/20 dark:hover:bg-muted/10"
                         >
                             <!-- Nome do Parâmetro -->
-                            <td class="px-2 py-3 font-semibold text-foreground">
+                            <td class="px-3 py-3 font-semibold text-foreground">
                                 {{ param.name }}
                                 <span
                                     v-if="param.tag || param.code"
@@ -391,37 +394,47 @@ const hasAnyOutOfLimits = computed<boolean>(() => {
                             </td>
 
                             <!-- Resultado (Input) -->
-                            <td class="px-2 py-2.5 text-left">
-                                <div class="flex items-center gap-2">
-                                    <input
-                                        :value="paramInputs[param.id] || ''"
-                                        @keydown="handleKeydown"
-                                        @input="
-                                            (e) =>
-                                                handleParamInput(
-                                                    param.id,
-                                                    (
-                                                        e.target as HTMLInputElement
-                                                    ).value,
-                                                )
-                                        "
-                                        type="text"
-                                        inputmode="decimal"
-                                        :aria-label="
-                                            'Resultado de ' + param.name
-                                        "
-                                        class="h-9 w-32 rounded-md border bg-background px-3 text-left text-sm font-medium transition-all outline-none"
-                                        :class="[
-                                            isParamOutOfLimits(param)
-                                                ? 'border-red-500 bg-red-50/20 font-bold text-red-600 ring-2 ring-red-500/20 dark:bg-red-950/20 dark:text-red-400'
-                                                : 'border-border/80 text-foreground focus:border-primary focus:ring-2 focus:ring-primary/20',
-                                        ]"
-                                    />
+                            <td class="px-3 py-2.5 text-left">
+                                <input
+                                    :value="paramInputs[param.id] || ''"
+                                    @keydown="handleKeydown"
+                                    @input="
+                                        (e) =>
+                                            handleParamInput(
+                                                param.id,
+                                                (e.target as HTMLInputElement)
+                                                    .value,
+                                            )
+                                    "
+                                    type="text"
+                                    inputmode="decimal"
+                                    :aria-label="'Resultado de ' + param.name"
+                                    class="h-9 w-32 rounded-md border bg-background px-3 text-left text-sm font-medium transition-all outline-none"
+                                    :class="[
+                                        isParamOutOfLimits(param)
+                                            ? 'border-red-500 bg-red-50/20 font-bold text-red-600 ring-2 ring-red-500/20 dark:bg-red-950/20 dark:text-red-400'
+                                            : 'border-border/80 text-foreground focus:border-primary focus:ring-2 focus:ring-primary/20',
+                                    ]"
+                                />
+                            </td>
+
+                            <!-- Predição (EWMA) -->
+                            <td class="w-28 px-2 py-2.5 text-center">
+                                <div
+                                    class="flex min-h-[36px] items-center justify-center"
+                                >
                                     <EwmaAlert
                                         v-if="ewmaResults[param.id]"
                                         :result="ewmaResults[param.id]"
                                         :parameter-name="param.name"
                                     />
+                                    <span
+                                        v-else
+                                        class="font-mono text-xs text-muted-foreground/30"
+                                        aria-hidden="true"
+                                    >
+                                        -
+                                    </span>
                                 </div>
                             </td>
 
@@ -464,7 +477,7 @@ const hasAnyOutOfLimits = computed<boolean>(() => {
                             "
                         >
                             <td
-                                colspan="5"
+                                colspan="6"
                                 class="py-8 text-center text-sm text-muted-foreground"
                             >
                                 Nenhum parâmetro cadastrado para este sistema.
