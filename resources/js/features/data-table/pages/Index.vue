@@ -158,10 +158,7 @@ const loadedSystemIds = computed(() => [
             :row="rowDetails.row"
             :system-ids="loadedSystemIds"
             :tab="rowDetails.tab"
-            @close="
-                rowDetails = null;
-                loadData();
-            "
+            @close="rowDetails = null"
         />
         <DataTableChartDialog
             v-if="chart"

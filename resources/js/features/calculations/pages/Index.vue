@@ -8,6 +8,7 @@ import {
 } from '@inertiajs/vue3';
 import { Calculator, Plus, RefreshCw } from '@lucide/vue';
 import { computed, ref, watch } from 'vue';
+import CalculationFormulaPreview from '@/features/calculations/components/CalculationFormulaPreview.vue';
 import CalculationOperandFields from '@/features/calculations/components/CalculationOperandFields.vue';
 import type {
     CalculationRule,
@@ -90,11 +91,57 @@ function parameterName(id: number) {
         const parameter = system.parameters.find((item) => item.id === id);
 
         if (parameter) {
-            return `${system.name} / ${parameter.name}`;
+            return `${system.name} | ${parameter.name}`;
         }
     }
 
     return `Parâmetro #${id}`;
+}
+
+function formatFormulaWithoutNames(
+    type: string,
+    primaryMultiplier: number | null,
+    secondaryMultiplier: number | null,
+    resultMultiplier: number | null,
+): string {
+    const p = primaryMultiplier !== null ? `(P × ${primaryMultiplier})` : 'P';
+    const s =
+        secondaryMultiplier !== null ? `(S × ${secondaryMultiplier})` : 'S';
+
+    let formula = '';
+
+    switch (type) {
+        case 'cycle':
+            formula = `${p} ÷ ${s}`;
+            break;
+        case 'ratio':
+            formula = `${s} ÷ ${p}`;
+            break;
+        case 'percentage':
+            formula = `(${s} ÷ ${p}) × 100`;
+            break;
+        case 'efficiency':
+            formula = `(1 − (${s} ÷ ${p})) × 100`;
+            break;
+        case 'net_loss':
+            formula = `${p} ÷ (${s} − 1)`;
+            break;
+        case 'ph':
+            formula = `log10((${p} − (${s} ÷ 3)) ÷ 273) + 11`;
+            break;
+        default:
+            formula = (props.types[type]?.formula || `${p} / ${s}`)
+                .replaceAll('P', p)
+                .replaceAll('S', s)
+                .replaceAll('/', '÷');
+            break;
+    }
+
+    if (resultMultiplier !== null) {
+        formula = `(${formula}) × ${resultMultiplier}`;
+    }
+
+    return `Destino = ${formula}`;
 }
 
 function openForm(rule: CalculationRule | null = null) {
@@ -129,6 +176,10 @@ function openForm(rule: CalculationRule | null = null) {
 }
 
 function save() {
+    if (form.destination_parameter_id) {
+        form.name = parameterName(form.destination_parameter_id);
+    }
+
     const options = {
         preserveScroll: true,
         onSuccess: () => {
@@ -229,47 +280,43 @@ function remove() {
             <article
                 v-for="rule in rules"
                 :key="rule.id"
-                class="grid gap-4 rounded-xl border bg-card p-5"
+                class="flex flex-col justify-between gap-4 rounded-xl border bg-card p-5"
             >
-                <div>
-                    <h2 class="font-semibold">{{ rule.name }}</h2>
-                    <p class="text-sm text-muted-foreground">
-                        {{ types[rule.type]?.label }}
-                    </p>
-                </div>
-                <p class="rounded-md bg-muted p-3 font-mono text-sm">
-                    Destino = {{ types[rule.type]?.formula
-                    }}<span v-if="rule.result_multiplier !== null"
-                        >; resultado × {{ rule.result_multiplier }}</span
+                <div class="grid gap-3">
+                    <div>
+                        <h2 class="text-base font-semibold text-foreground">
+                            {{ types[rule.type]?.label }}
+                        </h2>
+                    </div>
+                    <div
+                        class="rounded-md bg-muted/60 p-3 font-mono text-sm break-words text-muted-foreground"
                     >
-                </p>
-                <dl class="grid gap-2 text-sm">
-                    <div>
-                        <dt class="text-muted-foreground">Principal (P)</dt>
-                        <dd>
-                            {{ parameterName(rule.primary_parameter_id)
-                            }}<span v-if="rule.primary_multiplier !== null">
-                                × {{ rule.primary_multiplier }}</span
-                            >
-                        </dd>
+                        {{
+                            formatFormulaWithoutNames(
+                                rule.type,
+                                rule.primary_multiplier,
+                                rule.secondary_multiplier,
+                                rule.result_multiplier,
+                            )
+                        }}
                     </div>
-                    <div>
-                        <dt class="text-muted-foreground">Secundário (S)</dt>
-                        <dd>
-                            {{ parameterName(rule.secondary_parameter_id)
-                            }}<span v-if="rule.secondary_multiplier !== null">
-                                × {{ rule.secondary_multiplier }}</span
-                            >
-                        </dd>
+                    <div
+                        class="rounded-md border border-border/60 bg-muted/30 p-3"
+                    >
+                        <CalculationFormulaPreview
+                            :type="rule.type"
+                            :destination-id="rule.destination_parameter_id"
+                            :primary-id="rule.primary_parameter_id"
+                            :secondary-id="rule.secondary_parameter_id"
+                            :primary-multiplier="rule.primary_multiplier"
+                            :secondary-multiplier="rule.secondary_multiplier"
+                            :result-multiplier="rule.result_multiplier"
+                            :systems="systems"
+                            :types="types"
+                        />
                     </div>
-                    <div>
-                        <dt class="text-muted-foreground">Destino</dt>
-                        <dd>
-                            {{ parameterName(rule.destination_parameter_id) }}
-                        </dd>
-                    </div>
-                </dl>
-                <div class="flex flex-wrap gap-2">
+                </div>
+                <div class="flex flex-wrap gap-2 pt-2">
                     <Button
                         variant="outline"
                         size="sm"
@@ -312,7 +359,14 @@ function remove() {
                     <strong>{{
                         rules.find(
                             (rule) => rule.id === run.calculation_rule_id,
-                        )?.name ?? `Cálculo #${run.calculation_rule_id}`
+                        )
+                            ? parameterName(
+                                  rules.find(
+                                      (rule) =>
+                                          rule.id === run.calculation_rule_id,
+                                  )!.destination_parameter_id,
+                              )
+                            : `Cálculo #${run.calculation_rule_id}`
                     }}</strong
                     ><span role="status">{{ statusLabels[run.status] }}</span>
                 </div>
@@ -346,40 +400,68 @@ function remove() {
                         editing ? 'Editar cálculo' : 'Novo cálculo'
                     }}</DialogTitle
                     ><DialogDescription
-                        >Os valores das entradas são multiplicados antes da
-                        fórmula. O resultado substitui o valor existente no
-                        destino.</DialogDescription
+                        >Defina o parâmetro de destino onde o resultado será
+                        gravado e, em seguida, selecione os parâmetros de
+                        entrada (Principal e Secundário). Os valores das
+                        entradas podem ser multiplicados antes do
+                        cálculo.</DialogDescription
                     ></DialogHeader
                 >
                 <form class="grid gap-5" @submit.prevent="save">
-                    <div class="grid gap-2">
-                        <Label for="calculation-name">Nome</Label
-                        ><Input
-                            id="calculation-name"
-                            v-model="form.name"
-                            required
-                            maxlength="255"
-                        />
-                    </div>
-                    <div class="grid gap-2">
-                        <Label for="calculation-type">Tipo</Label
-                        ><select
-                            id="calculation-type"
-                            v-model="form.type"
-                            class="h-10 rounded-md border bg-background px-3 text-sm"
-                        >
-                            <option
-                                v-for="(type, key) in types"
-                                :key="key"
-                                :value="key"
+                    <div class="grid gap-3">
+                        <div class="grid gap-2">
+                            <Label for="calculation-type">Tipo</Label>
+                            <select
+                                id="calculation-type"
+                                v-model="form.type"
+                                class="h-10 rounded-md border bg-background px-3 text-sm"
                             >
-                                {{ type.label }}
-                            </option>
-                        </select>
-                        <p class="rounded-md bg-muted p-3 font-mono text-sm">
-                            Destino = {{ types[form.type]?.formula }}
-                        </p>
+                                <option
+                                    v-for="(type, key) in types"
+                                    :key="key"
+                                    :value="key"
+                                >
+                                    {{ type.label }}
+                                </option>
+                            </select>
+                        </div>
+                        <div
+                            class="rounded-md bg-muted/60 p-3 font-mono text-sm break-words text-muted-foreground"
+                        >
+                            {{
+                                formatFormulaWithoutNames(
+                                    form.type,
+                                    form.primary_multiplier,
+                                    form.secondary_multiplier,
+                                    form.result_multiplier,
+                                )
+                            }}
+                        </div>
+                        <div
+                            class="rounded-md border border-border/60 bg-muted/30 p-3"
+                        >
+                            <CalculationFormulaPreview
+                                :type="form.type"
+                                :destination-id="form.destination_parameter_id"
+                                :primary-id="form.primary_parameter_id"
+                                :secondary-id="form.secondary_parameter_id"
+                                :primary-multiplier="form.primary_multiplier"
+                                :secondary-multiplier="
+                                    form.secondary_multiplier
+                                "
+                                :result-multiplier="form.result_multiplier"
+                                :systems="systems"
+                                :types="types"
+                            />
+                        </div>
                     </div>
+                    <CalculationOperandFields
+                        v-model:system="form.destination_system_id"
+                        v-model:parameter="form.destination_parameter_id"
+                        role="destination"
+                        label="Destino"
+                        :systems="systems"
+                    />
                     <CalculationOperandFields
                         v-model:system="form.primary_system_id"
                         v-model:parameter="form.primary_parameter_id"
@@ -397,13 +479,6 @@ function remove() {
                         label="Secundário (S)"
                         :systems="systems"
                         with-multiplier
-                    />
-                    <CalculationOperandFields
-                        v-model:system="form.destination_system_id"
-                        v-model:parameter="form.destination_parameter_id"
-                        role="destination"
-                        label="Destino"
-                        :systems="systems"
                     />
                     <div class="grid gap-2">
                         <Label
@@ -465,7 +540,14 @@ function remove() {
             <DialogContent
                 ><DialogHeader
                     ><DialogTitle
-                        >Recalcular {{ recalculating?.name }}</DialogTitle
+                        >Recalcular
+                        {{
+                            recalculating
+                                ? parameterName(
+                                      recalculating.destination_parameter_id,
+                                  )
+                                : ''
+                        }}</DialogTitle
                     ><DialogDescription
                         >Todos os horários do intervalo serão processados,
                         incluindo os cálculos necessários e dependentes. Valores
@@ -518,7 +600,15 @@ function remove() {
         >
             <DialogContent
                 ><DialogHeader
-                    ><DialogTitle>Excluir {{ deleting?.name }}?</DialogTitle
+                    ><DialogTitle
+                        >Excluir
+                        {{
+                            deleting
+                                ? parameterName(
+                                      deleting.destination_parameter_id,
+                                  )
+                                : ''
+                        }}?</DialogTitle
                     ><DialogDescription
                         >A regra deixará de executar. Os resultados históricos
                         serão preservados.</DialogDescription

@@ -25,8 +25,26 @@ function toggleMultiplier(event: Event) {
 </script>
 
 <template>
-    <fieldset class="grid gap-4 rounded-lg border p-4 sm:grid-cols-2">
-        <legend class="px-2 text-sm font-semibold">{{ label }}</legend>
+    <fieldset
+        class="grid gap-4 rounded-lg border p-4 transition-colors sm:grid-cols-2"
+        :class="{
+            'border-emerald-500/30 bg-emerald-500/[0.02]':
+                role === 'destination',
+            'border-sky-500/30 bg-sky-500/[0.02]': role === 'primary',
+            'border-purple-500/30 bg-purple-500/[0.02]': role === 'secondary',
+        }"
+    >
+        <legend class="flex items-center gap-1.5 px-2 text-sm font-semibold">
+            <span
+                class="size-2 rounded-full"
+                :class="{
+                    'bg-emerald-500': role === 'destination',
+                    'bg-sky-500': role === 'primary',
+                    'bg-purple-500': role === 'secondary',
+                }"
+            />
+            {{ label }}
+        </legend>
         <div class="grid gap-2">
             <Label :for="`${role}-system`">Sistema</Label>
             <select

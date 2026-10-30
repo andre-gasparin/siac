@@ -56,6 +56,8 @@ const props = defineProps<{
 const emit = defineEmits<{ close: [] }>();
 const tab = ref(props.tab);
 const data = ref<Details>({ comments: [], history: [], readings: [] });
+const savedComments = ref<Record<number, string>>({});
+const isInitialLoading = ref(true);
 const error = ref('');
 const reader = useHttp({
     timestamp: props.row.timestamp,
@@ -66,15 +68,31 @@ const writer = useHttp({
     monitored_system_id: 0,
     comment: '',
 });
-async function load() {
+async function load(silent = false) {
     error.value = '';
 
+    if (!silent) {
+        isInitialLoading.value = true;
+    }
+
     try {
-        data.value = (await reader.get(
+        const result = (await reader.get(
             details.url({ current_team: props.teamSlug }),
         )) as Details;
+        savedComments.value = Object.fromEntries(
+            result.comments.map((item) => [item.system_id, item.comment]),
+        );
+        data.value = {
+            ...result,
+            comments: result.comments.map((item) => ({
+                ...item,
+                comment: '',
+            })),
+        };
     } catch {
         error.value = 'Não foi possível carregar o histórico e os comentários.';
+    } finally {
+        isInitialLoading.value = false;
     }
 }
 async function save(item: RowComment) {
@@ -84,7 +102,16 @@ async function save(item: RowComment) {
     try {
         await writer.put(updateComment.url({ current_team: props.teamSlug }));
         toast.success('Comentário salvo.');
-        emit('close');
+        const trimmed = item.comment.trim();
+        savedComments.value[item.system_id] = trimmed;
+        item.comment = '';
+        await load(true);
+        // eslint-disable-next-line vue/no-mutating-props
+        props.row.has_comments =
+            Object.values(savedComments.value).some(
+                (text) => text.trim() !== '',
+            ) ||
+            data.value.history.some((entry) => entry.action === 'comentário');
     } catch {
         error.value =
             Object.values(writer.errors).join(' ') ||
@@ -118,7 +145,7 @@ function formatDateTime(dateStr: string | null | undefined): string {
         .format(parsed)
         .replace(',', '');
 }
-onMounted(load);
+onMounted(() => load());
 </script>
 
 <template>
@@ -151,11 +178,11 @@ onMounted(load);
             </div>
             <p v-if="error" role="alert" class="text-sm text-destructive">
                 {{ error }}
-                <button type="button" class="underline" @click="load">
+                <button type="button" class="underline" @click="load(false)">
                     Tentar novamente
                 </button>
             </p>
-            <div v-if="reader.processing" class="flex justify-center p-8">
+            <div v-if="isInitialLoading" class="flex justify-center p-8">
                 <Loader2 class="size-6 animate-spin" />
             </div>
             <div v-else-if="tab === 'comments'" class="space-y-4">
@@ -169,6 +196,21 @@ onMounted(load);
                         class="text-sm font-semibold"
                         >{{ item.system_name }}</label
                     >
+                    <div
+                        v-if="savedComments[item.system_id]"
+                        class="rounded border bg-muted/40 p-2.5 text-xs"
+                    >
+                        <div class="mb-1 font-medium text-muted-foreground">
+                            Comentário registrado{{
+                                item.author ? ' por ' + item.author : ''
+                            }}:
+                        </div>
+                        <p
+                            class="break-words whitespace-pre-wrap text-foreground"
+                        >
+                            {{ savedComments[item.system_id] }}
+                        </p>
+                    </div>
                     <textarea
                         :id="'row-comment-' + item.system_id"
                         v-model="item.comment"
@@ -195,6 +237,46 @@ onMounted(load);
                             Salvar comentário
                         </button>
                     </div>
+                </div>
+                <div
+                    v-if="
+                        data.history.some(
+                            (entry) => entry.action === 'comentário',
+                        )
+                    "
+                    class="space-y-2 pt-2 text-sm"
+                >
+                    <h4
+                        class="text-xs font-semibold text-muted-foreground uppercase"
+                    >
+                        Histórico de comentários
+                    </h4>
+                    <article
+                        v-for="item in data.history.filter(
+                            (entry) => entry.action === 'comentário',
+                        )"
+                        :key="item.id"
+                        class="space-y-1 rounded border p-3"
+                    >
+                        <div class="flex flex-wrap justify-between gap-2">
+                            <strong>{{ item.action }}</strong
+                            ><span class="text-xs text-muted-foreground">{{
+                                formatDateTime(item.created_at)
+                            }}</span>
+                        </div>
+                        <p class="text-xs text-muted-foreground">
+                            {{ item.user || 'Autor não registrado' }} ·
+                            {{
+                                data.comments.find(
+                                    (c) => c.system_id === item.system_id,
+                                )?.system_name
+                            }}
+                        </p>
+                        <p class="break-words whitespace-pre-wrap">
+                            {{ display(item.changes.before) }} →
+                            {{ display(item.changes.after) }}
+                        </p>
+                    </article>
                 </div>
             </div>
             <div v-else class="space-y-3 text-sm">

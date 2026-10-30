@@ -195,6 +195,18 @@ test('admin manages rules and historical results survive deletion', function () 
     expect(CalculationRule::count())->toBe(1);
 });
 
+test('calculation rule name is optional and defaults to destination parameter name', function () {
+    $payload = calculationPayload($this->p, $this->s, $this->e);
+    unset($payload['name']);
+
+    $this->actingAs($this->user)
+        ->post(route('calculations.store', $this->team), $payload)
+        ->assertSessionHasNoErrors();
+
+    $created = CalculationRule::where('destination_parameter_id', $this->e->id)->sole();
+    expect($created->name)->toBe('Principal / E');
+});
+
 test('rejects cross unit systems parameters and rule access', function () {
     $other = Team::factory()->create();
     $this->actingAs($this->user)->post(route('calculations.store', $other), calculationPayload($this->p, $this->s, $this->d))->assertSessionHasErrors();

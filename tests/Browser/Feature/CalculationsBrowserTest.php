@@ -18,15 +18,15 @@ beforeEach(function () {
 
 test('administrator creates edits and opens recalculation through the form', function () {
     $page = visit(route('calculations.index', $this->team));
-    $page->click('Novo cálculo')->fill('#calculation-name', 'Ciclo do teste')
+    $page->click('Novo cálculo')
+        ->select('#destination-system', (string) $this->system->id)
+        ->select('#destination-parameter', (string) $this->parameters[2]->id)
         ->select('#primary-system', (string) $this->system->id)
         ->select('#primary-parameter', (string) $this->parameters[0]->id)
         ->select('#secondary-system', (string) $this->system->id)
         ->select('#secondary-parameter', (string) $this->parameters[1]->id)
-        ->select('#destination-system', (string) $this->system->id)
-        ->select('#destination-parameter', (string) $this->parameters[2]->id)
         ->click('#primary-enabled')->fill('#primary-multiplier', '10')
-        ->click('Salvar cálculo')->assertSee('Ciclo do teste')->assertNoJavaScriptErrors();
+        ->click('Salvar cálculo')->assertSee('Resultado')->assertNoJavaScriptErrors();
     expect(CalculationRule::sole()->primary_multiplier)->toBe(10.0);
     $page->click('Editar')->select('#calculation-type', 'percentage')->click('Salvar cálculo')
         ->assertSee('Relação percentual')->click('Recalcular')->assertSee('Data inicial')

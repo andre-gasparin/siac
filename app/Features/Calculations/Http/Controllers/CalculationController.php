@@ -2,8 +2,8 @@
 
 namespace App\Features\Calculations\Http\Controllers;
 
+use App\Features\Calculations\Http\Requests\CalculationRuleRequest;
 use App\Features\Calculations\Http\Requests\RecalculateRequest;
-use App\Features\Calculations\Http\Requests\SaveCalculationRequest;
 use App\Features\Calculations\Services\CalculationRuleService;
 use App\Features\Calculations\Services\ParameterCalculationService;
 use App\Http\Controllers\Controller;
@@ -36,14 +36,14 @@ class CalculationController extends Controller
         ]);
     }
 
-    public function store(SaveCalculationRequest $request, Team $current_team): RedirectResponse
+    public function store(CalculationRuleRequest $request, Team $current_team): RedirectResponse
     {
         $this->rules->save($current_team, $request->validated());
 
         return back()->with('success', 'Cálculo cadastrado.');
     }
 
-    public function update(SaveCalculationRequest $request, Team $current_team, CalculationRule $calculation): RedirectResponse
+    public function update(CalculationRuleRequest $request, Team $current_team, CalculationRule $calculation): RedirectResponse
     {
         abort_unless($calculation->team_id === $current_team->id, 404);
         $this->rules->save($current_team, $request->validated(), $calculation);

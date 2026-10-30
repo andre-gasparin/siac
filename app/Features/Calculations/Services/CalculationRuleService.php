@@ -4,6 +4,7 @@ namespace App\Features\Calculations\Services;
 
 use App\Models\CalculationRule;
 use App\Models\CalculationRun;
+use App\Models\Parameter;
 use App\Models\Team;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
@@ -33,6 +34,10 @@ class CalculationRuleService
                 throw ValidationException::withMessages(['destination_parameter_id' => 'Este parâmetro já é destino de outro cálculo.']);
             }
             $attributes = array_intersect_key($data, array_flip(['name', 'type', 'primary_parameter_id', 'secondary_parameter_id', 'destination_parameter_id', 'primary_multiplier', 'secondary_multiplier', 'result_multiplier']));
+            if (empty($attributes['name']) && ! empty($data['destination_parameter_id'])) {
+                $destinationParameter = Parameter::query()->with('monitoredSystem')->find($data['destination_parameter_id']);
+                $attributes['name'] = $destinationParameter ? ($destinationParameter->monitoredSystem ? "{$destinationParameter->monitoredSystem->name} / {$destinationParameter->name}" : $destinationParameter->name) : 'Cálculo';
+            }
             $candidate = new CalculationRule($attributes + ['team_id' => $team->id]);
             $this->calculator->ordered($rules->push($candidate));
             $rule ??= new CalculationRule;

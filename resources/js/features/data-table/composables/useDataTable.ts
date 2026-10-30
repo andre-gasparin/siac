@@ -319,7 +319,7 @@ export function useDataTable(teamSlugGetter: () => string) {
             rows.value = rows.value.filter(
                 (r) => r.timestamp !== row.timestamp,
             );
-            await loadData();
+            recalculateAverages();
             confirmingDeleteTimestamp.value = null;
         } catch (error) {
             console.error('Erro ao excluir linha:', error);
@@ -437,9 +437,11 @@ export function useDataTable(teamSlugGetter: () => string) {
                 } else {
                     targetRow.values[cell.parameterId] = numericVal;
                 }
+
+                targetRow.has_modifications = true;
             }
 
-            await loadData();
+            recalculateAverages();
             closeCellEdit();
         } catch (err: any) {
             console.error('Erro ao salvar célula:', err);
@@ -559,10 +561,10 @@ export function useDataTable(teamSlugGetter: () => string) {
                 targetRow.timestamp = data.new_timestamp;
                 targetRow.date = data.date;
                 targetRow.time = data.time;
+                targetRow.has_modifications = true;
             }
 
             rows.value.sort((a, b) => a.timestamp.localeCompare(b.timestamp));
-            await loadData();
             closeRowDateEdit();
         } catch (err: any) {
             console.error('Erro ao salvar data da linha:', err);
@@ -635,12 +637,33 @@ export function useDataTable(teamSlugGetter: () => string) {
                 );
             }
 
+            const rowsByTimestamp = new Map(
+                rows.value.map((r) => [r.timestamp, r]),
+            );
+
+            for (const cell of cells) {
+                const targetRow = rowsByTimestamp.get(cell.timestamp);
+
+                if (!targetRow) {
+                    continue;
+                }
+
+                if (numericVal === null) {
+                    delete targetRow.values[cell.parameterId];
+                } else {
+                    targetRow.values[cell.parameterId] = numericVal;
+                }
+
+                targetRow.has_modifications = true;
+            }
+
+            recalculateAverages();
+
             toast.success(
                 numericVal === null
                     ? `${cells.length} célula(s) limpa(s) com sucesso.`
                     : `${cells.length} célula(s) atualizada(s) com sucesso.`,
             );
-            await loadData();
 
             return true;
         } catch (err: any) {
