@@ -1,3 +1,4 @@
+import { usePreferredDark } from '@vueuse/core';
 import type { ComputedRef, Ref } from 'vue';
 import { computed, onMounted, ref } from 'vue';
 import type { Appearance, ResolvedAppearance } from '@/shared/types';
@@ -56,14 +57,6 @@ const getStoredAppearance = () => {
     return localStorage.getItem('appearance') as Appearance | null;
 };
 
-const prefersDark = (): boolean => {
-    if (typeof window === 'undefined') {
-        return false;
-    }
-
-    return window.matchMedia('(prefers-color-scheme: dark)').matches;
-};
-
 const handleSystemThemeChange = () => {
     const currentAppearance = getStoredAppearance();
 
@@ -86,6 +79,8 @@ export function initializeTheme(): void {
 const appearance = ref<Appearance>('system');
 
 export function useAppearance(): UseAppearanceReturn {
+    const prefersDark = usePreferredDark();
+
     onMounted(() => {
         const savedAppearance = localStorage.getItem(
             'appearance',
@@ -98,7 +93,7 @@ export function useAppearance(): UseAppearanceReturn {
 
     const resolvedAppearance = computed<ResolvedAppearance>(() => {
         if (appearance.value === 'system') {
-            return prefersDark() ? 'dark' : 'light';
+            return prefersDark.value ? 'dark' : 'light';
         }
 
         return appearance.value;

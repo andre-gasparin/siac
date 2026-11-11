@@ -120,10 +120,57 @@ const toggleAlerts = (paramId: number) => {
     }
 };
 
-// Drag and drop state for systems
+// Drag and drop state & helpers
+type DropPosition = 'before' | 'after';
+
+const DROP_BEFORE_CLASS =
+    'border-t-2! border-t-primary! bg-primary/5 [border-top-style:dashed]!';
+const DROP_AFTER_CLASS =
+    'border-b-2! border-b-primary! bg-primary/5 [border-bottom-style:dashed]!';
+
+const resolveDropPosition = (
+    e: DragEvent,
+    fromIndex: number,
+    overIndex: number,
+): DropPosition => {
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    const pos: DropPosition =
+        e.clientY < rect.top + rect.height / 2 ? 'before' : 'after';
+
+    if (fromIndex === overIndex - 1 && pos === 'before') {
+        return 'after';
+    }
+
+    return fromIndex === overIndex + 1 && pos === 'after' ? 'before' : pos;
+};
+
+const reorderItems = <T extends { sort_order: number }>(
+    items: T[],
+    fromIndex: number,
+    overIndex: number,
+    position: DropPosition,
+) => {
+    const targetIndex = position === 'before' ? overIndex : overIndex + 1;
+    const insertIndex = fromIndex < targetIndex ? targetIndex - 1 : targetIndex;
+
+    if (insertIndex !== fromIndex) {
+        const [moved] = items.splice(fromIndex, 1);
+        items.splice(insertIndex, 0, moved);
+        items.forEach((item, i) => (item.sort_order = i + 1));
+    }
+};
+
+const isChildDragTarget = (e: DragEvent): boolean => {
+    const current = e.currentTarget as HTMLElement | null;
+    const related = e.relatedTarget as Node | null;
+
+    return Boolean(current && related && current.contains(related));
+};
+
 const systemDragAllowed = ref(false);
 const dragSystemIndex = ref<number | null>(null);
 const draggedOverSystemIndex = ref<number | null>(null);
+const draggedOverSystemPosition = ref<DropPosition | null>(null);
 
 const onSystemDragStart = (e: DragEvent, index: number) => {
     dragSystemIndex.value = index;
@@ -134,86 +181,65 @@ const onSystemDragStart = (e: DragEvent, index: number) => {
 };
 
 const onSystemDragOver = (e: DragEvent, index: number) => {
+    if (dragSystemIndex.value === null || dragSystemIndex.value === index) {
+        return;
+    }
+
     e.preventDefault();
 
     if (e.dataTransfer) {
         e.dataTransfer.dropEffect = 'move';
     }
 
-    if (draggedOverSystemIndex.value !== index) {
-        draggedOverSystemIndex.value = index;
-    }
+    draggedOverSystemIndex.value = index;
+    draggedOverSystemPosition.value = resolveDropPosition(
+        e,
+        dragSystemIndex.value,
+        index,
+    );
 };
 
 const onSystemDragLeave = (e: DragEvent) => {
-    const currentTarget = e.currentTarget as HTMLElement | null;
-    const relatedTarget = e.relatedTarget as Node | null;
-
-    if (
-        currentTarget &&
-        relatedTarget &&
-        currentTarget.contains(relatedTarget)
-    ) {
-        return;
+    if (!isChildDragTarget(e)) {
+        draggedOverSystemIndex.value = null;
+        draggedOverSystemPosition.value = null;
     }
-
-    draggedOverSystemIndex.value = null;
 };
 
 const onSystemDragEnd = () => {
     systemDragAllowed.value = false;
     dragSystemIndex.value = null;
     draggedOverSystemIndex.value = null;
+    draggedOverSystemPosition.value = null;
 };
 
 const onSystemDrop = (index: number) => {
-    draggedOverSystemIndex.value = null;
+    const fromIndex = dragSystemIndex.value;
+    const position = draggedOverSystemPosition.value;
+    onSystemDragEnd();
 
-    if (dragSystemIndex.value === null || dragSystemIndex.value === index) {
-        return;
+    if (fromIndex !== null && fromIndex !== index && position) {
+        reorderItems(form.systems, fromIndex, index, position);
     }
-
-    // Reorder systems array
-    const movedSystem = form.systems[dragSystemIndex.value];
-    form.systems.splice(dragSystemIndex.value, 1);
-    form.systems.splice(index, 0, movedSystem);
-
-    // Update sort_order based on new index
-    form.systems.forEach((sys, i) => {
-        sys.sort_order = i + 1;
-    });
-
-    dragSystemIndex.value = null;
-    systemDragAllowed.value = false;
 };
 
-// Drag and drop state for parameters
 const dragAllowed = ref(false);
 const dragParamIndex = ref<number | null>(null);
 const dragParamSystemId = ref<number | null>(null);
 const draggedOverParamIndex = ref<number | null>(null);
 const draggedOverParamSystemId = ref<number | null>(null);
+const draggedOverParamPosition = ref<DropPosition | null>(null);
 
-const onParamDragStart = (systemId: number, index: number) => {
+const onParamDragStart = (e: DragEvent, systemId: number, index: number) => {
     dragParamSystemId.value = systemId;
     dragParamIndex.value = index;
+
+    if (e.dataTransfer) {
+        e.dataTransfer.effectAllowed = 'move';
+    }
 };
 
 const onParamDragOver = (e: DragEvent, systemId: number, index: number) => {
-    e.preventDefault();
-    draggedOverParamSystemId.value = systemId;
-    draggedOverParamIndex.value = index;
-};
-
-const onParamDragLeave = () => {
-    draggedOverParamIndex.value = null;
-    draggedOverParamSystemId.value = null;
-};
-
-const onParamDrop = (systemId: number, index: number) => {
-    draggedOverParamIndex.value = null;
-    draggedOverParamSystemId.value = null;
-
     if (
         dragParamSystemId.value !== systemId ||
         dragParamIndex.value === null ||
@@ -222,25 +248,95 @@ const onParamDrop = (systemId: number, index: number) => {
         return;
     }
 
-    const system = form.systems.find((sys) => sys.id === systemId);
+    e.preventDefault();
+    e.stopPropagation();
 
-    if (!system) {
-        return;
+    if (e.dataTransfer) {
+        e.dataTransfer.dropEffect = 'move';
     }
 
-    // Reorder parameters array
-    const movedParam = system.parameters[dragParamIndex.value];
-    system.parameters.splice(dragParamIndex.value, 1);
-    system.parameters.splice(index, 0, movedParam);
+    draggedOverParamSystemId.value = systemId;
+    draggedOverParamIndex.value = index;
+    draggedOverParamPosition.value = resolveDropPosition(
+        e,
+        dragParamIndex.value,
+        index,
+    );
+};
 
-    // Update sort_order based on new index
-    system.parameters.forEach((param, i) => {
-        param.sort_order = i + 1;
-    });
+const onParamDragLeave = (e: DragEvent) => {
+    if (!isChildDragTarget(e)) {
+        draggedOverParamIndex.value = null;
+        draggedOverParamSystemId.value = null;
+        draggedOverParamPosition.value = null;
+    }
+};
 
+const onParamDragEnd = () => {
+    dragAllowed.value = false;
     dragParamIndex.value = null;
     dragParamSystemId.value = null;
+    draggedOverParamIndex.value = null;
+    draggedOverParamSystemId.value = null;
+    draggedOverParamPosition.value = null;
 };
+
+const onParamDrop = (systemId: number, index: number) => {
+    const fromSystemId = dragParamSystemId.value;
+    const fromIndex = dragParamIndex.value;
+    const position = draggedOverParamPosition.value;
+    onParamDragEnd();
+    const system = form.systems.find((sys) => sys.id === systemId);
+
+    if (
+        system &&
+        fromSystemId === systemId &&
+        fromIndex !== null &&
+        fromIndex !== index &&
+        position
+    ) {
+        reorderItems(system.parameters, fromIndex, index, position);
+    }
+};
+
+const systemCardClass = (systemId: number, sysIndex: number) => [
+    expandedSystems.value.includes(systemId)
+        ? 'border-primary/40'
+        : 'border-border',
+    dragSystemIndex.value === sysIndex ? 'opacity-40' : '',
+    draggedOverSystemIndex.value === sysIndex &&
+    draggedOverSystemPosition.value === 'before'
+        ? DROP_BEFORE_CLASS
+        : '',
+    draggedOverSystemIndex.value === sysIndex &&
+    draggedOverSystemPosition.value === 'after'
+        ? DROP_AFTER_CLASS
+        : '',
+];
+
+const isParamDropTarget = (
+    systemId: number,
+    paramIndex: number,
+    pos: DropPosition,
+) =>
+    draggedOverParamSystemId.value === systemId &&
+    draggedOverParamIndex.value === paramIndex &&
+    draggedOverParamPosition.value === pos;
+
+const paramRowClass = (
+    systemId: number,
+    parameterId: number,
+    paramIndex: number,
+) => [
+    dragParamSystemId.value === systemId && dragParamIndex.value === paramIndex
+        ? 'opacity-40'
+        : '',
+    isParamDropTarget(systemId, paramIndex, 'before') ? DROP_BEFORE_CLASS : '',
+    isParamDropTarget(systemId, paramIndex, 'after') &&
+    !expandedAlerts.value.includes(parameterId)
+        ? DROP_AFTER_CLASS
+        : '',
+];
 
 const save = () => {
     form.put(updateSystems.url(props.team.slug), {
@@ -289,14 +385,7 @@ const save = () => {
                 @drop="onSystemDrop(sysIndex)"
                 @dragend="onSystemDragEnd"
                 class="overflow-hidden rounded-lg border bg-card shadow-xs transition-all duration-200"
-                :class="[
-                    draggedOverSystemIndex === sysIndex
-                        ? 'border-2 border-dashed border-primary bg-primary/10 transition-all'
-                        : expandedSystems.includes(system.id)
-                          ? 'border-primary/40'
-                          : 'border-border',
-                    dragSystemIndex === sysIndex ? 'opacity-40' : '',
-                ]"
+                :class="systemCardClass(system.id, sysIndex)"
             >
                 <!-- Accordion Header -->
                 <div
@@ -432,6 +521,7 @@ const save = () => {
                                         :draggable="dragAllowed"
                                         @dragstart="
                                             onParamDragStart(
+                                                $event,
                                                 system.id,
                                                 paramIndex,
                                             )
@@ -447,15 +537,15 @@ const save = () => {
                                         @drop="
                                             onParamDrop(system.id, paramIndex)
                                         "
-                                        @dragend="dragAllowed = false"
+                                        @dragend="onParamDragEnd"
                                         class="group transition-colors hover:bg-muted/10"
-                                        :class="{
-                                            'border-t-2 border-dashed border-primary bg-muted/20 opacity-40':
-                                                draggedOverParamSystemId ===
-                                                    system.id &&
-                                                draggedOverParamIndex ===
-                                                    paramIndex,
-                                        }"
+                                        :class="
+                                            paramRowClass(
+                                                system.id,
+                                                parameter.id,
+                                                paramIndex,
+                                            )
+                                        "
                                     >
                                         <!-- Drag Handle -->
                                         <td
@@ -636,6 +726,28 @@ const save = () => {
                                                 parameter.id,
                                             )
                                         "
+                                        @dragover="
+                                            onParamDragOver(
+                                                $event,
+                                                system.id,
+                                                paramIndex,
+                                            )
+                                        "
+                                        @dragleave="onParamDragLeave"
+                                        @drop="
+                                            onParamDrop(system.id, paramIndex)
+                                        "
+                                        :class="{
+                                            [DROP_AFTER_CLASS]:
+                                                isParamDropTarget(
+                                                    system.id,
+                                                    paramIndex,
+                                                    'after',
+                                                ) &&
+                                                expandedAlerts.includes(
+                                                    parameter.id,
+                                                ),
+                                        }"
                                     >
                                         <td
                                             colspan="10"

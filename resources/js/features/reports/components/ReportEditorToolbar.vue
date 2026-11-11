@@ -152,7 +152,7 @@ function formatBrazilianDate(value: string): string {
                     .run()
             "
         >
-            <option value="Instrument Sans">Fonte</option>
+            <option value="Poppins, sans-serif">Fonte</option>
             <option value="Arial">Arial</option>
             <option value="Georgia">Georgia</option>
             <option value="monospace">Mono</option>

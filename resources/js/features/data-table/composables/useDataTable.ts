@@ -75,9 +75,17 @@ export function useDataTable(teamSlugGetter: () => string) {
 
     const ewmaOutsideLimits = ref(false);
     const ewmaAll = ref(false);
+    const loadedEwmaOutsideLimits = ref(false);
+    const loadedEwmaAll = ref(false);
     const fitToScreen = ref(true);
-    const batchSelectionEnabled = ref(false);
+    const batchSelectionEnabled = ref(true);
     const isSavingBatch = ref(false);
+    const ewmaNeedsReload = computed(
+        () =>
+            parameters.value.length > 0 &&
+            (ewmaOutsideLimits.value !== loadedEwmaOutsideLimits.value ||
+                ewmaAll.value !== loadedEwmaAll.value),
+    );
     let loadController: AbortController | null = null;
     onBeforeUnmount(() => loadController?.abort());
     const isLoading = ref(false);
@@ -249,6 +257,8 @@ export function useDataTable(teamSlugGetter: () => string) {
             rows.value = data.rows || [];
             averages.value = data.averages || {};
             isMultiSystem.value = data.is_multi_system || false;
+            loadedEwmaOutsideLimits.value = ewmaOutsideLimits.value;
+            loadedEwmaAll.value = ewmaAll.value;
 
             collapsedSystemIds.value = [];
             confirmingDeleteTimestamp.value = null;
@@ -680,6 +690,7 @@ export function useDataTable(teamSlugGetter: () => string) {
         selectedSystemIds,
         ewmaOutsideLimits,
         ewmaAll,
+        ewmaNeedsReload,
         fitToScreen,
         batchSelectionEnabled,
         isSavingBatch,

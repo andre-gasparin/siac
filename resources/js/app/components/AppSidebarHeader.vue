@@ -1,6 +1,10 @@
 <script setup lang="ts">
+import { Moon, Sun } from '@lucide/vue';
+import { computed } from 'vue';
 import Breadcrumbs from '@/app/components/Breadcrumbs.vue';
+import { Button } from '@/shared/components/ui/button';
 import { SidebarTrigger } from '@/shared/components/ui/sidebar';
+import { useAppearance } from '@/shared/composables/useAppearance';
 import type { BreadcrumbItem } from '@/shared/types';
 
 withDefaults(
@@ -11,6 +15,9 @@ withDefaults(
         breadcrumbs: () => [],
     },
 );
+
+const { resolvedAppearance, updateAppearance } = useAppearance();
+const isDark = computed(() => resolvedAppearance.value === 'dark');
 </script>
 
 <template>
@@ -23,5 +30,17 @@ withDefaults(
                 <Breadcrumbs :breadcrumbs="breadcrumbs" />
             </template>
         </div>
+        <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            class="ml-auto"
+            aria-label="Tema escuro"
+            :aria-pressed="isDark"
+            @click="updateAppearance(isDark ? 'light' : 'dark')"
+        >
+            <Moon v-if="isDark" aria-hidden="true" />
+            <Sun v-else aria-hidden="true" />
+        </Button>
     </header>
 </template>

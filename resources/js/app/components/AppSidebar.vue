@@ -12,6 +12,7 @@ import {
 } from '@lucide/vue';
 import { computed } from 'vue';
 import AppLogo from '@/app/components/AppLogo.vue';
+import AppLogoIcon from '@/app/components/AppLogoIcon.vue';
 import NavMain from '@/app/components/NavMain.vue';
 import NavUser from '@/app/components/NavUser.vue';
 import TeamSwitcher from '@/features/teams/components/TeamSwitcher.vue';
@@ -137,9 +138,15 @@ const mainNavItems = computed<NavItem[]>(() => {
         <SidebarHeader>
             <SidebarMenu>
                 <SidebarMenuItem>
-                    <SidebarMenuButton size="lg" as-child>
-                        <Link :href="dashboardUrl">
-                            <AppLogo />
+                    <SidebarMenuButton size="lg" class="py-0" as-child>
+                        <Link :href="dashboardUrl" aria-label="Consucal">
+                            <AppLogo
+                                large
+                                class="group-data-[collapsible=icon]:hidden"
+                            />
+                            <AppLogoIcon
+                                class="mx-auto hidden size-6 object-contain group-data-[collapsible=icon]:block"
+                            />
                         </Link>
                     </SidebarMenuButton>
                 </SidebarMenuItem>

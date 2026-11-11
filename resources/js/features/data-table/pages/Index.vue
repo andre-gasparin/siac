@@ -41,6 +41,7 @@ const {
     endDate,
     ewmaOutsideLimits,
     ewmaAll,
+    ewmaNeedsReload,
     fitToScreen,
     batchSelectionEnabled,
     isSavingBatch,
@@ -100,24 +101,23 @@ const loadedSystemIds = computed(() => [
             v-model:selected-system-ids="selectedSystemIds"
             v-model:start-date="startDate"
             v-model:end-date="endDate"
-            v-model:ewma-outside-limits="ewmaOutsideLimits"
-            v-model:ewma-all="ewmaAll"
-            v-model:fit-to-screen="fitToScreen"
-            v-model:batch-selection-enabled="batchSelectionEnabled"
             :systems="systems"
             :is-loading="isLoading"
             :cache-status="cacheStatus"
             @load="loadData"
         />
         <DataTableGrid
+            v-model:ewma-outside-limits="ewmaOutsideLimits"
+            v-model:ewma-all="ewmaAll"
+            v-model:fit-to-screen="fitToScreen"
+            v-model:batch-selection-enabled="batchSelectionEnabled"
             :parameters="parameters"
             :visible-parameters="visibleParameters"
             :rows="rows"
             :averages="averages"
             :is-multi-system="isMultiSystem"
             :is-loading="isLoading"
-            :fit-to-screen="fitToScreen"
-            :batch-selection-enabled="batchSelectionEnabled"
+            :ewma-needs-reload="ewmaNeedsReload"
             :is-saving-batch="isSavingBatch"
             :system-color-map="systemColorMap"
             :is-system-collapsed="isSystemCollapsed"
@@ -126,6 +126,7 @@ const loadedSystemIds = computed(() => [
             :is-deleting-row="isDeletingRow"
             :is-editing-this-cell="isEditingThisCell"
             :is-editing-row-date="isEditingRowDate"
+            @reload="loadData"
             @toggle-collapse-system="toggleCollapseSystem"
             @start-delete-row="startDeleteRow"
             @cancel-delete-row="cancelDeleteRow"

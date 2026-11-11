@@ -62,10 +62,13 @@ test('table system selection navigation and options work independently', functio
         ->click('[title="Próximo sistema"]')
         ->click('[title="Sistema anterior"]')
         ->assertSee('PH-001')
-        ->click('[title="Opções da tabela"]')
-        ->assertSee('Calcular EWMA em todos os resultados')
-        ->click('[role="menuitemcheckbox"]:has-text("Calcular EWMA em todos os resultados")')
-        ->assertAttribute('[role="menuitemcheckbox"]:has-text("Calcular EWMA em todos os resultados")', 'aria-checked', 'true')
+        ->assertAttribute('[aria-label="Habilitar seleção de células em lote"]', 'aria-pressed', 'true')
+        ->click('[aria-label="Calcular EWMA em todos os resultados"]')
+        ->assertAttribute('[aria-label="Calcular EWMA em todos os resultados"]', 'aria-pressed', 'true')
+        ->assertPresent('[data-test="ewma-reload-popover"]')
+        ->assertPresent('[data-test="ewma-reload-alert"]')
+        ->click('[data-test="ewma-reload-popover"] button:has-text("Recarregar")')
+        ->assertMissing('[data-test="ewma-reload-popover"]')
         ->assertNoJavaScriptErrors();
 });
 

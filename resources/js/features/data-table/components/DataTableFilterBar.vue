@@ -5,34 +5,17 @@ import {
     Database,
     Loader2,
     Save,
-    Settings,
 } from '@lucide/vue';
 import { computed } from 'vue';
 import SystemMultiSelect from '@/features/data-table/components/SystemMultiSelect.vue';
 import type { SystemItem } from '@/features/data-table/types';
 import DatePicker from '@/shared/components/DatePicker.vue';
-import {
-    DropdownMenu,
-    DropdownMenuCheckboxItem,
-    DropdownMenuContent,
-    DropdownMenuLabel,
-    DropdownMenuSeparator,
-    DropdownMenuTrigger,
-} from '@/shared/components/ui/dropdown-menu';
 
 const selectedSystemIds = defineModel<number[]>('selectedSystemIds', {
     required: true,
 });
 const startDate = defineModel<string>('startDate', { required: true });
 const endDate = defineModel<string>('endDate', { required: true });
-const ewmaOutsideLimits = defineModel<boolean>('ewmaOutsideLimits', {
-    required: true,
-});
-const ewmaAll = defineModel<boolean>('ewmaAll', { required: true });
-const fitToScreen = defineModel<boolean>('fitToScreen', { required: true });
-const batchSelectionEnabled = defineModel<boolean>('batchSelectionEnabled', {
-    default: false,
-});
 const props = defineProps<{
     systems: SystemItem[];
     isLoading: boolean;
@@ -113,60 +96,6 @@ function moveSystem(offset: number) {
                     class="size-3.5"
                 />Carregar
             </button>
-            <DropdownMenu>
-                <DropdownMenuTrigger as-child
-                    ><button
-                        type="button"
-                        class="inline-flex h-9 items-center gap-1.5 rounded-md border px-3 hover:bg-accent"
-                        title="Opções da tabela"
-                    >
-                        <Settings class="size-4" />Opções
-                    </button></DropdownMenuTrigger
-                >
-                <DropdownMenuContent
-                    align="end"
-                    class="max-w-[calc(100vw-2rem)] sm:w-96"
-                >
-                    <DropdownMenuLabel>Opções da tabela</DropdownMenuLabel>
-                    <DropdownMenuCheckboxItem
-                        :model-value="ewmaOutsideLimits"
-                        @update:model-value="
-                            ewmaOutsideLimits = Boolean($event)
-                        "
-                        @select.prevent
-                        >Calcular EWMA fora do
-                        mínimo/máximo</DropdownMenuCheckboxItem
-                    >
-                    <DropdownMenuCheckboxItem
-                        :model-value="ewmaAll"
-                        @update:model-value="ewmaAll = Boolean($event)"
-                        @select.prevent
-                        >Calcular EWMA em todos os
-                        resultados</DropdownMenuCheckboxItem
-                    >
-                    <DropdownMenuSeparator />
-                    <DropdownMenuCheckboxItem
-                        :model-value="!fitToScreen"
-                        @update:model-value="fitToScreen = !$event"
-                        @select.prevent
-                        >Manter largura original (com
-                        rolagem)</DropdownMenuCheckboxItem
-                    >
-                    <DropdownMenuCheckboxItem
-                        :model-value="batchSelectionEnabled"
-                        @update:model-value="
-                            batchSelectionEnabled = Boolean($event)
-                        "
-                        @select.prevent
-                        >Habilitar seleção de células em
-                        lote</DropdownMenuCheckboxItem
-                    >
-                    <p class="px-2 py-1 text-[11px] text-muted-foreground">
-                        Por padrão, a tabela se ajusta à tela. As opções EWMA
-                        são aplicadas ao carregar.
-                    </p>
-                </DropdownMenuContent>
-            </DropdownMenu>
             <span
                 class="flex items-center gap-1.5 rounded-md border bg-muted/30 px-2.5 py-2 text-[11px] text-muted-foreground"
                 ><Database class="size-3" />{{ cacheStatus }}</span
