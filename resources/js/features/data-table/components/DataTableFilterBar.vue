@@ -1,11 +1,5 @@
 <script setup lang="ts">
-import {
-    ChevronLeft,
-    ChevronRight,
-    Database,
-    Loader2,
-    Save,
-} from '@lucide/vue';
+import { ChevronLeft, ChevronRight, Loader2, Save } from '@lucide/vue';
 import { computed } from 'vue';
 import SystemMultiSelect from '@/features/data-table/components/SystemMultiSelect.vue';
 import type { SystemItem } from '@/features/data-table/types';
@@ -19,7 +13,6 @@ const endDate = defineModel<string>('endDate', { required: true });
 const props = defineProps<{
     systems: SystemItem[];
     isLoading: boolean;
-    cacheStatus: string;
 }>();
 const emit = defineEmits<{ load: [] }>();
 const currentIndex = computed(() =>
@@ -96,10 +89,6 @@ function moveSystem(offset: number) {
                     class="size-3.5"
                 />Carregar
             </button>
-            <span
-                class="flex items-center gap-1.5 rounded-md border bg-muted/30 px-2.5 py-2 text-[11px] text-muted-foreground"
-                ><Database class="size-3" />{{ cacheStatus }}</span
-            >
         </div>
     </div>
 </template>

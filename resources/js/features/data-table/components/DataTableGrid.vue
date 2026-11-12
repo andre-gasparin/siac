@@ -50,6 +50,8 @@ const batchSelectionEnabled = defineModel<boolean>('batchSelectionEnabled', {
 
 const props = withDefaults(
     defineProps<{
+        companyName: string;
+        cacheStatus: string;
         parameters: ParameterItem[];
         visibleParameters: ParameterItem[];
         rows: DataRow[];
@@ -298,11 +300,14 @@ function isOutside(row: DataRow, parameter: ParameterItem): boolean {
                 class="flex flex-wrap items-center justify-between gap-2 rounded-t-lg border-b bg-muted/20 px-3 py-2 text-xs"
             >
                 <div class="flex flex-wrap items-center gap-2">
-                    <strong>Sistema:</strong>
-                    <strong v-if="!isMultiSystem" class="text-primary">{{
-                        parameters[0]?.system_name
-                    }}</strong>
+                    <strong v-if="!isMultiSystem">
+                        {{ companyName }} -
+                        <span class="text-primary">{{
+                            parameters[0]?.system_name
+                        }}</span>
+                    </strong>
                     <template v-else>
+                        <strong>{{ companyName }} -</strong>
                         <button
                             v-for="(style, systemId) in systemColorMap"
                             :key="systemId"
@@ -341,10 +346,20 @@ function isOutside(row: DataRow, parameter: ParameterItem): boolean {
                     </template>
                 </div>
                 <div class="flex flex-wrap items-center gap-2.5">
-                    <span class="text-muted-foreground"
-                        >{{ visibleParameters.length }} de
-                        {{ parameters.length }} colunas</span
+                    <div
+                        class="flex flex-wrap items-center gap-x-2.5 gap-y-1 text-muted-foreground"
                     >
+                        <span>
+                            {{ visibleParameters.length }} de
+                            {{ parameters.length }} colunas
+                        </span>
+                        <span
+                            class="inline-flex items-center gap-1.5"
+                            role="status"
+                        >
+                            <Database class="size-3" />{{ cacheStatus }}
+                        </span>
+                    </div>
                     <div
                         class="flex items-center gap-1 border-l pl-2.5"
                         role="group"
@@ -543,13 +558,14 @@ function isOutside(row: DataRow, parameter: ParameterItem): boolean {
             >
                 <Database class="mx-auto mb-3 size-5" />Selecione os sistemas e
                 o período e clique em Carregar.
+                <p class="mt-2" role="status">{{ cacheStatus }}</p>
             </div>
             <div
                 v-else
                 class="relative max-h-[calc(100vh-210px)] w-full overflow-auto rounded-b-lg"
             >
                 <table
-                    class="w-full border-collapse text-center text-xs"
+                    class="w-full border-collapse text-center font-sans text-xs"
                     :class="
                         fitToScreen ? 'min-w-[500px] table-fixed' : 'min-w-max'
                     "
@@ -843,7 +859,7 @@ function isOutside(row: DataRow, parameter: ParameterItem): boolean {
                             <td
                                 v-for="(param, colIndex) in visibleParameters"
                                 :key="param.id"
-                                class="group/cell relative cursor-pointer border-r px-2 py-2 text-center font-mono text-xs font-medium tabular-nums md:text-[13px]"
+                                class="group/cell relative cursor-pointer border-r px-2 py-2 text-center text-xs font-medium tabular-nums md:text-[13px]"
                                 :class="[
                                     getSystemStyle(param.monitored_system_id)
                                         .colBg,
@@ -908,7 +924,7 @@ function isOutside(row: DataRow, parameter: ParameterItem): boolean {
                             <td
                                 v-for="param in visibleParameters"
                                 :key="param.id"
-                                class="border-r px-2 py-2 text-center font-mono text-xs font-medium wrap-anywhere tabular-nums md:text-[13px]"
+                                class="border-r px-2 py-2 text-center text-xs font-medium wrap-anywhere tabular-nums md:text-[13px]"
                             >
                                 {{ averages[param.id]?.formatted || 'SR' }}
                             </td>

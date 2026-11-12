@@ -24,6 +24,14 @@ test('table charts are loaded only when requested and support lines and bars', f
         ->assertDontSee('Editar considerações Consucal')
         ->click('Carregar')
         ->assertSee('PH-001')
+        ->assertSee($this->team->name.' - '.$this->system->name)
+        ->assertDontSee('Sistema:')
+        ->assertSeeIn('div:has(> span[role="status"])', '1 de 1 colunas')
+        ->assertSeeIn('div:has(> span[role="status"])', 'carregado às')
+        ->assertScript(<<<'JS'
+            [...document.querySelectorAll('[data-test="data-table-grid"] :is(th, td)')]
+                .every((cell) => /^["']?Poppins["']?,/.test(getComputedStyle(cell).fontFamily))
+            JS)
         ->screenshot(filename: 'data-table-enhancements')
         ->assertMissing('[data-report-chart-renderer]')
         ->click('[aria-label="Gráfico de linha de pH"]')

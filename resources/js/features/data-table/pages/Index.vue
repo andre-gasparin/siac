@@ -103,7 +103,6 @@ const loadedSystemIds = computed(() => [
             v-model:end-date="endDate"
             :systems="systems"
             :is-loading="isLoading"
-            :cache-status="cacheStatus"
             @load="loadData"
         />
         <DataTableGrid
@@ -111,6 +110,8 @@ const loadedSystemIds = computed(() => [
             v-model:ewma-all="ewmaAll"
             v-model:fit-to-screen="fitToScreen"
             v-model:batch-selection-enabled="batchSelectionEnabled"
+            :company-name="currentTeam.name"
+            :cache-status="cacheStatus"
             :parameters="parameters"
             :visible-parameters="visibleParameters"
             :rows="rows"
