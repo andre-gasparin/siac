@@ -35,6 +35,8 @@ const props = defineProps<{
     intendedRecipientsCount?: number;
     activeRecipientsCount?: number;
     pendingDate: string;
+    tableStartDate?: string;
+    tableEndDate?: string;
     datePrompt: {
         open: boolean;
         date: string;
@@ -45,6 +47,9 @@ const props = defineProps<{
 
 const emit = defineEmits<{
     dateChange: [event: Event];
+    'update:tableStartDate': [value: string];
+    'update:tableEndDate': [value: string];
+    tablePeriodChange: [dates: { start_date: string; end_date: string }];
     cancelDatePrompt: [];
     confirmDatePrompt: [];
     openHistory: [];
@@ -225,6 +230,48 @@ function formatDateBr(value: string | null): string {
                         </button>
                     </div>
                 </div>
+            </div>
+
+            <!-- Seletor do Período das Tabelas (Global) -->
+            <div
+                class="flex items-center gap-1.5 rounded-lg border border-border bg-muted/40 px-2.5 py-1.5 text-xs shadow-2xs"
+            >
+                <Calendar class="size-3.5 text-muted-foreground" />
+                <span class="font-medium text-muted-foreground">Tabelas:</span>
+                <input
+                    :value="tableStartDate"
+                    type="date"
+                    class="h-6 rounded-md border border-input bg-background px-1.5 text-xs font-semibold text-foreground"
+                    title="Data inicial das tabelas"
+                    @change="
+                        emit(
+                            'update:tableStartDate',
+                            ($event.target as HTMLInputElement).value,
+                        );
+                        emit('tablePeriodChange', {
+                            start_date: ($event.target as HTMLInputElement)
+                                .value,
+                            end_date: tableEndDate ?? '',
+                        });
+                    "
+                />
+                <span class="text-muted-foreground">até</span>
+                <input
+                    :value="tableEndDate"
+                    type="date"
+                    class="h-6 rounded-md border border-input bg-background px-1.5 text-xs font-semibold text-foreground"
+                    title="Data final das tabelas"
+                    @change="
+                        emit(
+                            'update:tableEndDate',
+                            ($event.target as HTMLInputElement).value,
+                        );
+                        emit('tablePeriodChange', {
+                            start_date: tableStartDate ?? '',
+                            end_date: ($event.target as HTMLInputElement).value,
+                        });
+                    "
+                />
             </div>
 
             <!-- Botão de Sistemas Incluídos com Barra de Progresso e Dropdown -->

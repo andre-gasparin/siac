@@ -267,8 +267,7 @@ class ConsolidatedReportService
                 ->whereBelongsTo($system, 'monitoredSystem')
                 ->lockForUpdate()
                 ->first();
-            $hasComment = $item && trim(strip_tags((string) $item->comment)) !== '';
-            $visible = $hasComment || $show;
+            $visible = $show;
 
             if (! $item) {
                 $item = ReportItem::query()->create([

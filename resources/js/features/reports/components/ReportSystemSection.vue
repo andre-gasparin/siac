@@ -1,6 +1,15 @@
 <script setup lang="ts">
-import { Bot, Check, Layers, Loader2, X } from '@lucide/vue';
-import { ref, watch } from 'vue';
+import {
+    Bot,
+    Check,
+    ChevronDown,
+    Layers,
+    Loader2,
+    Pencil,
+    Table,
+    X,
+} from '@lucide/vue';
+import { computed, ref } from 'vue';
 import ReportDataTable from '@/features/reports/components/ReportDataTable.vue';
 import ReportEditorLauncher from '@/features/reports/components/ReportEditorLauncher.vue';
 import type { ReportSystem } from '@/features/reports/types';
@@ -85,17 +94,118 @@ const emit = defineEmits<{
     editorSaved: [];
 }>();
 
-const localStartDate = ref(props.systemDates.start_date);
-const localEndDate = ref(props.systemDates.end_date);
+const isSaved = computed(() => {
+    return Boolean(
+        props.system.item?.show_data_results &&
+        props.system.item?.comment &&
+        props.system.item.comment.replace(/<[^>]+>/g, '').trim().length > 0,
+    );
+});
 
-watch(
-    () => props.systemDates,
-    (dates) => {
-        localStartDate.value = dates.start_date;
-        localEndDate.value = dates.end_date;
-    },
-    { deep: true },
-);
+const isBlockOpen = ref(isSaved.value);
+const isEditing = ref(false);
+const isTableOpen = ref(false);
+
+const statusColor = computed(() => {
+    // Se estiver desativado: vermelho
+    if (!props.system.item?.show_data_results) {
+        return 'bg-red-500';
+    }
+
+    // Se estiver em modo de edição (precisa salvar): amarelo
+    if (isEditing.value) {
+        return 'bg-amber-500';
+    }
+
+    // Se possui conteúdo salvo e não está editando: verde
+    if (isSaved.value) {
+        return 'bg-emerald-500';
+    }
+
+    // Ativo porém sem comentário e não está editando: vermelho
+    return 'bg-red-500';
+});
+
+const bolinhaTooltip = computed(() => {
+    if (!props.system.item?.show_data_results) {
+        return 'Sistema desativado. Clique para ativar e abrir';
+    }
+
+    if (isEditing.value) {
+        return 'Sistema em edição. Clique para desativar e fechar';
+    }
+
+    if (isSaved.value) {
+        return 'Sistema salvo. Clique para desativar e fechar';
+    }
+
+    return 'Sistema desativado. Clique para ativar e abrir';
+});
+
+function handleHeaderClick(): void {
+    if (isBlockOpen.value) {
+        // Fecha o bloco no cabeçalho
+        isBlockOpen.value = false;
+        isEditing.value = false;
+    } else {
+        // Se estiver desativado, ativa o sistema e abre
+        if (!props.system.item?.show_data_results) {
+            emit('toggleSystem', props.system, true);
+        }
+
+        // Se já tem conteúdo salvo, abre em modo de visualização (verde); se não tem, abre direto no editor
+        isEditing.value = !isSaved.value;
+        isBlockOpen.value = true;
+    }
+}
+
+function handleBolinhaClick(): void {
+    // Se clicar na bolinha amarela ou verde, fecha e desativa o sistema
+    if (
+        isBlockOpen.value ||
+        (props.system.item?.show_data_results && isSaved.value)
+    ) {
+        isBlockOpen.value = false;
+        isEditing.value = false;
+        emit('toggleSystem', props.system, false);
+    } else {
+        // Se estiver vermelha, ativa e abre
+        emit('toggleSystem', props.system, true);
+        isEditing.value = !isSaved.value;
+        isBlockOpen.value = true;
+    }
+}
+
+function handleEditClick(): void {
+    if (!props.system.item?.show_data_results) {
+        emit('toggleSystem', props.system, true);
+    }
+
+    isBlockOpen.value = true;
+    isEditing.value = true;
+}
+
+function handleSaved(): void {
+    // Ao salvar, apenas sai o editor e fica a visualização; não fecha o bloco todo
+    isEditing.value = false;
+    emit('editorSaved');
+}
+
+function handleCancelEditing(): void {
+    isEditing.value = false;
+
+    if (!isSaved.value) {
+        isBlockOpen.value = false;
+    }
+}
+
+function toggleTable(): void {
+    isTableOpen.value = !isTableOpen.value;
+
+    if (isTableOpen.value && !props.systemData && !props.isLoadingData) {
+        emit('loadData', props.system);
+    }
+}
 
 function handleUngroupChild(child: { id: number; name: string }): void {
     const fullChild = props.groupedChildren.find((c) => c.id === child.id);
@@ -119,31 +229,36 @@ function handleUngroupChild(child: { id: number; name: string }): void {
         ]"
     >
         <header
-            class="flex flex-wrap items-center justify-between gap-3 border-b px-4 py-2.5"
+            class="flex cursor-pointer flex-wrap items-center justify-between gap-3 border-b px-4 py-3 transition select-none hover:bg-muted/40"
             :class="
                 system.item?.show_data_results
                     ? 'border-border/60 bg-muted/20 text-foreground'
                     : 'border-border/50 bg-muted/20 text-muted-foreground'
             "
+            @click="handleHeaderClick"
         >
             <div class="flex flex-wrap items-center gap-3">
+                <button
+                    type="button"
+                    data-test="system-status-indicator"
+                    class="size-3.5 shrink-0 rounded-full ring-2 ring-background transition-transform hover:scale-125 focus:outline-hidden"
+                    :class="statusColor"
+                    :title="bolinhaTooltip"
+                    :aria-label="bolinhaTooltip"
+                    @click.stop="handleBolinhaClick"
+                />
+
                 <h2 class="font-semibold text-foreground">
                     {{ combinedTitle }}
                 </h2>
-                <span
-                    v-if="!system.item?.show_data_results"
-                    class="rounded-full bg-muted px-2 py-0.5 text-[11px] font-medium text-muted-foreground"
-                >
-                    Desabilitado
-                </span>
             </div>
-            <div class="flex items-center gap-2.5">
+            <div class="flex items-center gap-2">
                 <button
                     v-if="canGroup"
                     type="button"
                     class="inline-flex items-center gap-1.5 rounded-lg border border-border bg-background px-2.5 py-1 text-xs font-medium text-foreground shadow-2xs transition hover:bg-muted"
                     title="Agrupar este sistema no primeiro sistema habilitado"
-                    @click="emit('openGroupModal', system)"
+                    @click.stop="emit('openGroupModal', system)"
                 >
                     <Layers class="size-3.5 text-muted-foreground" />
                     Agrupar
@@ -151,180 +266,169 @@ function handleUngroupChild(child: { id: number; name: string }): void {
 
                 <button
                     type="button"
-                    role="switch"
-                    aria-label="Habilitar ou desabilitar sistema"
-                    :title="
-                        system.item?.show_data_results
-                            ? 'Sistema habilitado'
-                            : 'Sistema desabilitado'
-                    "
-                    :aria-checked="system.item?.show_data_results ?? false"
-                    :disabled="
-                        Boolean(
-                            system.item?.comment &&
-                            system.item.comment.replace(/<[^>]+>/g, '').trim(),
-                        )
-                    "
-                    class="relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-hidden focus-visible:ring-2 focus-visible:ring-emerald-500 disabled:cursor-not-allowed disabled:opacity-50"
-                    :class="
-                        system.item?.show_data_results
-                            ? 'bg-emerald-600'
-                            : 'bg-muted-foreground/30'
-                    "
-                    @click="
-                        emit(
-                            'toggleSystem',
-                            system,
-                            !system.item?.show_data_results,
-                        )
-                    "
+                    class="inline-flex items-center gap-1.5 rounded-lg border border-border bg-background px-2.5 py-1 text-xs font-medium text-foreground shadow-2xs transition hover:bg-muted"
+                    title="Editar considerações deste sistema"
+                    @click.stop="handleEditClick"
                 >
-                    <span
-                        aria-hidden="true"
-                        class="pointer-events-none inline-block size-5 transform rounded-full bg-white shadow-md ring-0 transition duration-200 ease-in-out"
-                        :class="
-                            system.item?.show_data_results
-                                ? 'translate-x-5'
-                                : 'translate-x-0'
-                        "
-                    />
+                    <Pencil class="size-3.5 text-muted-foreground" />
+                    Editar
                 </button>
             </div>
         </header>
 
-        <div
-            v-if="system.item?.show_data_results && !system.item.hide_data"
-            class="p-4"
-        >
+        <!-- Conteúdo do Bloco (Exibido quando aberto) -->
+        <div v-if="isBlockOpen" class="space-y-4 p-4">
+            <!-- 1. Bloco de Considerações (Mesmo padrão visual da tabela, sem título e sem fundo azul) -->
             <div
-                v-if="isLoadingData && !systemData"
-                class="grid h-32 place-items-center"
+                class="rounded-xl border border-border/70 bg-card p-4 shadow-2xs"
             >
-                <Loader2 class="size-6 animate-spin text-primary" />
-            </div>
-            <ReportDataTable
-                v-else-if="systemData"
-                :parameters="systemData.parameters"
-                :rows="systemData.rows"
-                :start-date="localStartDate"
-                :end-date="localEndDate"
-                :is-loading-data="isLoadingData"
-                :grouped-children="groupedChildren"
-                @update:start-date="(val) => (localStartDate = val)"
-                @update:end-date="(val) => (localEndDate = val)"
-                @load-data="
-                    (dates) =>
-                        emit(
-                            'loadData',
-                            system,
-                            true,
-                            dates ?? {
-                                start_date: localStartDate,
-                                end_date: localEndDate,
-                            },
-                        )
-                "
-                @ungroup-child="handleUngroupChild"
-                @chart="
-                    (parameterId, type) =>
-                        emit('chart', system, parameterId, type)
-                "
-            />
-        </div>
+                <!-- Modo Edição do Editor -->
+                <div v-if="isEditing">
+                    <ReportEditorLauncher
+                        :current-team="currentTeam"
+                        :systems="systems"
+                        :selected-system-ids="[system.id]"
+                        :default-date="reportDateReference"
+                        :auto-open="true"
+                        :inline="true"
+                        @saved="handleSaved"
+                        @cancel="handleCancelEditing"
+                    />
+                </div>
 
-        <div
-            v-if="system.item?.show_data_results"
-            class="border-t border-blue-100 bg-blue-50/35 p-4 dark:border-blue-950 dark:bg-blue-950/10"
-        >
-            <div class="flex flex-wrap items-center justify-between gap-3">
-                <div>
-                    <h3 class="text-sm font-semibold text-foreground">
-                        Considerações Consucal
-                    </h3>
-                    <p class="text-xs text-muted-foreground">
-                        Edite o texto e os gráficos específicos deste sistema.
+                <!-- Modo Visualização das Considerações Salvas -->
+                <div v-else>
+                    <div
+                        v-if="system.item?.comment"
+                        class="prose prose-sm dark:prose-invert max-w-none leading-relaxed text-foreground"
+                        v-html="system.item.comment"
+                    />
+                    <p
+                        v-else
+                        class="rounded-lg border border-dashed border-border/80 p-4 text-xs text-muted-foreground"
+                    >
+                        Nenhuma consideração registrada para este sistema.
                     </p>
                 </div>
-                <ReportEditorLauncher
-                    :current-team="currentTeam"
-                    :systems="systems"
-                    :selected-system-ids="[system.id]"
-                    :default-date="reportDateReference"
-                    button-label="Editar consideração"
-                    @saved="emit('editorSaved')"
+            </div>
+
+            <!-- 2. Botão para Exibir/Ocultar Tabela de Dados (embaixo do editor) -->
+            <div class="flex items-center justify-start">
+                <button
+                    type="button"
+                    class="inline-flex items-center gap-2 rounded-lg border border-border bg-background px-3.5 py-2 text-xs font-semibold text-foreground shadow-2xs transition hover:bg-muted"
+                    @click="toggleTable"
+                >
+                    <Table class="size-4 text-muted-foreground" />
+                    <span>{{
+                        isTableOpen
+                            ? 'Ocultar tabela de dados'
+                            : 'Exibir tabela de dados'
+                    }}</span>
+                    <ChevronDown
+                        class="size-3.5 text-muted-foreground transition-transform duration-200"
+                        :class="isTableOpen ? 'rotate-180' : ''"
+                    />
+                </button>
+            </div>
+
+            <!-- 3. Tabela de Dados (fechada por padrão, aberta via botão) -->
+            <div
+                v-if="isTableOpen && !system.item?.hide_data"
+                class="rounded-xl border border-border/70 bg-card p-4 shadow-2xs"
+            >
+                <div
+                    v-if="isLoadingData && !systemData"
+                    class="grid h-32 place-items-center"
+                >
+                    <Loader2 class="size-6 animate-spin text-primary" />
+                </div>
+                <ReportDataTable
+                    v-else-if="systemData"
+                    :parameters="systemData.parameters"
+                    :rows="systemData.rows"
+                    :start-date="systemDates.start_date"
+                    :end-date="systemDates.end_date"
+                    :is-loading-data="isLoadingData"
+                    :grouped-children="groupedChildren"
+                    @ungroup-child="handleUngroupChild"
+                    @chart="
+                        (parameterId, type) =>
+                            emit('chart', system, parameterId, type)
+                    "
                 />
             </div>
-            <div
-                v-if="system.item.comment"
-                class="prose prose-sm dark:prose-invert mt-4 max-w-none rounded-xl border bg-card p-4 text-foreground"
-                v-html="system.item.comment"
-            />
-            <p
-                v-else
-                class="mt-4 rounded-xl border border-dashed bg-card/60 p-4 text-xs text-muted-foreground"
-            >
-                Nenhuma consideração registrada para este sistema.
-            </p>
-        </div>
 
-        <div
-            v-if="system.item?.suggestions.length"
-            class="grid gap-2 border-t bg-violet-50/60 p-4 dark:bg-violet-950/15"
-        >
+            <!-- 4. Bloco de Sugestões de IA (se houver) -->
             <div
-                v-for="suggestion in system.item.suggestions"
-                :key="suggestion.id"
-                class="rounded-xl border border-violet-200 bg-card p-3 text-sm dark:border-violet-900"
-                :title="suggestion.reason ?? ''"
+                v-if="system.item?.suggestions.length"
+                class="grid gap-2 rounded-xl border border-violet-200 bg-violet-50/60 p-4 dark:border-violet-900/40 dark:bg-violet-950/15"
             >
-                <div class="flex items-start gap-2">
-                    <Bot class="mt-0.5 size-4 shrink-0 text-violet-600" />
-                    <div class="min-w-0 flex-1">
-                        <p>
-                            <del class="text-red-600">{{
-                                suggestion.original_text
-                            }}</del>
-                        </p>
-                        <p class="mt-1 text-emerald-700 dark:text-emerald-300">
-                            {{ suggestion.replacement_text }}
-                        </p>
-                        <p
-                            v-if="suggestion.reason"
-                            class="mt-1 text-xs text-muted-foreground"
-                        >
-                            {{ suggestion.reason }}
-                        </p>
+                <div
+                    v-for="suggestion in system.item.suggestions"
+                    :key="suggestion.id"
+                    class="rounded-xl border border-violet-200 bg-card p-3 text-sm dark:border-violet-900"
+                    :title="suggestion.reason ?? ''"
+                >
+                    <div class="flex items-start gap-2">
+                        <Bot class="mt-0.5 size-4 shrink-0 text-violet-600" />
+                        <div class="min-w-0 flex-1">
+                            <p>
+                                <del class="text-red-600">{{
+                                    suggestion.original_text
+                                }}</del>
+                            </p>
+                            <p
+                                class="mt-1 text-emerald-700 dark:text-emerald-300"
+                            >
+                                {{ suggestion.replacement_text }}
+                            </p>
+                            <p
+                                v-if="suggestion.reason"
+                                class="mt-1 text-xs text-muted-foreground"
+                            >
+                                {{ suggestion.reason }}
+                            </p>
+                        </div>
                     </div>
-                </div>
-                <div class="mt-2 flex gap-2">
-                    <button
-                        type="button"
-                        class="rounded bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-emerald-700 disabled:opacity-50"
-                        :disabled="resolvingSuggestions[suggestion.id]"
-                        @click="
-                            emit('resolveSuggestion', suggestion.id, 'accept')
-                        "
-                    >
-                        <Loader2
-                            v-if="resolvingSuggestions[suggestion.id]"
-                            class="mr-1 inline size-3 animate-spin"
-                        />
-                        <Check v-else class="mr-1 inline size-3" />Aprovar
-                    </button>
-                    <button
-                        type="button"
-                        class="rounded border px-3 py-1.5 text-xs transition hover:bg-muted disabled:opacity-50"
-                        :disabled="resolvingSuggestions[suggestion.id]"
-                        @click="
-                            emit('resolveSuggestion', suggestion.id, 'reject')
-                        "
-                    >
-                        <Loader2
-                            v-if="resolvingSuggestions[suggestion.id]"
-                            class="mr-1 inline size-3 animate-spin"
-                        />
-                        <X v-else class="mr-1 inline size-3" />Rejeitar
-                    </button>
+                    <div class="mt-2 flex gap-2">
+                        <button
+                            type="button"
+                            class="rounded bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-emerald-700 disabled:opacity-50"
+                            :disabled="resolvingSuggestions[suggestion.id]"
+                            @click="
+                                emit(
+                                    'resolveSuggestion',
+                                    suggestion.id,
+                                    'accept',
+                                )
+                            "
+                        >
+                            <Loader2
+                                v-if="resolvingSuggestions[suggestion.id]"
+                                class="mr-1 inline size-3 animate-spin"
+                            />
+                            <Check v-else class="mr-1 inline size-3" />Aprovar
+                        </button>
+                        <button
+                            type="button"
+                            class="rounded border px-3 py-1.5 text-xs transition hover:bg-muted disabled:opacity-50"
+                            :disabled="resolvingSuggestions[suggestion.id]"
+                            @click="
+                                emit(
+                                    'resolveSuggestion',
+                                    suggestion.id,
+                                    'reject',
+                                )
+                            "
+                        >
+                            <Loader2
+                                v-if="resolvingSuggestions[suggestion.id]"
+                                class="mr-1 inline size-3 animate-spin"
+                            />
+                            <X v-else class="mr-1 inline size-3" />Rejeitar
+                        </button>
+                    </div>
                 </div>
             </div>
         </div>

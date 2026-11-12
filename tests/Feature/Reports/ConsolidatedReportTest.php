@@ -161,6 +161,35 @@ test('visibility is explicit and saving a consideration enables the system with 
         ->and(ReportActivity::query()->where('action', 'consideration.updated')->exists())->toBeTrue();
 });
 
+test('system with existing comment can be disabled and retains comment but is omitted from client preview', function () {
+    $report = createConsolidatedReport($this);
+
+    $item = ReportItem::query()->create([
+        'team_id' => $this->team->id,
+        'report_id' => $report->id,
+        'monitored_system_id' => $this->system->id,
+        'date_reference' => '2026-08-04',
+        'show_data_results' => true,
+        'comment' => '<p>Comentário existente</p>',
+    ]);
+
+    $this->actingAs($this->admin)
+        ->putJson(route('reports.systems.update', [$this->team, $report]), [
+            'system_id' => $this->system->id,
+            'show_data_results' => false,
+        ])->assertOk()->assertJsonPath('show_data_results', false);
+
+    expect($item->refresh()->show_data_results)->toBeFalse()
+        ->and($item->comment)->toBe('<p>Comentário existente</p>');
+
+    $this->actingAs($this->admin)
+        ->get(route('reports.preview', [$this->team, $report]))
+        ->assertOk()
+        ->assertInertia(fn ($page) => $page
+            ->component('Reports/Preview')
+            ->has('systems', 0));
+});
+
 test('system data and seven day charts are scoped to the report company', function () {
     $report = createConsolidatedReport($this);
     ParameterValue::query()->create([

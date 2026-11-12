@@ -54,17 +54,27 @@ import {
 import { index as historyRoute } from '@/routes/reports/history';
 import type { Team } from '@/shared/types';
 
-const props = defineProps<{
-    currentTeam: Team;
-    systems: ReportSystem[];
-    selectedSystemIds: number[];
-    defaultDate: string;
-    buttonLabel?: string;
-}>();
+const props = withDefaults(
+    defineProps<{
+        currentTeam: Team;
+        systems: ReportSystem[];
+        selectedSystemIds: number[];
+        defaultDate: string;
+        buttonLabel?: string;
+        inline?: boolean;
+        autoOpen?: boolean;
+    }>(),
+    {
+        buttonLabel: 'Criar relatório',
+        inline: false,
+        autoOpen: false,
+    },
+);
 
 const emit = defineEmits<{
     systemChange: [systemId: number];
     saved: [];
+    cancel: [];
     dateChange: [date: string];
 }>();
 
@@ -660,6 +670,15 @@ watch(
 
 onMounted(() => {
     window.addEventListener('beforeunload', beforeUnload);
+
+    if (
+        (props.autoOpen || props.inline) &&
+        props.selectedSystemIds.length === 1
+    ) {
+        chosenSystemId.value = props.selectedSystemIds[0];
+        isOpen.value = true;
+        void loadContext();
+    }
 });
 
 onBeforeUnmount(() => {
@@ -670,7 +689,7 @@ onBeforeUnmount(() => {
 <template>
     <div data-report-launcher>
         <button
-            v-if="!isOpen"
+            v-if="!isOpen && !inline"
             type="button"
             data-test="create-report"
             class="inline-flex h-9 items-center gap-2 rounded-md bg-blue-600 px-4 text-xs font-semibold text-white shadow-sm hover:bg-blue-700"
@@ -694,11 +713,12 @@ onBeforeUnmount(() => {
             v-if="isOpen"
             ref="editorShell"
             data-test="report-editor"
-            class="mt-3 overflow-hidden rounded-xl border bg-card shadow-xl"
-            :class="{
-                'fixed z-[80] resize overflow-auto': isFloating,
-                'max-h-12': isMinimized,
-            }"
+            class="overflow-hidden rounded-xl border bg-card"
+            :class="[
+                inline ? 'shadow-2xs' : 'mt-3 shadow-xl',
+                isFloating && 'fixed z-[80] resize overflow-auto',
+                isMinimized && 'max-h-12',
+            ]"
             :style="
                 isFloating
                     ? {
@@ -713,6 +733,7 @@ onBeforeUnmount(() => {
             "
         >
             <header
+                v-if="!inline"
                 class="flex flex-wrap items-center justify-between gap-2 border-b bg-muted/40 px-3 py-2"
                 :class="{ 'cursor-move select-none': isFloating }"
                 @pointerdown="startDrag"
@@ -859,16 +880,30 @@ onBeforeUnmount(() => {
                             isDirty ? 'Alterações não salvas' : 'Conteúdo salvo'
                         }}
                     </span>
-                    <button
-                        data-test="save-report"
-                        class="inline-flex items-center gap-2 rounded-md bg-emerald-600 px-4 py-2 text-xs font-semibold text-white hover:bg-emerald-700 disabled:opacity-50"
-                        :disabled="isSaving"
-                        @click="save()"
-                    >
-                        <Loader2 v-if="isSaving" class="size-4 animate-spin" />
-                        <Save v-else class="size-4" />
-                        Salvar
-                    </button>
+                    <div class="flex items-center gap-2">
+                        <button
+                            v-if="inline"
+                            type="button"
+                            class="inline-flex items-center gap-1.5 rounded-md border border-border bg-background px-3 py-2 text-xs font-medium text-muted-foreground shadow-2xs transition hover:bg-muted hover:text-foreground"
+                            @click="emit('cancel')"
+                        >
+                            <X class="size-3.5" />
+                            Cancelar
+                        </button>
+                        <button
+                            data-test="save-report"
+                            class="inline-flex items-center gap-2 rounded-md bg-emerald-600 px-4 py-2 text-xs font-semibold text-white hover:bg-emerald-700 disabled:opacity-50"
+                            :disabled="isSaving"
+                            @click="save()"
+                        >
+                            <Loader2
+                                v-if="isSaving"
+                                class="size-4 animate-spin"
+                            />
+                            <Save v-else class="size-4" />
+                            Salvar
+                        </button>
+                    </div>
                 </footer>
             </div>
         </section>

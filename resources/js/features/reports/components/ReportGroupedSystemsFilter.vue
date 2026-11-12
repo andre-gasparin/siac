@@ -79,18 +79,6 @@ function toggleSystem(systemId: number): void {
     }
 }
 
-function enableAll(): void {
-    emit('update:disabledSystemIds', []);
-}
-
-function invertSelection(): void {
-    const allIds = uniqueSystems.value.map((s) => s.id);
-    const newDisabled = allIds.filter(
-        (id) => !props.disabledSystemIds.includes(id),
-    );
-    emit('update:disabledSystemIds', newDisabled);
-}
-
 function getGroupedChild(systemId: number): GroupedChild | undefined {
     return props.groupedChildren.find((child) => child.id === systemId);
 }
@@ -138,7 +126,7 @@ onUnmounted(() => {
 <template>
     <div
         v-if="isGroupedTable"
-        class="flex flex-wrap items-center justify-between gap-2.5 text-xs"
+        class="inline-flex flex-wrap items-center gap-2 text-xs"
         :class="
             bordered
                 ? 'rounded-lg border border-border/70 bg-muted/20 px-3 py-2'
@@ -147,14 +135,10 @@ onUnmounted(() => {
     >
         <div class="flex flex-wrap items-center gap-2">
             <div
-                class="flex items-center gap-1.5 font-semibold text-muted-foreground"
+                class="flex items-center text-muted-foreground"
+                title="Sistemas agrupados"
             >
                 <Layers class="size-3.5 text-primary" />
-                <span
-                    class="text-[11px] font-semibold tracking-wider uppercase"
-                >
-                    Agrupamento:
-                </span>
             </div>
 
             <div class="flex flex-wrap items-center gap-1.5">
@@ -261,26 +245,6 @@ onUnmounted(() => {
                     </div>
                 </div>
             </div>
-        </div>
-
-        <!-- Botões de Ação Rápida -->
-        <div class="flex items-center gap-1.5">
-            <button
-                type="button"
-                class="inline-flex cursor-pointer items-center gap-1 rounded-md border border-border/80 bg-background px-2.5 py-1 text-[11px] font-medium text-foreground shadow-2xs transition hover:bg-muted"
-                title="Ativar visualização de todos os sistemas"
-                @click="enableAll"
-            >
-                Todos
-            </button>
-            <button
-                type="button"
-                class="inline-flex cursor-pointer items-center gap-1 rounded-md border border-border/80 bg-background px-2.5 py-1 text-[11px] font-medium text-muted-foreground shadow-2xs transition hover:bg-muted hover:text-foreground"
-                title="Inverter seleção atual"
-                @click="invertSelection"
-            >
-                Inverter
-            </button>
         </div>
     </div>
 </template>

@@ -237,16 +237,11 @@ const enabledSections = computed(() =>
         .sort((a, b) => a.sort_order - b.sort_order || a.id - b.id),
 );
 
-const disabledSections = computed(() =>
-    topLevelSections.value
-        .filter((system) => !system.item?.show_data_results)
-        .sort((a, b) => a.sort_order - b.sort_order || a.id - b.id),
+const sortedSections = computed(() =>
+    [...topLevelSections.value].sort(
+        (a, b) => a.sort_order - b.sort_order || a.id - b.id,
+    ),
 );
-
-const sortedSections = computed(() => [
-    ...enabledSections.value,
-    ...disabledSections.value,
-]);
 
 function getGroupedChildren(systemId: number): SystemSection[] {
     return sections.value.filter(
@@ -328,6 +323,8 @@ async function groupSystem(
     parentSystemId: number | null,
     clearComment: boolean,
 ): Promise<void> {
+    const previousParentId = system.item?.parent_monitored_system_id ?? null;
+
     try {
         const response = await fetch(
             updateSystem.url({
@@ -386,9 +383,27 @@ async function groupSystem(
             }
         } else {
             await loadSystem(system, true);
+
+            if (previousParentId !== null) {
+                const prevParent = sections.value.find(
+                    (s) => s.id === previousParentId,
+                );
+
+                if (prevParent) {
+                    await loadSystem(prevParent, true);
+                }
+            }
         }
     } catch {
         // Handle error gracefully
+    }
+}
+
+function ungroupSystemChild(child: { id: number }): void {
+    const childSection = sections.value.find((s) => s.id === child.id);
+
+    if (childSection) {
+        void groupSystem(childSection, null, false);
     }
 }
 
@@ -400,19 +415,25 @@ const defaultStartDate = (() => {
     return end.toISOString().split('T')[0];
 })();
 
-const systemDateFilters = reactive<
-    Record<number, { start_date: string; end_date: string }>
->({});
+const tableStartDate = ref(defaultStartDate);
+const tableEndDate = ref(defaultEndDate);
 
-function getSystemDates(systemId: number) {
-    if (!systemDateFilters[systemId]) {
-        systemDateFilters[systemId] = {
-            start_date: defaultStartDate,
-            end_date: defaultEndDate,
-        };
+function onTablePeriodChange(dates: { start_date: string; end_date: string }) {
+    tableStartDate.value = dates.start_date;
+    tableEndDate.value = dates.end_date;
+
+    for (const section of sections.value) {
+        if (systemData[section.id]) {
+            void loadSystem(section, true, dates);
+        }
     }
+}
 
-    return systemDateFilters[systemId];
+function getSystemDates() {
+    return {
+        start_date: tableStartDate.value,
+        end_date: tableEndDate.value,
+    };
 }
 
 const systemData = reactive<Record<number, ReportData>>({});
@@ -436,16 +457,12 @@ async function loadSystem(
     force = false,
     datesOverride?: { start_date: string; end_date: string },
 ) {
-    if (datesOverride) {
-        systemDateFilters[system.id] = { ...datesOverride };
-    }
-
     if ((systemData[system.id] && !force) || loadingSystems[system.id]) {
         return;
     }
 
     loadingSystems[system.id] = true;
-    const dates = getSystemDates(system.id);
+    const dates = datesOverride ?? getSystemDates();
 
     try {
         const url = new URL(
@@ -671,6 +688,11 @@ onMounted(() =>
             "
             :pending-date="pendingDate"
             :date-prompt="datePrompt"
+            :table-start-date="tableStartDate"
+            :table-end-date="tableEndDate"
+            @update:table-start-date="(val) => (tableStartDate = val)"
+            @update:table-end-date="(val) => (tableEndDate = val)"
+            @table-period-change="onTablePeriodChange"
             @date-change="onDateInputChange"
             @cancel-date-prompt="cancelDatePrompt"
             @confirm-date-prompt="confirmDatePrompt"
@@ -689,14 +711,14 @@ onMounted(() =>
             :combined-title="getCombinedTitle(system)"
             :can-group="canGroup(system)"
             :is-highlighted="highlightedSystemId === system.id"
-            :system-dates="getSystemDates(system.id)"
+            :system-dates="getSystemDates()"
             :is-loading-data="loadingSystems[system.id] || false"
             :system-data="systemData[system.id]"
             :current-team="currentTeam"
             :systems="systems"
             :report-date-reference="report.date_reference"
             :resolving-suggestions="resolvingSuggestions"
-            @ungroup-child="(child) => groupSystem(child, null, false)"
+            @ungroup-child="ungroupSystemChild"
             @open-group-modal="handleGroupClick"
             @toggle-system="toggleSystem"
             @load-data="loadSystem"
@@ -752,8 +774,14 @@ onMounted(() =>
                 ? availableTargetSystems(groupModal.sourceSystem)
                 : []
         "
+        :grouped-children="
+            groupModal.sourceSystem
+                ? getGroupedChildren(groupModal.sourceSystem.id)
+                : []
+        "
         v-model:target-system-id="groupModal.targetSystemId"
         @close="groupModal.open = false"
         @confirm="confirmGroupSelection"
+        @ungroup="ungroupSystemChild"
     />
 </template>

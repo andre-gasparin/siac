@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { AlertCircle, Layers } from '@lucide/vue';
+import { AlertCircle, Layers, X } from '@lucide/vue';
 
 interface SystemSectionItem {
     id: number;
@@ -7,6 +7,12 @@ interface SystemSectionItem {
     item: {
         comment: string | null;
     } | null;
+}
+
+interface GroupedChildItem {
+    id: number;
+    name: string;
+    [key: string]: any;
 }
 
 const targetSystemId = defineModel<number | null>('targetSystemId', {
@@ -17,11 +23,13 @@ defineProps<{
     show: boolean;
     sourceSystem: SystemSectionItem | null;
     availableTargets: SystemSectionItem[];
+    groupedChildren?: GroupedChildItem[];
 }>();
 
 const emit = defineEmits<{
     close: [];
     confirm: [];
+    ungroup: [child: GroupedChildItem];
 }>();
 </script>
 
@@ -69,6 +77,35 @@ const emit = defineEmits<{
                         {{ target.name }}
                     </option>
                 </select>
+            </div>
+
+            <div
+                v-if="groupedChildren && groupedChildren.length > 0"
+                class="mt-4 rounded-xl border border-border/80 bg-muted/20 p-3"
+            >
+                <label class="mb-2 block text-xs font-medium text-foreground">
+                    Sistemas agrupados neste sistema:
+                </label>
+                <div class="flex max-h-40 flex-col gap-1.5 overflow-y-auto">
+                    <div
+                        v-for="child in groupedChildren"
+                        :key="child.id"
+                        class="flex items-center justify-between gap-2 rounded-lg border border-border/60 bg-background px-2.5 py-1.5 text-xs text-foreground shadow-2xs"
+                    >
+                        <span class="truncate font-medium">
+                            {{ child.name }}
+                        </span>
+                        <button
+                            type="button"
+                            class="inline-flex shrink-0 items-center gap-1 rounded-md px-2 py-0.5 text-[11px] font-medium text-destructive transition hover:bg-destructive/10"
+                            title="Remover do agrupamento"
+                            @click="emit('ungroup', child)"
+                        >
+                            <X class="size-3" />
+                            <span>Desagrupar</span>
+                        </button>
+                    </div>
+                </div>
             </div>
 
             <div
