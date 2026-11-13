@@ -161,6 +161,31 @@ test('visibility is explicit and saving a consideration enables the system with 
         ->and(ReportActivity::query()->where('action', 'consideration.updated')->exists())->toBeTrue();
 });
 
+test('administrator can toggle hide_data for a system from report view', function () {
+    $report = createConsolidatedReport($this);
+
+    $this->actingAs($this->admin)
+        ->putJson(route('reports.systems.update', [$this->team, $report]), [
+            'system_id' => $this->system->id,
+            'hide_data' => true,
+        ])->assertOk()
+        ->assertJsonPath('hide_data', true);
+
+    $item = ReportItem::query()->where('monitored_system_id', $this->system->id)->firstOrFail();
+    expect($item->hide_data)->toBeTrue();
+
+    $this->actingAs($this->admin)
+        ->putJson(route('reports.systems.update', [$this->team, $report]), [
+            'system_id' => $this->system->id,
+            'hide_data' => false,
+        ])->assertOk()
+        ->assertJsonPath('hide_data', false);
+
+    expect($item->refresh()->hide_data)->toBeFalse()
+        ->and(ReportActivity::query()->where('action', 'system.data_hidden')->exists())->toBeTrue()
+        ->and(ReportActivity::query()->where('action', 'system.data_shown')->exists())->toBeTrue();
+});
+
 test('system with existing comment can be disabled and retains comment but is omitted from client preview', function () {
     $report = createConsolidatedReport($this);
 

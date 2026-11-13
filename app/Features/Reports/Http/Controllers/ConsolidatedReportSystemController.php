@@ -22,6 +22,7 @@ class ConsolidatedReportSystemController extends Controller
         $validated = $request->validate([
             'system_id' => ['required', 'integer'],
             'show_data_results' => ['nullable', 'boolean'],
+            'hide_data' => ['nullable', 'boolean'],
             'parent_system_id' => ['nullable', 'integer'],
             'clear_comment' => ['nullable', 'boolean'],
         ]);
@@ -36,6 +37,14 @@ class ConsolidatedReportSystemController extends Controller
                 $validated['parent_system_id'] !== null ? (int) $validated['parent_system_id'] : null,
                 (bool) ($validated['clear_comment'] ?? false),
             );
+        } elseif (array_key_exists('hide_data', $validated)) {
+            $item = $reports->setHideData(
+                $current_team,
+                $report,
+                $request->user(),
+                (int) $validated['system_id'],
+                (bool) $validated['hide_data'],
+            );
         } else {
             $item = $reports->setVisibility(
                 $current_team,
@@ -49,6 +58,7 @@ class ConsolidatedReportSystemController extends Controller
         return response()->json([
             'item_id' => $item->id,
             'show_data_results' => $item->show_data_results,
+            'hide_data' => $item->hide_data,
             'parent_report_item_id' => $item->parent_report_item_id,
             'updated_at' => $item->updated_at?->toIso8601String(),
         ]);

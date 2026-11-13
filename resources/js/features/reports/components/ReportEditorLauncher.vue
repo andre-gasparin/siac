@@ -11,7 +11,6 @@ import {
 } from '@lucide/vue';
 import Color from '@tiptap/extension-color';
 import Highlight from '@tiptap/extension-highlight';
-import Image from '@tiptap/extension-image';
 import Subscript from '@tiptap/extension-subscript';
 import Superscript from '@tiptap/extension-superscript';
 import TextAlign from '@tiptap/extension-text-align';
@@ -27,30 +26,24 @@ import {
     watch,
 } from 'vue';
 import ChartBuilderModal from '@/features/reports/components/ChartBuilderModal.vue';
-import FloatingReportAgent from '@/features/reports/components/FloatingReportAgent.vue';
 import ReportChartUpdaterModal from '@/features/reports/components/ReportChartUpdaterModal.vue';
 import ReportEditorToolbar from '@/features/reports/components/ReportEditorToolbar.vue';
 import ReportHistoryPanel from '@/features/reports/components/ReportHistoryPanel.vue';
-import ReportPhrasesPanel from '@/features/reports/components/ReportPhrasesPanel.vue';
 import ReportSystemPickerModal from '@/features/reports/components/ReportSystemPickerModal.vue';
 import { useFloatingDraggable } from '@/features/reports/composables/useFloatingDraggable';
 import {
     ParameterReference,
     ReportChart,
     ReportIcon,
+    ResizableImage,
 } from '@/features/reports/extensions';
 import type {
     ReportChartConfig,
     ReportContext,
     ReportHistoryItem,
-    ReportPhrase,
     ReportSystem,
 } from '@/features/reports/types';
 import { show, update } from '@/routes/reports/editor';
-import {
-    destroy as destroyGroup,
-    store as storeGroup,
-} from '@/routes/reports/groups';
 import { index as historyRoute } from '@/routes/reports/history';
 import type { Team } from '@/shared/types';
 
@@ -108,14 +101,10 @@ const isSaving = ref(false);
 const isDirty = ref(false);
 const hideData = ref(false);
 const isStopped = ref(false);
-const activePanel = ref<'history' | 'phrases' | null>(null);
+const activePanel = ref<'history' | null>(null);
 const history = ref<ReportHistoryItem[]>([]);
 const historyDate = ref('');
 const isHistoryLoading = ref(false);
-const showLatestChoice = ref(false);
-const selectedPhraseIds = ref<number[]>([]);
-const sourcePhraseId = ref<number | null>(null);
-const showAgent = ref(false);
 const editorShell = ref<HTMLElement | null>(null);
 const isApplyingContent = ref(false);
 const showChartDialog = ref(false);
@@ -133,6 +122,83 @@ const csrfToken = () =>
         .querySelector<HTMLMetaElement>('meta[name="csrf-token"]')
         ?.getAttribute('content') ?? '';
 
+function insertImageFromBase64(src: string, coordinates?: { pos: number }) {
+    if (!editor.value) {
+        return;
+    }
+
+    if (coordinates) {
+        const node = editor.value.schema.nodes.image.create({
+            src,
+            width: '360px',
+        });
+        const tr = editor.value.state.tr.insert(coordinates.pos, node);
+        editor.value.view.dispatch(tr);
+    } else {
+        editor.value
+            .chain()
+            .focus()
+            .setImage({ src, width: '360px' as any })
+            .run();
+    }
+}
+
+function processImageFile(file: File, callback: (dataUrl: string) => void) {
+    if (!file.type.startsWith('image/')) {
+        return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = (e) => {
+        const rawUrl = e.target?.result as string;
+
+        if (!rawUrl) {
+            return;
+        }
+
+        const img = new window.Image();
+        img.onload = () => {
+            const maxDimension = 1600;
+            let width = img.width;
+            let height = img.height;
+
+            if (width > maxDimension || height > maxDimension) {
+                if (width > height) {
+                    height = Math.round((height * maxDimension) / width);
+                    width = maxDimension;
+                } else {
+                    width = Math.round((width * maxDimension) / height);
+                    height = maxDimension;
+                }
+            }
+
+            const canvas = document.createElement('canvas');
+            canvas.width = width;
+            canvas.height = height;
+            const ctx = canvas.getContext('2d');
+
+            if (ctx) {
+                ctx.drawImage(img, 0, 0, width, height);
+                const quality = file.type === 'image/png' ? 0.85 : 0.8;
+                const mimeType =
+                    file.type === 'image/png' ? 'image/png' : 'image/jpeg';
+                callback(canvas.toDataURL(mimeType, quality));
+            } else {
+                callback(rawUrl);
+            }
+        };
+        img.onerror = () => callback(rawUrl);
+        img.src = rawUrl;
+    };
+    reader.readAsDataURL(file);
+}
+
+function insertImageFile(file: File) {
+    processImageFile(file, (dataUrl) => {
+        insertImageFromBase64(dataUrl);
+    });
+}
+
 const editor = useEditor({
     extensions: [
         StarterKit,
@@ -144,7 +210,7 @@ const editor = useEditor({
         TextAlign.configure({ types: ['heading', 'paragraph'] }),
         Subscript,
         Superscript,
-        Image.configure({ allowBase64: true }),
+        ResizableImage.configure({ allowBase64: true }),
         ReportIcon,
         ParameterReference,
         ReportChart,
@@ -154,6 +220,52 @@ const editor = useEditor({
         attributes: {
             class: 'min-h-72 max-w-none px-4 py-3 text-sm focus:outline-none',
             'data-test': 'report-editor-content',
+        },
+        handlePaste: (view, event) => {
+            const items = Array.from(event.clipboardData?.items || []);
+            const imageItem = items.find((item) =>
+                item.type.startsWith('image/'),
+            );
+
+            if (imageItem) {
+                event.preventDefault();
+                const file = imageItem.getAsFile();
+
+                if (file) {
+                    processImageFile(file, (dataUrl) => {
+                        insertImageFromBase64(dataUrl);
+                    });
+                }
+
+                return true;
+            }
+
+            return false;
+        },
+        handleDrop: (view, event, _slice, moved) => {
+            if (!moved && event.dataTransfer?.files?.length) {
+                const file = Array.from(event.dataTransfer.files).find((f) =>
+                    f.type.startsWith('image/'),
+                );
+
+                if (file) {
+                    event.preventDefault();
+                    const coordinates = view.posAtCoords({
+                        left: event.clientX,
+                        top: event.clientY,
+                    });
+                    processImageFile(file, (dataUrl) => {
+                        insertImageFromBase64(
+                            dataUrl,
+                            coordinates ?? undefined,
+                        );
+                    });
+
+                    return true;
+                }
+            }
+
+            return false;
         },
     },
     onUpdate: () => {
@@ -270,8 +382,6 @@ async function loadContext(force = false) {
             context.value!.item?.html ?? '<p></p>',
         );
         history.value = [];
-        selectedPhraseIds.value = [];
-        sourcePhraseId.value = null;
         isDirty.value = false;
     } finally {
         isLoading.value = false;
@@ -474,92 +584,11 @@ function useHistorical(item: ReportHistoryItem, mode: 'append' | 'replace') {
         .run();
 }
 
-function useLatest() {
-    const latest = context.value?.latest_comment;
-
-    if (!latest) {
-        return;
-    }
-
-    const isEmpty = editor.value?.isEmpty ?? true;
-
-    if (isEmpty) {
-        useHistorical(latest, 'replace');
-    } else {
-        showLatestChoice.value = true;
-    }
-}
-
 function applyLatest(mode: 'append' | 'replace') {
     const latest = context.value?.latest_comment;
 
     if (latest) {
         useHistorical(latest, mode);
-    }
-
-    showLatestChoice.value = false;
-}
-
-async function groupPhrases() {
-    if (
-        !context.value?.report ||
-        selectedPhraseIds.value.length < 2 ||
-        !sourcePhraseId.value
-    ) {
-        return;
-    }
-
-    const response = await fetch(
-        storeGroup.url({ current_team: props.currentTeam.slug }),
-        {
-            method: 'POST',
-            headers: {
-                Accept: 'application/json',
-                'Content-Type': 'application/json',
-                'X-CSRF-TOKEN': csrfToken(),
-            },
-            body: JSON.stringify({
-                report_id: context.value.report.id,
-                item_ids: selectedPhraseIds.value,
-                source_item_id: sourcePhraseId.value,
-            }),
-        },
-    );
-
-    if (response.ok) {
-        context.value.phrases = (await response.json()).phrases;
-        selectedPhraseIds.value = [];
-        sourcePhraseId.value = null;
-    }
-}
-
-async function ungroupPhrase(item: ReportPhrase) {
-    const response = await fetch(
-        destroyGroup.url({ current_team: props.currentTeam.slug }),
-        {
-            method: 'DELETE',
-            headers: {
-                Accept: 'application/json',
-                'Content-Type': 'application/json',
-                'X-CSRF-TOKEN': csrfToken(),
-            },
-            body: JSON.stringify({ report_item_id: item.id }),
-        },
-    );
-
-    if (response.ok && context.value) {
-        context.value.phrases = (await response.json()).phrases;
-    }
-}
-
-function insertAgentText(document: Record<string, unknown>, replace = false) {
-    if (replace) {
-        editor.value?.commands.setContent(document);
-    } else {
-        const content = Array.isArray(document.content)
-            ? document.content
-            : document;
-        editor.value?.chain().focus().insertContent(content).run();
     }
 }
 
@@ -815,23 +844,15 @@ onBeforeUnmount(() => {
                 <ReportEditorToolbar
                     :editor="editor"
                     :context="context"
-                    v-model:hide-data="hideData"
-                    v-model:is-stopped="isStopped"
                     v-model:selected-inline-parameter-ids="
                         selectedInlineParameterIds
                     "
-                    v-model:show-latest-choice="showLatestChoice"
                     @insert-check-phrase="insertCheckPhrase"
                     @insert-icon="insertIcon"
                     @insert-parameters="insertParameters"
-                    @use-latest="useLatest"
                     @apply-latest="applyLatest"
                     @load-history="loadHistory"
-                    @toggle-phrases="
-                        activePanel =
-                            activePanel === 'phrases' ? null : 'phrases'
-                    "
-                    @open-agent="showAgent = true"
+                    @insert-image="insertImageFile"
                     @prepare-chart-dialog="prepareChartDialog"
                     @open-chart-updater="
                         showChartUpdater = true;
@@ -861,17 +882,6 @@ onBeforeUnmount(() => {
                     @close="activePanel = null"
                     @filter="loadHistory"
                     @use-historical="useHistorical"
-                />
-
-                <!-- Painel de Frases e Agrupamento -->
-                <ReportPhrasesPanel
-                    v-else-if="activePanel === 'phrases'"
-                    v-model:selected-phrase-ids="selectedPhraseIds"
-                    v-model:source-phrase-id="sourcePhraseId"
-                    :phrases="context?.phrases"
-                    @close="activePanel = null"
-                    @group="groupPhrases"
-                    @ungroup="ungroupPhrase"
                 />
 
                 <footer class="flex items-center justify-between gap-2 p-3">
@@ -920,18 +930,6 @@ onBeforeUnmount(() => {
                 chartBeingEditedPosition = null;
             "
             @insert="insertChart"
-        />
-
-        <!-- Agente IA Flutuante -->
-        <FloatingReportAgent
-            :open="showAgent"
-            :team-slug="currentTeam.slug"
-            :date="reportDate"
-            :system-id="chosenSystemId"
-            :system-name="context?.system.name"
-            :current-text="editor?.getText() ?? ''"
-            @close="showAgent = false"
-            @insert="insertAgentText"
         />
 
         <!-- Modal de Atualização em Lote de Gráficos -->

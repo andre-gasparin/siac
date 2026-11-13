@@ -532,6 +532,51 @@ async function toggleSystem(system: SystemSection, checked: boolean) {
     }
 }
 
+async function toggleHideData(system: SystemSection) {
+    const currentHide = system.item?.hide_data ?? false;
+    const response = await fetch(
+        updateSystem.url({
+            current_team: props.currentTeam.slug,
+            report: props.report.id,
+        }),
+        {
+            method: 'PUT',
+            headers: {
+                Accept: 'application/json',
+                'Content-Type': 'application/json',
+                'X-CSRF-TOKEN': csrfToken(),
+                'X-Requested-With': 'XMLHttpRequest',
+            },
+            body: JSON.stringify({
+                system_id: system.id,
+                hide_data: !currentHide,
+            }),
+        },
+    );
+
+    if (!response.ok) {
+        return;
+    }
+
+    const result = await response.json();
+
+    system.item ??= {
+        id: result.item_id,
+        show_data_results: result.show_data_results ?? true,
+        hide_data: false,
+        is_stopped: false,
+        comment: null,
+        updated_at: result.updated_at,
+        comments: [],
+        suggestions: [],
+    };
+    system.item.hide_data = result.hide_data;
+
+    if (!system.item.hide_data && system.item.show_data_results) {
+        await loadSystem(system);
+    }
+}
+
 function finish() {
     router.post(
         finalize.url({
@@ -720,6 +765,7 @@ onMounted(() =>
             :resolving-suggestions="resolvingSuggestions"
             @ungroup-child="ungroupSystemChild"
             @open-group-modal="handleGroupClick"
+            @toggle-hide-data="toggleHideData"
             @toggle-system="toggleSystem"
             @load-data="loadSystem"
             @chart="openChart"

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Copy, Loader2, RefreshCw, X } from '@lucide/vue';
+import { Calendar, Copy, Loader2, RefreshCw, X } from '@lucide/vue';
 import type { ReportHistoryItem } from '@/features/reports/types';
 
 const historyDate = defineModel<string>('historyDate', { required: true });
@@ -87,32 +87,45 @@ function formatBrazilianDate(value: string): string {
             <div
                 v-for="item in isLoading ? [] : history"
                 :key="item.id"
-                class="mb-3 rounded-xl border bg-card p-4 text-xs shadow-sm transition hover:border-blue-300 hover:shadow-md"
+                class="mb-3 rounded-xl border border-border/70 bg-card p-3.5 text-xs shadow-2xs transition hover:border-border hover:shadow-xs"
             >
-                <strong
-                    class="inline-flex rounded-full bg-blue-50 px-2.5 py-1 text-blue-700 dark:bg-blue-950/40 dark:text-blue-300"
+                <div
+                    class="flex flex-wrap items-center justify-between gap-2 border-b border-border/50 pb-2"
                 >
-                    {{ formatBrazilianDate(item.date_reference) }}
-                </strong>
-                <p class="mt-3 leading-relaxed text-foreground/80">
+                    <div
+                        class="inline-flex items-center gap-1.5 font-medium text-muted-foreground"
+                    >
+                        <Calendar class="size-3.5 text-muted-foreground" />
+                        <span class="font-semibold text-foreground">
+                            {{ formatBrazilianDate(item.date_reference) }}
+                        </span>
+                    </div>
+
+                    <div class="flex items-center gap-1.5">
+                        <button
+                            type="button"
+                            class="inline-flex items-center gap-1 rounded-lg border border-border bg-background px-2.5 py-1 text-xs font-medium text-foreground shadow-2xs transition hover:bg-muted"
+                            title="Inserir ao final do editor"
+                            @click="emit('useHistorical', item, 'append')"
+                        >
+                            <Copy class="size-3 text-muted-foreground" />
+                            <span>Adicionar ao final</span>
+                        </button>
+                        <button
+                            type="button"
+                            class="inline-flex items-center gap-1 rounded-lg border border-border bg-background px-2.5 py-1 text-xs font-medium text-destructive shadow-2xs transition hover:border-destructive/30 hover:bg-destructive/10"
+                            title="Sobrescrever todo o conteúdo do editor"
+                            @click="emit('useHistorical', item, 'replace')"
+                        >
+                            <RefreshCw class="size-3" />
+                            <span>Sobrescrever</span>
+                        </button>
+                    </div>
+                </div>
+
+                <p class="mt-2.5 leading-relaxed text-foreground/80">
                     {{ item.preview }}
                 </p>
-                <div class="mt-4 flex flex-wrap gap-2">
-                    <button
-                        type="button"
-                        class="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-3 py-2 font-semibold text-white hover:bg-blue-700"
-                        @click="emit('useHistorical', item, 'append')"
-                    >
-                        <Copy class="size-3.5" /> Adicionar ao final
-                    </button>
-                    <button
-                        type="button"
-                        class="inline-flex items-center gap-2 rounded-lg border border-red-300 px-3 py-2 font-semibold text-red-700 hover:bg-red-50 dark:border-red-900 dark:text-red-300 dark:hover:bg-red-950/30"
-                        @click="emit('useHistorical', item, 'replace')"
-                    >
-                        <RefreshCw class="size-3.5" /> Sobrescrever
-                    </button>
-                </div>
             </div>
             <p
                 v-if="!isLoading && history.length === 0"

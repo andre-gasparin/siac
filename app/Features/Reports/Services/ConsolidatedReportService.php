@@ -291,6 +291,40 @@ class ConsolidatedReportService
         });
     }
 
+    public function setHideData(Team $team, Report $report, User $user, int $systemId, bool $hideData): ReportItem
+    {
+        $system = MonitoredSystem::query()->whereBelongsTo($team)->whereKey($systemId)->where('is_active', true)->firstOrFail();
+
+        return DB::transaction(function () use ($team, $report, $user, $system, $hideData): ReportItem {
+            $item = ReportItem::query()
+                ->whereBelongsTo($report)
+                ->whereBelongsTo($system, 'monitoredSystem')
+                ->lockForUpdate()
+                ->first();
+
+            if (! $item) {
+                $item = ReportItem::query()->create([
+                    'team_id' => $team->id,
+                    'report_id' => $report->id,
+                    'monitored_system_id' => $system->id,
+                    'date_reference' => $report->date_reference?->startOfDay(),
+                    'sort_order' => $system->sort_order,
+                    'show_data_results' => true,
+                    'hide_data' => $hideData,
+                ]);
+            } else {
+                $item->update(['hide_data' => $hideData]);
+            }
+
+            $this->revision($item, $user, 'hide_data');
+            $this->record($report, $hideData ? 'system.data_hidden' : 'system.data_shown', $user, $item, metadata: [
+                'system_name' => $system->name,
+            ]);
+
+            return $item->refresh();
+        });
+    }
+
     public function setGroup(
         Team $team,
         Report $report,

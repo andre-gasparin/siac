@@ -49,14 +49,8 @@ test('administrator opens a new report editor without javascript errors', functi
         ->type('[data-test="chart-title"]', 'Gráfico revisado')
         ->click('[data-test="insert-chart"]')
         ->assertSee('Gráfico revisado')
-        ->click('Agente')
-        ->assertSee('Posso investigar os dados desta empresa')
-        ->assertSee('Faça o comentário do relatório')
-        ->click('[aria-label="Ver funções do agente"]')
-        ->assertSee('Funções do agente')
-        ->click('[data-test="report-agent"] [title="Minimizar"]')
-        ->click('[data-test="restore-report-agent"]')
-        ->assertSee('Agente de relatórios')
+        ->click('[data-test="toggle-latest-comment"]')
+        ->assertSee('Último comentário salvo')
         ->assertNoJavaScriptErrors()
         ->assertNoConsoleLogs();
 });

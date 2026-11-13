@@ -3,6 +3,8 @@ import {
     Bot,
     Check,
     ChevronDown,
+    Eye,
+    EyeOff,
     Layers,
     Loader2,
     Pencil,
@@ -83,6 +85,7 @@ const props = defineProps<{
 const emit = defineEmits<{
     ungroupChild: [child: SystemSection];
     openGroupModal: [system: SystemSection];
+    toggleHideData: [system: SystemSection];
     toggleSystem: [system: SystemSection, checked: boolean];
     loadData: [
         system: SystemSection,
@@ -254,6 +257,32 @@ function handleUngroupChild(child: { id: number; name: string }): void {
             </div>
             <div class="flex items-center gap-2">
                 <button
+                    type="button"
+                    class="inline-flex items-center gap-1.5 rounded-lg border border-border bg-background px-2.5 py-1 text-xs font-medium text-foreground shadow-2xs transition hover:bg-muted"
+                    :class="{
+                        'border-amber-400 bg-amber-50 text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-300':
+                            system.item?.hide_data,
+                    }"
+                    :title="
+                        system.item?.hide_data
+                            ? 'Dados ocultados neste relatório. Clique para exibir'
+                            : 'Ocultar tabela de dados deste sistema no relatório'
+                    "
+                    @click.stop="emit('toggleHideData', system)"
+                >
+                    <EyeOff
+                        v-if="system.item?.hide_data"
+                        class="size-3.5 text-amber-600 dark:text-amber-400"
+                    />
+                    <Eye v-else class="size-3.5 text-muted-foreground" />
+                    {{
+                        system.item?.hide_data
+                            ? 'Dados ocultos'
+                            : 'Ocultar dados'
+                    }}
+                </button>
+
+                <button
                     v-if="canGroup"
                     type="button"
                     class="inline-flex items-center gap-1.5 rounded-lg border border-border bg-background px-2.5 py-1 text-xs font-medium text-foreground shadow-2xs transition hover:bg-muted"
@@ -278,38 +307,36 @@ function handleUngroupChild(child: { id: number; name: string }): void {
 
         <!-- Conteúdo do Bloco (Exibido quando aberto) -->
         <div v-if="isBlockOpen" class="space-y-4 p-4">
-            <!-- 1. Bloco de Considerações (Mesmo padrão visual da tabela, sem título e sem fundo azul) -->
+            <!-- 1. Bloco de Considerações: Modo Edição direto (sem borda dupla) -->
+            <div v-if="isEditing">
+                <ReportEditorLauncher
+                    :current-team="currentTeam"
+                    :systems="systems"
+                    :selected-system-ids="[system.id]"
+                    :default-date="reportDateReference"
+                    :auto-open="true"
+                    :inline="true"
+                    @saved="handleSaved"
+                    @cancel="handleCancelEditing"
+                />
+            </div>
+
+            <!-- Modo Visualização das Considerações Salvas (borda única apenas no conteúdo) -->
             <div
+                v-else
                 class="rounded-xl border border-border/70 bg-card p-4 shadow-2xs"
             >
-                <!-- Modo Edição do Editor -->
-                <div v-if="isEditing">
-                    <ReportEditorLauncher
-                        :current-team="currentTeam"
-                        :systems="systems"
-                        :selected-system-ids="[system.id]"
-                        :default-date="reportDateReference"
-                        :auto-open="true"
-                        :inline="true"
-                        @saved="handleSaved"
-                        @cancel="handleCancelEditing"
-                    />
-                </div>
-
-                <!-- Modo Visualização das Considerações Salvas -->
-                <div v-else>
-                    <div
-                        v-if="system.item?.comment"
-                        class="prose prose-sm dark:prose-invert max-w-none leading-relaxed text-foreground"
-                        v-html="system.item.comment"
-                    />
-                    <p
-                        v-else
-                        class="rounded-lg border border-dashed border-border/80 p-4 text-xs text-muted-foreground"
-                    >
-                        Nenhuma consideração registrada para este sistema.
-                    </p>
-                </div>
+                <div
+                    v-if="system.item?.comment"
+                    class="prose prose-sm dark:prose-invert max-w-none leading-relaxed text-foreground"
+                    v-html="system.item.comment"
+                />
+                <p
+                    v-else
+                    class="rounded-lg border border-dashed border-border/80 p-4 text-xs text-muted-foreground"
+                >
+                    Nenhuma consideração registrada para este sistema.
+                </p>
             </div>
 
             <!-- 2. Botão para Exibir/Ocultar Tabela de Dados (embaixo do editor) -->

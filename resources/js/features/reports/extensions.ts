@@ -1,6 +1,8 @@
 import { mergeAttributes, Node } from '@tiptap/core';
+import Image from '@tiptap/extension-image';
 import { VueNodeViewRenderer } from '@tiptap/vue-3';
 import ReportChartNodeView from './components/ReportChartNodeView.vue';
+import ReportImageNodeView from './components/ReportImageNodeView.vue';
 
 const iconLabels: Record<string, string> = {
     error: '✕',
@@ -96,5 +98,36 @@ export const ReportChart = Node.create({
 
     addNodeView() {
         return VueNodeViewRenderer(ReportChartNodeView);
+    },
+});
+
+export const ResizableImage = Image.extend({
+    name: 'image',
+
+    addAttributes() {
+        return {
+            ...this.parent?.(),
+            width: {
+                default: '360px',
+                parseHTML: (element) =>
+                    element.getAttribute('width') ||
+                    element.style.width ||
+                    '360px',
+                renderHTML: (attributes) => {
+                    if (!attributes.width) {
+                        return {};
+                    }
+
+                    return {
+                        width: attributes.width,
+                        style: `width: ${attributes.width}; max-width: 100%; height: auto;`,
+                    };
+                },
+            },
+        };
+    },
+
+    addNodeView() {
+        return VueNodeViewRenderer(ReportImageNodeView);
     },
 });
