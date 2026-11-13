@@ -1,5 +1,6 @@
 <?php
 
+use App\Features\Teams\Enums\ParameterCategory;
 use App\Features\Teams\Enums\TeamRole;
 use App\Models\MonitoredSystem;
 use App\Models\Parameter;
@@ -49,6 +50,7 @@ test('authorized users can view the team systems page', function () {
         'team_id' => $team->id,
         'monitored_system_id' => $system->id,
         'name' => 'Test Parameter',
+        'category' => ParameterCategory::Online->value,
         'decimals' => 2,
         'sort_order' => 1,
         'is_active' => true,
@@ -61,12 +63,14 @@ test('authorized users can view the team systems page', function () {
             ->component('teams/Systems')
             ->where('team.id', $team->id)
             ->where('team.name', $team->name)
+            ->has('parameterCategories', 5)
             ->has('monitoredSystems', 1)
             ->where('monitoredSystems.0.id', $system->id)
             ->where('monitoredSystems.0.name', 'Test System')
             ->has('monitoredSystems.0.parameters', 1)
             ->where('monitoredSystems.0.parameters.0.id', $parameter->id)
             ->where('monitoredSystems.0.parameters.0.name', 'Test Parameter')
+            ->where('monitoredSystems.0.parameters.0.category', ParameterCategory::Online->value)
         );
 });
 
@@ -104,6 +108,7 @@ test('authorized users can update team systems and parameters', function () {
                         'name' => 'New Param Name',
                         'code' => 'new_code',
                         'tag' => 'new_tag',
+                        'category' => ParameterCategory::Lab->value,
                         'unit' => 'new_unit',
                         'decimals' => 3,
                         'sort_order' => 5,
@@ -138,6 +143,7 @@ test('authorized users can update team systems and parameters', function () {
         'name' => 'New Param Name',
         'code' => 'new_code',
         'tag' => 'new_tag',
+        'category' => ParameterCategory::Lab->value,
         'unit' => 'new_unit',
         'decimals' => 3,
         'sort_order' => 5,
@@ -145,4 +151,122 @@ test('authorized users can update team systems and parameters', function () {
         'alert_1_min' => 10.5,
         'alert_1_max' => 20.0,
     ]);
+});
+
+test('authorized users can clear a parameter category', function () {
+    $user = User::factory()->create();
+    $team = Team::factory()->create();
+    $team->members()->attach($user, ['role' => TeamRole::Admin->value]);
+
+    $system = MonitoredSystem::query()->create([
+        'team_id' => $team->id,
+        'name' => 'Sistema',
+        'is_active' => true,
+        'sort_order' => 1,
+    ]);
+
+    $parameter = Parameter::query()->create([
+        'team_id' => $team->id,
+        'monitored_system_id' => $system->id,
+        'name' => 'pH',
+        'category' => ParameterCategory::Portable->value,
+        'decimals' => 2,
+        'sort_order' => 1,
+        'is_active' => true,
+    ]);
+
+    $this->actingAs($user)
+        ->put(route('teams.systems.update', $team), [
+            'systems' => [
+                [
+                    'id' => $system->id,
+                    'name' => 'Sistema',
+                    'is_active' => true,
+                    'sort_order' => 1,
+                    'parameters' => [
+                        [
+                            'id' => $parameter->id,
+                            'name' => 'pH',
+                            'code' => null,
+                            'tag' => null,
+                            'category' => null,
+                            'unit' => null,
+                            'decimals' => 2,
+                            'sort_order' => 1,
+                            'is_active' => true,
+                            'alert_1_min' => null,
+                            'alert_1_max' => null,
+                            'alert_2_min' => null,
+                            'alert_2_max' => null,
+                            'alert_3_min' => null,
+                            'alert_3_max' => null,
+                            'alert_4_min' => null,
+                            'alert_4_max' => null,
+                        ],
+                    ],
+                ],
+            ],
+        ])
+        ->assertRedirect();
+
+    $this->assertDatabaseHas('parameters', [
+        'id' => $parameter->id,
+        'category' => null,
+    ]);
+});
+
+test('updating team systems rejects invalid parameter categories', function () {
+    $user = User::factory()->create();
+    $team = Team::factory()->create();
+    $team->members()->attach($user, ['role' => TeamRole::Admin->value]);
+
+    $system = MonitoredSystem::query()->create([
+        'team_id' => $team->id,
+        'name' => 'Sistema',
+        'is_active' => true,
+        'sort_order' => 1,
+    ]);
+
+    $parameter = Parameter::query()->create([
+        'team_id' => $team->id,
+        'monitored_system_id' => $system->id,
+        'name' => 'pH',
+        'decimals' => 2,
+        'sort_order' => 1,
+        'is_active' => true,
+    ]);
+
+    $this->actingAs($user)
+        ->put(route('teams.systems.update', $team), [
+            'systems' => [
+                [
+                    'id' => $system->id,
+                    'name' => 'Sistema',
+                    'is_active' => true,
+                    'sort_order' => 1,
+                    'parameters' => [
+                        [
+                            'id' => $parameter->id,
+                            'name' => 'pH',
+                            'code' => null,
+                            'tag' => null,
+                            'category' => 'INVALID',
+                            'unit' => null,
+                            'decimals' => 2,
+                            'sort_order' => 1,
+                            'is_active' => true,
+                            'alert_1_min' => null,
+                            'alert_1_max' => null,
+                            'alert_2_min' => null,
+                            'alert_2_max' => null,
+                            'alert_3_min' => null,
+                            'alert_3_max' => null,
+                            'alert_4_min' => null,
+                            'alert_4_max' => null,
+                        ],
+                    ],
+                ],
+            ],
+        ])
+        ->assertSessionHasErrors(['systems.0.parameters.0.category']);
 });

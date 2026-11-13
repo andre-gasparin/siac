@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Features\Teams\Enums\ParameterCategory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Factories\Factory;
@@ -19,6 +20,7 @@ use Illuminate\Support\Carbon;
  * @property string $name
  * @property string|null $code
  * @property string|null $tag
+ * @property ParameterCategory|null $category
  * @property string|null $unit
  * @property int $decimals
  * @property int $sort_order
@@ -49,6 +51,7 @@ use Illuminate\Support\Carbon;
     'name',
     'code',
     'tag',
+    'category',
     'unit',
     'decimals',
     'sort_order',
@@ -140,6 +143,7 @@ class Parameter extends Model
     protected function casts(): array
     {
         return [
+            'category' => ParameterCategory::class,
             'decimals' => 'integer',
             'sort_order' => 'integer',
             'is_active' => 'boolean',

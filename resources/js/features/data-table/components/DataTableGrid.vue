@@ -28,6 +28,7 @@ import type {
     SystemColorStyle,
 } from '@/features/data-table/types';
 import EwmaAlert from '@/shared/components/EwmaAlert.vue';
+import ParameterCategoryBadge from '@/shared/components/ParameterCategoryBadge.vue';
 import {
     Tooltip,
     TooltipContent,
@@ -627,7 +628,15 @@ function isOutside(row: DataRow, parameter: ParameterItem): boolean {
                                     !fitToScreen && 'min-w-[96px]',
                                 ]"
                             >
-                                {{ param.name }}
+                                <div
+                                    class="inline-flex flex-wrap items-center justify-center gap-1"
+                                >
+                                    <span>{{ param.name }}</span>
+                                    <ParameterCategoryBadge
+                                        v-if="param.category"
+                                        :category="param.category"
+                                    />
+                                </div>
                             </th>
                         </tr>
                         <!-- Linha 2: Unidade -->

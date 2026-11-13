@@ -42,6 +42,7 @@ test('data table data endpoint returns parameters ordered by sort_order for sing
         'team_id' => $this->team->id,
         'monitored_system_id' => $system->id,
         'name' => 'Sílica',
+        'category' => 'LAB',
         'unit' => 'mg/L',
         'decimals' => 2,
         'sort_order' => 2,
@@ -52,6 +53,7 @@ test('data table data endpoint returns parameters ordered by sort_order for sing
         'team_id' => $this->team->id,
         'monitored_system_id' => $system->id,
         'name' => 'pH',
+        'category' => 'ON',
         'unit' => 'pH',
         'decimals' => 2,
         'sort_order' => 1,
@@ -83,7 +85,9 @@ test('data table data endpoint returns parameters ordered by sort_order for sing
     $this->assertCount(2, $data['parameters']);
     // For single system, sort_order 1 (pH) comes before sort_order 2 (Sílica)
     $this->assertEquals($paramB->id, $data['parameters'][0]['id']);
+    $this->assertEquals('ON', $data['parameters'][0]['category']);
     $this->assertEquals($paramA->id, $data['parameters'][1]['id']);
+    $this->assertEquals('LAB', $data['parameters'][1]['category']);
 });
 
 test('data table data endpoint returns the established empty payload without selected systems', function () {

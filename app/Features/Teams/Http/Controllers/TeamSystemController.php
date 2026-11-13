@@ -3,6 +3,7 @@
 namespace App\Features\Teams\Http\Controllers;
 
 use App\Features\Teams\Actions\UpdateTeamSystems;
+use App\Features\Teams\Enums\ParameterCategory;
 use App\Features\Teams\Http\Requests\UpdateTeamSystemsRequest;
 use App\Http\Controllers\Controller;
 use App\Models\MonitoredSystem;
@@ -42,6 +43,7 @@ class TeamSystemController extends Controller
                             'name' => $parameter->name,
                             'code' => $parameter->code,
                             'tag' => $parameter->tag,
+                            'category' => $parameter->category?->value,
                             'unit' => $parameter->unit,
                             'decimals' => $parameter->decimals,
                             'sort_order' => $parameter->sort_order,
@@ -68,6 +70,7 @@ class TeamSystemController extends Controller
                 'slug' => $team->slug,
             ],
             'monitoredSystems' => $monitoredSystems,
+            'parameterCategories' => ParameterCategory::options(),
         ]);
     }
 

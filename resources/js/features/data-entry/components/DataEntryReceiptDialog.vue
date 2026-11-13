@@ -15,6 +15,7 @@ import type {
     SystemItem,
 } from '@/features/data-entry/components/DataEntryForm.vue';
 import type { ParamDiff } from '@/features/data-entry/composables/useDataEntryDraft';
+import ParameterCategoryBadge from '@/shared/components/ParameterCategoryBadge.vue';
 import { Badge } from '@/shared/components/ui/badge';
 import { Button } from '@/shared/components/ui/button';
 import {
@@ -288,7 +289,15 @@ function handleConfirm() {
                                         <td
                                             class="py-2 pr-3 font-medium text-foreground"
                                         >
-                                            {{ p.param.name }}
+                                            <div
+                                                class="flex flex-wrap items-center gap-1.5"
+                                            >
+                                                <span>{{ p.param.name }}</span>
+                                                <ParameterCategoryBadge
+                                                    v-if="p.param.category"
+                                                    :category="p.param.category"
+                                                />
+                                            </div>
                                         </td>
                                         <td class="px-2 py-2 text-center">
                                             <Badge

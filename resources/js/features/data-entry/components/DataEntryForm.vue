@@ -13,8 +13,10 @@ import { computed, nextTick, ref, watch } from 'vue';
 import { useEwmaPreview } from '@/features/data-entry/composables/useEwmaPreview';
 import DatePicker from '@/shared/components/DatePicker.vue';
 import EwmaAlert from '@/shared/components/EwmaAlert.vue';
+import ParameterCategoryBadge from '@/shared/components/ParameterCategoryBadge.vue';
 import { Button } from '@/shared/components/ui/button';
 import { Input } from '@/shared/components/ui/input';
+import type { ParameterCategory } from '@/shared/types';
 
 export interface ParameterItem {
     id: number;
@@ -23,6 +25,7 @@ export interface ParameterItem {
     name: string;
     code?: string | null;
     tag?: string | null;
+    category?: ParameterCategory | null;
     unit?: string | null;
     decimals: number;
     sort_order: number;
@@ -385,7 +388,15 @@ const hasAnyOutOfLimits = computed<boolean>(() => {
                         >
                             <!-- Nome do Parâmetro -->
                             <td class="px-3 py-3 font-semibold text-foreground">
-                                {{ param.name }}
+                                <div
+                                    class="flex flex-wrap items-center gap-1.5"
+                                >
+                                    <span>{{ param.name }}</span>
+                                    <ParameterCategoryBadge
+                                        v-if="param.category"
+                                        :category="param.category"
+                                    />
+                                </div>
                                 <span
                                     v-if="param.tag || param.code"
                                     class="block text-xs font-normal text-muted-foreground"

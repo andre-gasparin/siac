@@ -4,24 +4,40 @@ import {
     AlertTriangle,
     ChevronDown,
     GripVertical,
+    Loader2,
     Save,
     Sliders,
 } from '@lucide/vue';
-import { ref } from 'vue';
+import { nextTick, ref } from 'vue';
 import { edit, index } from '@/routes/teams';
 import {
     edit as editSystems,
     update as updateSystems,
 } from '@/routes/teams/systems';
 import Heading from '@/shared/components/Heading.vue';
+import ParameterCategoryBadge from '@/shared/components/ParameterCategoryBadge.vue';
 import { Button } from '@/shared/components/ui/button';
 import { Label } from '@/shared/components/ui/label';
+import {
+    Select,
+    SelectContent,
+    SelectItem,
+    SelectTrigger,
+    SelectValue,
+} from '@/shared/components/ui/select';
+import type {
+    ParameterCategory,
+    ParameterCategoryOption,
+} from '@/shared/types';
+
+const NONE_CATEGORY_VALUE = '__none__';
 
 type ParameterData = {
     id: number;
     name: string;
     code: string | null;
     tag: string | null;
+    category: ParameterCategory | null;
     unit: string | null;
     decimals: number;
     sort_order: number;
@@ -53,6 +69,7 @@ type Props = {
         slug: string;
     };
     monitoredSystems: SystemData[];
+    parameterCategories: ParameterCategoryOption[];
 };
 
 const props = defineProps<Props>();
@@ -80,6 +97,7 @@ const sanitizeSystems = (systems: SystemData[]): SystemData[] => {
         is_active: Boolean(sys.is_active),
         parameters: sys.parameters.map((param) => ({
             ...param,
+            category: param.category ?? null,
             is_active: Boolean(param.is_active),
             ewma_lambda: param.ewma_lambda ?? 0.2,
             ewma_level: param.ewma_level ?? 3,
@@ -96,15 +114,35 @@ const form = useForm({
 
 // Accordion open/close state
 const expandedSystems = ref<number[]>([]);
+const loadingSystemId = ref<number | null>(null);
 
-const toggleSystem = (id: number) => {
+const toggleSystem = async (id: number) => {
+    if (loadingSystemId.value === id) {
+        return;
+    }
+
     if (expandedSystems.value.includes(id)) {
         expandedSystems.value = expandedSystems.value.filter(
             (sysId) => sysId !== id,
         );
-    } else {
-        expandedSystems.value.push(id);
+
+        return;
     }
+
+    loadingSystemId.value = id;
+    await nextTick();
+
+    requestAnimationFrame(() => {
+        if (!expandedSystems.value.includes(id)) {
+            expandedSystems.value.push(id);
+        }
+
+        nextTick(() => {
+            if (loadingSystemId.value === id) {
+                loadingSystemId.value = null;
+            }
+        });
+    });
 };
 
 // Parameter alerts expansion state
@@ -406,8 +444,14 @@ const save = () => {
                         <!-- Chevron toggle -->
                         <div
                             class="flex size-7 items-center justify-center rounded-md border bg-background text-muted-foreground hover:text-foreground"
+                            :aria-busy="loadingSystemId === system.id"
                         >
+                            <Loader2
+                                v-if="loadingSystemId === system.id"
+                                class="size-4 animate-spin text-primary"
+                            />
                             <ChevronDown
+                                v-else
                                 class="size-4 transition-transform duration-200"
                                 :class="{
                                     'rotate-180': expandedSystems.includes(
@@ -474,7 +518,7 @@ const save = () => {
 
                 <!-- Accordion Content (Parameters list) -->
                 <div
-                    v-show="expandedSystems.includes(system.id)"
+                    v-if="expandedSystems.includes(system.id)"
                     class="border-t border-border bg-background"
                 >
                     <div class="overflow-x-auto">
@@ -483,28 +527,36 @@ const save = () => {
                                 <tr
                                     class="border-b border-border bg-muted/10 text-xs font-semibold text-muted-foreground"
                                 >
-                                    <th class="w-[40px] px-2 py-2"></th>
-                                    <th class="w-[60px] px-4 py-2 text-center">
+                                    <th class="w-[34px] px-1.5 py-2"></th>
+                                    <th class="w-[52px] px-2 py-2 text-center">
                                         Ativo
                                     </th>
-                                    <th class="min-w-[200px] px-4 py-2">
+                                    <th
+                                        class="w-[155px] min-w-[130px] px-2 py-2"
+                                    >
                                         Nome do Parâmetro
                                     </th>
-                                    <th class="w-[160px] px-4 py-2">Tag</th>
-                                    <th class="w-[120px] px-4 py-2">Unidade</th>
-                                    <th class="w-[90px] px-4 py-2 text-center">
+                                    <th class="w-[112px] px-2 py-2">
+                                        Categoria
+                                    </th>
+                                    <th class="w-[115px] px-2 py-2">Tag</th>
+                                    <th class="w-[84px] px-2 py-2">Unidade</th>
+                                    <th
+                                        class="w-[68px] px-1.5 py-2 text-center"
+                                    >
                                         Decimais
                                     </th>
-                                    <th class="w-28 px-2 py-2 text-center">
+                                    <th
+                                        class="w-[72px] px-1.5 py-2 text-center"
+                                    >
                                         EWMA - λ
                                     </th>
-                                    <th class="w-28 px-2 py-2 text-center">
+                                    <th
+                                        class="w-[78px] px-1.5 py-2 text-center"
+                                    >
                                         EWMA - Nível
                                     </th>
-                                    <th class="w-[80px] px-4 py-2 text-center">
-                                        Posição
-                                    </th>
-                                    <th class="w-[120px] px-4 py-2 text-center">
+                                    <th class="w-[90px] px-2 py-2 text-center">
                                         Limites
                                     </th>
                                 </tr>
@@ -549,22 +601,24 @@ const save = () => {
                                     >
                                         <!-- Drag Handle -->
                                         <td
-                                            class="px-2 py-2 text-center align-middle"
+                                            class="px-1.5 py-1.5 text-center align-middle"
                                         >
                                             <div
-                                                class="mx-auto flex size-7 cursor-grab items-center justify-center rounded-md border bg-background text-muted-foreground hover:text-foreground active:cursor-grabbing"
+                                                class="mx-auto flex size-6 cursor-grab items-center justify-center rounded-md border bg-background text-muted-foreground hover:text-foreground active:cursor-grabbing"
                                                 @mousedown="dragAllowed = true"
                                                 @mouseleave="
                                                     dragAllowed = false
                                                 "
                                             >
-                                                <GripVertical class="size-4" />
+                                                <GripVertical
+                                                    class="size-3.5"
+                                                />
                                             </div>
                                         </td>
 
                                         <!-- Active Status -->
                                         <td
-                                            class="px-4 py-2 text-center align-middle"
+                                            class="px-2 py-1.5 text-center align-middle"
                                         >
                                             <div
                                                 class="flex items-center justify-center"
@@ -600,39 +654,119 @@ const save = () => {
                                         </td>
 
                                         <!-- Name -->
-                                        <td class="px-4 py-2 align-middle">
+                                        <td class="px-2 py-1.5 align-middle">
                                             <input
                                                 v-model="parameter.name"
                                                 type="text"
-                                                class="w-full rounded border-none bg-transparent px-2 py-1 text-sm transition-all hover:bg-muted/50 focus:bg-background focus:ring-1 focus:ring-ring focus:outline-none"
+                                                class="w-full rounded border-none bg-transparent px-1.5 py-1 text-xs transition-all hover:bg-muted/50 focus:bg-background focus:ring-1 focus:ring-ring focus:outline-none sm:text-sm"
                                                 placeholder="Nome do parâmetro"
                                                 required
                                             />
                                         </td>
 
+                                        <!-- Category -->
+                                        <td class="px-2 py-1.5 align-middle">
+                                            <Select
+                                                :model-value="
+                                                    parameter.category ??
+                                                    NONE_CATEGORY_VALUE
+                                                "
+                                                @update:model-value="
+                                                    (val) =>
+                                                        (parameter.category =
+                                                            !val ||
+                                                            val ===
+                                                                NONE_CATEGORY_VALUE
+                                                                ? null
+                                                                : (val as ParameterCategory))
+                                                "
+                                            >
+                                                <SelectTrigger
+                                                    size="sm"
+                                                    :aria-label="
+                                                        'Categoria de ' +
+                                                        parameter.name
+                                                    "
+                                                    class="h-7 w-[104px] px-2 text-xs"
+                                                >
+                                                    <SelectValue
+                                                        placeholder="Nenhum"
+                                                    >
+                                                        <ParameterCategoryBadge
+                                                            v-if="
+                                                                parameter.category
+                                                            "
+                                                            :category="
+                                                                parameter.category
+                                                            "
+                                                        />
+                                                        <span
+                                                            v-else
+                                                            class="text-xs text-muted-foreground"
+                                                        >
+                                                            Nenhum
+                                                        </span>
+                                                    </SelectValue>
+                                                </SelectTrigger>
+                                                <SelectContent>
+                                                    <SelectItem
+                                                        :value="
+                                                            NONE_CATEGORY_VALUE
+                                                        "
+                                                    >
+                                                        <span
+                                                            class="text-muted-foreground"
+                                                        >
+                                                            Nenhum
+                                                        </span>
+                                                    </SelectItem>
+                                                    <SelectItem
+                                                        v-for="cat in parameterCategories"
+                                                        :key="cat.value"
+                                                        :value="cat.value"
+                                                    >
+                                                        <div
+                                                            class="flex items-center gap-2"
+                                                        >
+                                                            <ParameterCategoryBadge
+                                                                :category="
+                                                                    cat.value
+                                                                "
+                                                            />
+                                                            <span
+                                                                class="text-xs text-muted-foreground"
+                                                            >
+                                                                {{ cat.label }}
+                                                            </span>
+                                                        </div>
+                                                    </SelectItem>
+                                                </SelectContent>
+                                            </Select>
+                                        </td>
+
                                         <!-- Tag -->
-                                        <td class="px-4 py-2 align-middle">
+                                        <td class="px-2 py-1.5 align-middle">
                                             <input
                                                 v-model="parameter.tag"
                                                 type="text"
-                                                class="w-full rounded border-none bg-transparent px-2 py-1 text-sm transition-all hover:bg-muted/50 focus:bg-background focus:ring-1 focus:ring-ring focus:outline-none"
+                                                class="w-full rounded border-none bg-transparent px-1.5 py-1 text-xs transition-all hover:bg-muted/50 focus:bg-background focus:ring-1 focus:ring-ring focus:outline-none sm:text-sm"
                                                 placeholder="Tag"
                                             />
                                         </td>
 
                                         <!-- Unit -->
-                                        <td class="px-4 py-2 align-middle">
+                                        <td class="px-2 py-1.5 align-middle">
                                             <input
                                                 v-model="parameter.unit"
                                                 type="text"
-                                                class="w-full rounded border-none bg-transparent px-2 py-1 text-sm transition-all hover:bg-muted/50 focus:bg-background focus:ring-1 focus:ring-ring focus:outline-none"
+                                                class="w-full rounded border-none bg-transparent px-1.5 py-1 text-xs transition-all hover:bg-muted/50 focus:bg-background focus:ring-1 focus:ring-ring focus:outline-none sm:text-sm"
                                                 placeholder="Ex: °C"
                                             />
                                         </td>
 
                                         <!-- Decimals -->
                                         <td
-                                            class="px-4 py-2 text-center align-middle"
+                                            class="px-1.5 py-1.5 text-center align-middle"
                                         >
                                             <input
                                                 v-model.number="
@@ -641,11 +775,11 @@ const save = () => {
                                                 type="number"
                                                 min="0"
                                                 max="10"
-                                                class="mx-auto h-8 w-16 rounded border border-input bg-transparent px-2 py-0.5 text-center text-sm transition-all focus:bg-background focus:ring-1 focus:ring-ring"
+                                                class="mx-auto h-7 w-12 rounded border border-input bg-transparent px-1 py-0.5 text-center text-xs transition-all focus:bg-background focus:ring-1 focus:ring-ring"
                                             />
                                         </td>
 
-                                        <td class="px-2 py-2 text-center">
+                                        <td class="px-1.5 py-1.5 text-center">
                                             <input
                                                 v-model.number="
                                                     parameter.ewma_lambda
@@ -659,10 +793,10 @@ const save = () => {
                                                     'EWMA - λ de ' +
                                                     parameter.name
                                                 "
-                                                class="h-8 w-20 rounded border border-input bg-transparent px-2 text-center text-sm"
+                                                class="h-7 w-14 rounded border border-input bg-transparent px-1 text-center text-xs"
                                             />
                                         </td>
-                                        <td class="px-2 py-2 text-center">
+                                        <td class="px-1.5 py-1.5 text-center">
                                             <input
                                                 v-model.number="
                                                     parameter.ewma_level
@@ -676,25 +810,18 @@ const save = () => {
                                                     'EWMA - Nível de ' +
                                                     parameter.name
                                                 "
-                                                class="h-8 w-20 rounded border border-input bg-transparent px-2 text-center text-sm"
+                                                class="h-7 w-14 rounded border border-input bg-transparent px-1 text-center text-xs"
                                             />
-                                        </td>
-
-                                        <!-- Position -->
-                                        <td
-                                            class="px-4 py-2 text-center align-middle text-sm font-semibold text-muted-foreground select-none"
-                                        >
-                                            #{{ paramIndex + 1 }}
                                         </td>
 
                                         <!-- Alerts Toggle -->
                                         <td
-                                            class="px-4 py-2 text-center align-middle"
+                                            class="px-2 py-1.5 text-center align-middle"
                                         >
                                             <Button
                                                 variant="outline"
                                                 size="sm"
-                                                class="h-7 px-2.5 text-xs"
+                                                class="h-7 px-2 text-xs"
                                                 :class="{
                                                     'border-primary/40 bg-primary/10 text-primary hover:bg-primary/20':
                                                         expandedAlerts.includes(

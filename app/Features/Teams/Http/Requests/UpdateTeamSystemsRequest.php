@@ -2,8 +2,10 @@
 
 namespace App\Features\Teams\Http\Requests;
 
+use App\Features\Teams\Enums\ParameterCategory;
 use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Validation\Rule;
 
 class UpdateTeamSystemsRequest extends FormRequest
 {
@@ -33,6 +35,7 @@ class UpdateTeamSystemsRequest extends FormRequest
             'systems.*.parameters.*.name' => ['required', 'string', 'max:255'],
             'systems.*.parameters.*.code' => ['nullable', 'string', 'max:255'],
             'systems.*.parameters.*.tag' => ['nullable', 'string', 'max:255'],
+            'systems.*.parameters.*.category' => ['nullable', 'string', Rule::enum(ParameterCategory::class)],
             'systems.*.parameters.*.unit' => ['nullable', 'string', 'max:40'],
             'systems.*.parameters.*.decimals' => ['required', 'integer', 'min:0', 'max:10'],
             'systems.*.parameters.*.sort_order' => ['required', 'integer'],

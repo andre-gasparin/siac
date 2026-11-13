@@ -29,6 +29,7 @@ test('user can view data entry page for current team', function () {
         'team_id' => $this->team->id,
         'monitored_system_id' => $system->id,
         'name' => 'pH',
+        'category' => 'CALC',
         'unit' => 'pH',
         'decimals' => 2,
         'sort_order' => 1,
@@ -46,6 +47,7 @@ test('user can view data entry page for current team', function () {
             ->has('systems', 1)
             ->where('systems.0.name', 'Sistema Água Clarificada')
             ->where('systems.0.parameters.0.name', 'pH')
+            ->where('systems.0.parameters.0.category', 'CALC')
             ->where('systems.0.parameters.0.alert_1_min', 6.5)
             ->where('systems.0.parameters.0.alert_1_max', 8.5)
             ->has('currentTeam')

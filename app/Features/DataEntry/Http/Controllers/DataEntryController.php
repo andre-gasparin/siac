@@ -36,6 +36,7 @@ class DataEntryController extends Controller
                             'name',
                             'code',
                             'tag',
+                            'category',
                             'unit',
                             'decimals',
                             'sort_order',

@@ -37,27 +37,28 @@ class UpdateTeamSystems
                         'name' => $parameterData['name'],
                         'code' => $parameterData['code'],
                         'tag' => $parameterData['tag'],
+                        'category' => $this->nullableValue($parameterData['category'] ?? null),
                         'unit' => $parameterData['unit'],
                         'decimals' => $parameterData['decimals'],
                         'sort_order' => $parameterData['sort_order'],
                         'is_active' => $parameterData['is_active'],
                         'ewma_lambda' => $parameterData['ewma_lambda'] ?? $parameter->ewma_lambda,
                         'ewma_level' => $parameterData['ewma_level'] ?? $parameter->ewma_level,
-                        'alert_1_min' => $this->nullableThreshold($parameterData['alert_1_min']),
-                        'alert_1_max' => $this->nullableThreshold($parameterData['alert_1_max']),
-                        'alert_2_min' => $this->nullableThreshold($parameterData['alert_2_min']),
-                        'alert_2_max' => $this->nullableThreshold($parameterData['alert_2_max']),
-                        'alert_3_min' => $this->nullableThreshold($parameterData['alert_3_min']),
-                        'alert_3_max' => $this->nullableThreshold($parameterData['alert_3_max']),
-                        'alert_4_min' => $this->nullableThreshold($parameterData['alert_4_min']),
-                        'alert_4_max' => $this->nullableThreshold($parameterData['alert_4_max']),
+                        'alert_1_min' => $this->nullableValue($parameterData['alert_1_min']),
+                        'alert_1_max' => $this->nullableValue($parameterData['alert_1_max']),
+                        'alert_2_min' => $this->nullableValue($parameterData['alert_2_min']),
+                        'alert_2_max' => $this->nullableValue($parameterData['alert_2_max']),
+                        'alert_3_min' => $this->nullableValue($parameterData['alert_3_min']),
+                        'alert_3_max' => $this->nullableValue($parameterData['alert_3_max']),
+                        'alert_4_min' => $this->nullableValue($parameterData['alert_4_min']),
+                        'alert_4_max' => $this->nullableValue($parameterData['alert_4_max']),
                     ]);
                 }
             }
         });
     }
 
-    private function nullableThreshold(mixed $value): mixed
+    private function nullableValue(mixed $value): mixed
     {
         return $value === '' || $value === null ? null : $value;
     }

@@ -101,6 +101,7 @@ class DataTableDataBuilder
                 'name' => $parameter->name,
                 'code' => $parameter->code,
                 'tag' => $parameter->tag ?? $parameter->code,
+                'category' => $parameter->category?->value,
                 'unit' => $parameter->unit,
                 'decimals' => $parameter->decimals,
                 'sort_order' => $parameter->sort_order,

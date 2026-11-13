@@ -1,3 +1,4 @@
+import type { ParameterCategory } from '@/shared/types';
 import type { EwmaResult } from '@/shared/types/ewma';
 
 export interface SystemItem {
@@ -11,6 +12,7 @@ export interface ParameterItem {
     name: string;
     code?: string;
     tag?: string | null;
+    category?: ParameterCategory | null;
     ewma_lambda: number;
     ewma_level: number;
     unit?: string;
