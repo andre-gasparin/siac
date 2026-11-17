@@ -24,30 +24,37 @@ class ParameterSearchController extends Controller
         $words = array_values(array_filter(explode(' ', $rawQuery), fn ($w) => mb_strlen($w) > 0));
 
         $parameters = Parameter::query()
-            ->with(['monitoredSystem:id,name'])
-            ->where('team_id', $current_team->id)
-            ->where('is_active', true)
+            ->join('monitored_systems', 'monitored_systems.id', '=', 'parameters.monitored_system_id')
+            ->with(['monitoredSystem:id,name,sort_order'])
+            ->where('parameters.team_id', $current_team->id)
+            ->where('parameters.is_active', true)
+            ->where('monitored_systems.team_id', $current_team->id)
+            ->where('monitored_systems.is_active', true)
+            ->whereNull('monitored_systems.deleted_at')
             ->when(! empty($words), function ($q) use ($words) {
                 foreach ($words as $word) {
                     $q->where(function ($sub) use ($word) {
-                        $sub->where('name', 'like', "%{$word}%")
-                            ->orWhere('code', 'like', "%{$word}%")
-                            ->orWhere('tag', 'like', "%{$word}%")
-                            ->orWhereHas('monitoredSystem', function ($sysQuery) use ($word) {
-                                $sysQuery->where('name', 'like', "%{$word}%");
-                            });
+                        $sub->where('parameters.name', 'like', "%{$word}%")
+                            ->orWhere('parameters.code', 'like', "%{$word}%")
+                            ->orWhere('parameters.tag', 'like', "%{$word}%")
+                            ->orWhere('monitored_systems.name', 'like', "%{$word}%");
                     });
                 }
             })
-            ->limit(30)
+            ->orderBy('monitored_systems.sort_order')
+            ->orderBy('monitored_systems.name')
+            ->orderBy('parameters.sort_order')
+            ->orderBy('parameters.name')
+            ->select('parameters.*')
             ->get();
 
-        $results = $parameters->map(function (Parameter $param) {
-            $systemName = $param->monitoredSystem->name;
+        $results = $parameters->map(function (Parameter $param): array {
+            $systemName = $param->monitoredSystem->name ?? '';
             $displayName = "{$systemName} - {$param->name}";
 
             return [
                 'id' => $param->id,
+                'monitored_system_id' => $param->monitored_system_id,
                 'name' => $param->name,
                 'system_name' => $systemName,
                 'display_name' => $displayName,

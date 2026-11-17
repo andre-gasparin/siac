@@ -12,9 +12,11 @@ import {
     X,
 } from '@lucide/vue';
 import { computed, ref } from 'vue';
+import ReportCommentContent from '@/features/reports/components/ReportCommentContent.vue';
 import ReportDataTable from '@/features/reports/components/ReportDataTable.vue';
 import ReportEditorLauncher from '@/features/reports/components/ReportEditorLauncher.vue';
-import type { ReportSystem } from '@/features/reports/types';
+import type { ReportPhrase, ReportSystem } from '@/features/reports/types';
+import type { ChartSeries } from '@/shared/components/charts/EChartRenderer.vue';
 import type { Team } from '@/shared/types';
 
 interface ReportItem {
@@ -25,6 +27,8 @@ interface ReportItem {
     hide_data: boolean;
     is_stopped: boolean;
     comment: string | null;
+    document?: Record<string, unknown> | null;
+    charts?: Record<string, ChartSeries[]>;
     updated_at: string;
     comments: Array<{
         id: number;
@@ -94,14 +98,15 @@ const emit = defineEmits<{
     ];
     chart: [system: SystemSection, parameterId: number, type: 'line' | 'bar'];
     resolveSuggestion: [suggestionId: number, decision: 'accept' | 'reject'];
-    editorSaved: [];
+    editorSaved: [item?: ReportPhrase | null];
 }>();
 
 const isSaved = computed(() => {
     return Boolean(
         props.system.item?.show_data_results &&
         props.system.item?.comment &&
-        props.system.item.comment.replace(/<[^>]+>/g, '').trim().length > 0,
+        (props.system.item.comment.replace(/<[^>]+>/g, '').trim().length > 0 ||
+            props.system.item.comment.includes('data-report-chart')),
     );
 });
 
@@ -188,10 +193,10 @@ function handleEditClick(): void {
     isEditing.value = true;
 }
 
-function handleSaved(): void {
+function handleSaved(savedItem: ReportPhrase | null): void {
     // Ao salvar, apenas sai o editor e fica a visualização; não fecha o bloco todo
     isEditing.value = false;
-    emit('editorSaved');
+    emit('editorSaved', savedItem);
 }
 
 function handleCancelEditing(): void {
@@ -326,10 +331,12 @@ function handleUngroupChild(child: { id: number; name: string }): void {
                 v-else
                 class="rounded-xl border border-border/70 bg-card p-4 shadow-2xs"
             >
-                <div
+                <ReportCommentContent
                     v-if="system.item?.comment"
-                    class="prose prose-sm dark:prose-invert max-w-none leading-relaxed text-foreground"
-                    v-html="system.item.comment"
+                    :html="system.item.comment"
+                    :document="system.item.document"
+                    :charts="system.item.charts"
+                    :team-slug="currentTeam.slug"
                 />
                 <p
                     v-else

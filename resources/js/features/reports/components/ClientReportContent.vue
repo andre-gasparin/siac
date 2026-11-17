@@ -14,7 +14,9 @@ import {
 } from '@lucide/vue';
 import { computed, reactive, ref } from 'vue';
 import ParameterChartModal from '@/features/reports/components/ParameterChartModal.vue';
+import ReportCommentContent from '@/features/reports/components/ReportCommentContent.vue';
 import ReportHorizontalDataTable from '@/features/reports/components/ReportHorizontalDataTable.vue';
+import type { ChartSeries } from '@/shared/components/charts/EChartRenderer.vue';
 import type { Team } from '@/shared/types';
 
 interface ReportComment {
@@ -31,6 +33,8 @@ interface ReportItem {
     hide_data: boolean;
     is_stopped: boolean;
     comment: string | null;
+    document?: Record<string, unknown> | null;
+    charts?: Record<string, ChartSeries[]>;
     comments: ReportComment[];
 }
 
@@ -541,9 +545,12 @@ function formatDateOnly(dateStr: string) {
                         Considerações Consucal
                     </h3>
                 </div>
-                <div
-                    class="prose prose-sm dark:prose-invert max-w-none rounded-xl border border-blue-200/60 bg-card p-4 leading-relaxed text-foreground shadow-2xs dark:border-blue-900/40"
-                    v-html="system.item.comment"
+                <ReportCommentContent
+                    :html="system.item.comment"
+                    :document="system.item.document"
+                    :charts="system.item.charts"
+                    :team-slug="currentTeam?.slug"
+                    class="rounded-xl border border-blue-200/60 bg-card p-4 shadow-2xs dark:border-blue-900/40"
                 />
             </div>
 

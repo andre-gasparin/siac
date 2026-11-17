@@ -9,6 +9,7 @@ import ReportHistoryModal from '@/features/reports/components/ReportHistoryModal
 import ReportRecipientsModal from '@/features/reports/components/ReportRecipientsModal.vue';
 import ReportShowHeader from '@/features/reports/components/ReportShowHeader.vue';
 import ReportSystemSection from '@/features/reports/components/ReportSystemSection.vue';
+import type { ReportPhrase } from '@/features/reports/types';
 import {
     finalize,
     resend,
@@ -21,6 +22,7 @@ import {
     data as dataRoute,
     update as updateSystem,
 } from '@/routes/reports/systems';
+import type { ChartSeries } from '@/shared/components/charts/EChartRenderer.vue';
 import type { Team } from '@/shared/types';
 
 interface ReportItem {
@@ -31,6 +33,8 @@ interface ReportItem {
     hide_data: boolean;
     is_stopped: boolean;
     comment: string | null;
+    document?: Record<string, unknown> | null;
+    charts?: Record<string, ChartSeries[]>;
     updated_at: string;
     comments: Array<{
         id: number;
@@ -707,6 +711,40 @@ function openChart(
     };
 }
 
+function handleEditorSaved(
+    system: SystemSection,
+    savedItem?: ReportPhrase | null,
+): void {
+    if (savedItem) {
+        if (system.item) {
+            system.item.comment = savedItem.html;
+            system.item.document = savedItem.document;
+            system.item.charts = savedItem.charts;
+            system.item.show_data_results = savedItem.show_data_results;
+            system.item.hide_data = savedItem.hide_data;
+            system.item.is_stopped = savedItem.is_stopped;
+            system.item.updated_at = savedItem.updated_at;
+        } else {
+            system.item = {
+                id: savedItem.id,
+                parent_report_item_id: savedItem.parent_report_item_id,
+                parent_monitored_system_id: null,
+                show_data_results: savedItem.show_data_results,
+                hide_data: savedItem.hide_data,
+                is_stopped: savedItem.is_stopped,
+                comment: savedItem.html,
+                document: savedItem.document,
+                charts: savedItem.charts,
+                updated_at: savedItem.updated_at,
+                comments: [],
+                suggestions: [],
+            };
+        }
+    }
+
+    router.reload();
+}
+
 onMounted(() =>
     sections.value
         .filter(
@@ -770,7 +808,7 @@ onMounted(() =>
             @load-data="loadSystem"
             @chart="openChart"
             @resolve-suggestion="resolveSuggestion"
-            @editor-saved="router.reload()"
+            @editor-saved="(savedItem) => handleEditorSaved(system, savedItem)"
         />
     </div>
 

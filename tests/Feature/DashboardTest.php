@@ -320,3 +320,93 @@ test('parameter search matches multi-word query across system name and parameter
             'display_name' => 'Água de alimentação - pH',
         ]);
 });
+
+test('parameter search returns all active parameters ordered by system sort order then parameter sort order', function () {
+    $secondSystem = MonitoredSystem::create([
+        'team_id' => $this->team->id,
+        'name' => 'Segundo Sistema',
+        'sort_order' => 2,
+        'is_active' => true,
+    ]);
+
+    $firstSystem = MonitoredSystem::create([
+        'team_id' => $this->team->id,
+        'name' => 'Primeiro Sistema',
+        'sort_order' => 1,
+        'is_active' => true,
+    ]);
+
+    $inactiveSystem = MonitoredSystem::create([
+        'team_id' => $this->team->id,
+        'name' => 'Sistema Inativo',
+        'sort_order' => 0,
+        'is_active' => false,
+    ]);
+
+    Parameter::create([
+        'team_id' => $this->team->id,
+        'monitored_system_id' => $inactiveSystem->id,
+        'name' => 'Parâmetro Oculto',
+        'sort_order' => 1,
+        'is_active' => true,
+    ]);
+
+    Parameter::create([
+        'team_id' => $this->team->id,
+        'monitored_system_id' => $secondSystem->id,
+        'name' => 'Segundo do Segundo',
+        'sort_order' => 2,
+        'is_active' => true,
+    ]);
+
+    Parameter::create([
+        'team_id' => $this->team->id,
+        'monitored_system_id' => $secondSystem->id,
+        'name' => 'Primeiro do Segundo',
+        'sort_order' => 1,
+        'is_active' => true,
+    ]);
+
+    Parameter::create([
+        'team_id' => $this->team->id,
+        'monitored_system_id' => $firstSystem->id,
+        'name' => 'Segundo do Primeiro',
+        'sort_order' => 2,
+        'is_active' => true,
+    ]);
+
+    Parameter::create([
+        'team_id' => $this->team->id,
+        'monitored_system_id' => $firstSystem->id,
+        'name' => 'Primeiro do Primeiro',
+        'sort_order' => 1,
+        'is_active' => true,
+    ]);
+
+    for ($i = 3; $i <= 35; $i++) {
+        Parameter::create([
+            'team_id' => $this->team->id,
+            'monitored_system_id' => $secondSystem->id,
+            'name' => sprintf('Extra %02d', $i),
+            'sort_order' => $i,
+            'is_active' => true,
+        ]);
+    }
+
+    $response = $this->actingAs($this->user)
+        ->getJson(route('parameters.search', [
+            'current_team' => $this->team->slug,
+            'q' => '',
+        ]));
+
+    $response->assertOk();
+
+    $items = $response->json();
+
+    expect($items)->toHaveCount(37)
+        ->and($items[0]['display_name'])->toBe('Primeiro Sistema - Primeiro do Primeiro')
+        ->and($items[1]['display_name'])->toBe('Primeiro Sistema - Segundo do Primeiro')
+        ->and($items[2]['display_name'])->toBe('Segundo Sistema - Primeiro do Segundo')
+        ->and($items[3]['display_name'])->toBe('Segundo Sistema - Segundo do Segundo')
+        ->and(collect($items)->pluck('display_name'))->not->toContain('Sistema Inativo - Parâmetro Oculto');
+});

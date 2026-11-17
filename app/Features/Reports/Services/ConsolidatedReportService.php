@@ -195,7 +195,7 @@ class ConsolidatedReportService
 
         return [
             'report' => $this->serializeReport($report),
-            'systems' => $systems->map(function (MonitoredSystem $system) use ($items): array {
+            'systems' => $systems->map(function (MonitoredSystem $system) use ($items, $team): array {
                 /** @var ReportItem|null $item */
                 $item = $items->get($system->id);
 
@@ -203,7 +203,7 @@ class ConsolidatedReportService
                     'id' => $system->id,
                     'name' => $system->name,
                     'sort_order' => $system->sort_order,
-                    'item' => $item ? $this->serializeItem($item) : null,
+                    'item' => $item ? $this->serializeItem($item, $team) : null,
                 ];
             })->all(),
             'intendedRecipients' => $team->members()
@@ -677,20 +677,106 @@ class ConsolidatedReportService
      */
     public function chartData(Team $team, string $startDate, string $endDate, array $series): array
     {
-        $parameterIds = collect($series)->pluck('parameter_id')->map(fn ($id): int => (int) $id)->unique()->values();
-        $parameters = Parameter::query()
+        return ['series' => $this->buildChartSeries($team, $startDate, $endDate, $series, strict: true)];
+    }
+
+    /**
+     * Resolve chart series data for every reportChart block embedded in a ReportItem.
+     *
+     * @return array<string, list<array<string, mixed>>>
+     */
+    public function resolveItemCharts(Team $team, ReportItem $item): array
+    {
+        $document = is_array($item->metadata['editor']['document'] ?? null)
+            ? $item->metadata['editor']['document']
+            : null;
+
+        $configs = $document ? $this->collectChartConfigsFromDocument($document) : [];
+
+        if ($configs === [] && is_string($item->comment) && str_contains($item->comment, 'data-chart-config')) {
+            $configs = $this->collectChartConfigsFromHtml($item->comment);
+        }
+
+        if ($configs === []) {
+            return [];
+        }
+
+        $resolved = [];
+
+        foreach ($configs as $chartId => $config) {
+            $startDate = (string) ($config['startDate'] ?? '');
+            $endDate = (string) ($config['endDate'] ?? '');
+            $rawSeries = $config['series'] ?? [];
+
+            if (! preg_match('/^\d{4}-\d{2}-\d{2}$/', $startDate)
+                || ! preg_match('/^\d{4}-\d{2}-\d{2}$/', $endDate)
+                || $startDate > $endDate
+                || ! is_array($rawSeries)
+                || $rawSeries === []) {
+                $resolved[$chartId] = [];
+
+                continue;
+            }
+
+            /** @var list<array<string, mixed>> $seriesList */
+            $seriesList = array_values(array_filter($rawSeries, 'is_array'));
+            $resolved[$chartId] = $this->buildChartSeries($team, $startDate, $endDate, $seriesList, strict: false);
+        }
+
+        return $resolved;
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $series
+     * @return list<array<string, mixed>>
+     */
+    private function buildChartSeries(
+        Team $team,
+        string $startDate,
+        string $endDate,
+        array $series,
+        bool $strict,
+    ): array {
+        $parameterIds = collect($series)
+            ->pluck('parameter_id')
+            ->filter(fn (mixed $id): bool => is_numeric($id))
+            ->map(fn (mixed $id): int => (int) $id)
+            ->unique()
+            ->values();
+
+        if ($parameterIds->isEmpty()) {
+            if ($strict) {
+                throw ValidationException::withMessages(['series' => 'Um ou mais parâmetros não pertencem a esta unidade.']);
+            }
+
+            return [];
+        }
+
+        $parameterQuery = Parameter::query()
             ->whereBelongsTo($team)
-            ->whereIn('id', $parameterIds)
+            ->whereIn('id', $parameterIds);
+
+        if (! $strict) {
+            $parameterQuery->withTrashed();
+        }
+
+        $parameters = $parameterQuery
             ->get(['id', 'name', 'unit', 'decimals'])
             ->keyBy('id');
 
-        if ($parameters->count() !== $parameterIds->count()) {
+        if ($strict && $parameters->count() !== $parameterIds->count()) {
             throw ValidationException::withMessages(['series' => 'Um ou mais parâmetros não pertencem a esta unidade.']);
+        }
+
+        $validParameterIds = $parameters->keys()->all();
+
+        if ($validParameterIds === []) {
+            return [];
         }
 
         $values = ParameterValue::query()
             ->whereBelongsTo($team)
-            ->whereIn('parameter_id', $parameterIds)
+            ->whereIn('parameter_id', $validParameterIds)
             ->whereBetween('measured_at', [
                 Carbon::parse($startDate)->startOfDay(),
                 Carbon::parse($endDate)->endOfDay(),
@@ -699,22 +785,86 @@ class ConsolidatedReportService
             ->get(['parameter_id', 'measured_at', 'value'])
             ->groupBy('parameter_id');
 
-        $builtSeries = collect($series)->map(function (array $config) use ($parameters, $values): array {
-            $parameter = $parameters->get((int) $config['parameter_id']);
+        $builtSeries = collect($series)
+            ->filter(fn (array $config): bool => $parameters->has((int) ($config['parameter_id'] ?? 0)))
+            ->map(function (array $config) use ($parameters, $values): array {
+                /** @var Parameter $parameter */
+                $parameter = $parameters->get((int) $config['parameter_id']);
 
-            return [
-                ...$config,
-                'label' => $config['label'] ?? $parameter->name,
-                'unit' => $parameter->unit,
-                'data' => $values->get($parameter->id, collect())->map(fn (ParameterValue $value): array => [
-                    'timestamp' => $value->measured_at->toIso8601String(),
-                    'formatted_time' => $value->measured_at->format('d/m H:i'),
-                    'value' => $value->value,
-                ])->values()->all(),
-            ];
-        })->all();
+                return [
+                    ...$config,
+                    'label' => $config['label'] ?? $parameter->name,
+                    'unit' => $parameter->unit,
+                    'data' => $values->get($parameter->id, collect())->map(fn (ParameterValue $value): array => [
+                        'timestamp' => $value->measured_at->toIso8601String(),
+                        'formatted_time' => $value->measured_at->format('d/m H:i'),
+                        'value' => $value->value,
+                    ])->values()->all(),
+                ];
+            })
+            ->values()
+            ->all();
 
-        return ['series' => array_values($builtSeries)];
+        return array_values($builtSeries);
+    }
+
+    /**
+     * @param  array<string, mixed>  $node
+     * @return array<string, array<string, mixed>>
+     */
+    private function collectChartConfigsFromDocument(array $node): array
+    {
+        $configs = [];
+
+        if (($node['type'] ?? null) === 'reportChart' && is_array($node['attrs'] ?? null)) {
+            $chartId = (string) ($node['attrs']['id'] ?? '');
+
+            if ($chartId !== '') {
+                $configs[$chartId] = $node['attrs'];
+            }
+        }
+
+        foreach ($node['content'] ?? [] as $child) {
+            if (is_array($child)) {
+                $configs += $this->collectChartConfigsFromDocument($child);
+            }
+        }
+
+        return $configs;
+    }
+
+    /**
+     * @return array<string, array<string, mixed>>
+     */
+    private function collectChartConfigsFromHtml(string $html): array
+    {
+        $configs = [];
+
+        if (preg_match_all('/<div\b([^>]*\bdata-report-chart\b[^>]*)>/i', $html, $matches)) {
+            foreach ($matches[1] as $attributes) {
+                if (! preg_match('/\bdata-chart-config=(["\'])(.*?)\1/is', $attributes, $configMatch)) {
+                    continue;
+                }
+
+                $decoded = json_decode(html_entity_decode($configMatch[2], ENT_QUOTES | ENT_HTML5, 'UTF-8'), true);
+
+                if (! is_array($decoded)) {
+                    continue;
+                }
+
+                $chartId = (string) ($decoded['id'] ?? '');
+
+                if ($chartId === '' && preg_match('/\bdata-(?:chart-id|report-chart)=(["\'])([^"\']*)\1/i', $attributes, $idMatch)) {
+                    $chartId = $idMatch[2];
+                }
+
+                if ($chartId !== '') {
+                    $configs[$chartId] = $decoded;
+                }
+            }
+        }
+
+        return $configs;
     }
 
     public function recipient(string $token): ReportRecipient
@@ -846,7 +996,7 @@ class ConsolidatedReportService
             'recipient' => $recipientInfo,
             'recipients' => $recipients,
             'dataBySystem' => $dataBySystem,
-            'systems' => $items->map(function (ReportItem $item): array {
+            'systems' => $items->map(function (ReportItem $item) use ($team): array {
                 $combinedTitle = $this->formatCombinedSystemTitle(
                     $item->monitoredSystem?->name ?? 'Sistema',
                     $item->childReportItems,
@@ -862,6 +1012,8 @@ class ConsolidatedReportService
                         'hide_data' => $item->hide_data,
                         'is_stopped' => $item->is_stopped,
                         'comment' => $item->comment,
+                        'document' => $item->metadata['editor']['document'] ?? null,
+                        'charts' => $this->resolveItemCharts($team, $item),
                         'comments' => $item->comments->map(fn (ReportComment $comment): array => [
                             'id' => $comment->id,
                             'author' => $comment->user_id
@@ -981,7 +1133,7 @@ class ConsolidatedReportService
     /**
      * @return array<string, mixed>
      */
-    private function serializeItem(ReportItem $item): array
+    private function serializeItem(ReportItem $item, ?Team $team = null): array
     {
         return [
             'id' => $item->id,
@@ -991,6 +1143,8 @@ class ConsolidatedReportService
             'hide_data' => $item->hide_data,
             'is_stopped' => $item->is_stopped,
             'comment' => $item->comment,
+            'document' => $item->metadata['editor']['document'] ?? null,
+            'charts' => $team ? $this->resolveItemCharts($team, $item) : [],
             'updated_at' => $item->updated_at?->toIso8601String(),
             'comments' => $item->comments->map(fn ($comment): array => [
                 'id' => $comment->id,

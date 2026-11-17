@@ -41,6 +41,7 @@ import type {
     ReportChartConfig,
     ReportContext,
     ReportHistoryItem,
+    ReportPhrase,
     ReportSystem,
 } from '@/features/reports/types';
 import { show, update } from '@/routes/reports/editor';
@@ -66,7 +67,7 @@ const props = withDefaults(
 
 const emit = defineEmits<{
     systemChange: [systemId: number];
-    saved: [];
+    saved: [item: ReportPhrase | null];
     cancel: [];
     dateChange: [date: string];
 }>();
@@ -454,7 +455,7 @@ async function save(force = false) {
         context.value = await response.json();
         isDirty.value = false;
         isOpen.value = false;
-        emit('saved');
+        emit('saved', context.value?.item ?? null);
     } finally {
         isSaving.value = false;
     }

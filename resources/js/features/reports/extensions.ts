@@ -82,7 +82,33 @@ export const ReportChart = Node.create({
     },
 
     parseHTML() {
-        return [{ tag: 'div[data-report-chart]' }];
+        return [
+            {
+                tag: 'div[data-report-chart]',
+                getAttrs: (element) => {
+                    if (typeof element === 'string') {
+                        return false;
+                    }
+
+                    const rawConfig = element.getAttribute('data-chart-config');
+
+                    if (rawConfig) {
+                        try {
+                            return JSON.parse(rawConfig);
+                        } catch {
+                            // Fallback to basic id parsing when config JSON is invalid
+                        }
+                    }
+
+                    const id =
+                        element.getAttribute('data-report-chart') ||
+                        element.getAttribute('data-chart-id') ||
+                        '';
+
+                    return { id };
+                },
+            },
+        ];
     },
 
     renderHTML({ node }) {
@@ -91,6 +117,7 @@ export const ReportChart = Node.create({
             {
                 'data-report-chart': node.attrs.id,
                 'data-chart-id': node.attrs.id,
+                'data-chart-config': JSON.stringify(node.attrs),
             },
             `Gráfico: ${node.attrs.title}`,
         ];

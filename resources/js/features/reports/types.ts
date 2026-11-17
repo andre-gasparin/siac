@@ -1,3 +1,5 @@
+import type { ChartSeries } from '@/shared/components/charts/EChartRenderer.vue';
+
 export interface ReportSystem {
     id: number;
     name: string;
@@ -6,6 +8,7 @@ export interface ReportSystem {
 
 export interface ReportParameter {
     id: number;
+    monitored_system_id?: number;
     name: string;
     code?: string | null;
     tag?: string | null;
@@ -29,6 +32,7 @@ export interface ReportPhrase {
     system_name: string;
     document: Record<string, unknown> | null;
     html: string;
+    charts?: Record<string, ChartSeries[]>;
     show_data_results: boolean;
     hide_data: boolean;
     is_stopped: boolean;

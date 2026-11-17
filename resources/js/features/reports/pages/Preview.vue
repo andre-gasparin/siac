@@ -3,6 +3,7 @@ import { Head } from '@inertiajs/vue3';
 import { ref } from 'vue';
 import ClientReportContent from '@/features/reports/components/ClientReportContent.vue';
 import ReportRecipientsModal from '@/features/reports/components/ReportRecipientsModal.vue';
+import type { ChartSeries } from '@/shared/components/charts/EChartRenderer.vue';
 import type { Team } from '@/shared/types';
 
 interface ReportComment {
@@ -19,6 +20,8 @@ interface ReportItem {
     hide_data: boolean;
     is_stopped: boolean;
     comment: string | null;
+    document?: Record<string, unknown> | null;
+    charts?: Record<string, ChartSeries[]>;
     comments: ReportComment[];
 }
 

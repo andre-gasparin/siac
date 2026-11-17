@@ -45,7 +45,7 @@ class ReportEditorService
         return [
             'state' => $report === null ? 'new_report' : ($item === null ? 'new_item' : 'existing'),
             'report' => $report ? ['id' => $report->id, 'status' => $report->status, 'date_reference' => $date] : null,
-            'item' => $item ? $this->serializeItem($item) : null,
+            'item' => $item ? $this->serializeItem($item, $team) : null,
             'system' => ['id' => $system->id, 'name' => $system->name],
             'systems' => $this->systems($team),
             'parameters' => Parameter::query()
@@ -439,7 +439,7 @@ PROMPT, ['timeout' => 25]);
     /**
      * @return array<string, mixed>
      */
-    private function serializeItem(ReportItem $item): array
+    private function serializeItem(ReportItem $item, ?Team $team = null): array
     {
         $root = $item->parent_report_item_id
             ? ReportItem::query()->find($item->parent_report_item_id)
@@ -452,6 +452,7 @@ PROMPT, ['timeout' => 25]);
             'parent_report_item_id' => $item->parent_report_item_id,
             'document' => $root->metadata['editor']['document'] ?? null,
             'html' => $this->sanitizeHtml((string) ($root->comment ?? '')),
+            'charts' => $team ? $this->reports->resolveItemCharts($team, $root) : [],
             'show_data_results' => $item->show_data_results,
             'hide_data' => $item->hide_data,
             'is_stopped' => $item->is_stopped,
@@ -499,7 +500,7 @@ PROMPT, ['timeout' => 25]);
             ->allowRelativeMedias()
             ->allowMediaSchemes(['https', 'data'])
             ->allowElement('span', ['class', 'data-report-icon', 'data-parameter-ids'])
-            ->allowElement('div', ['class', 'data-report-chart', 'data-chart-id'])
+            ->allowElement('div', ['class', 'data-report-chart', 'data-chart-id', 'data-chart-config'])
             ->withMaxInputLength(1_000_000);
 
         return (new HtmlSanitizer($config))->sanitize($html);

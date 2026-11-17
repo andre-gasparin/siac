@@ -280,7 +280,13 @@ function renderChart() {
             },
             yAxis: yAxis.length > 0 ? yAxis : [{ type: 'value', min: 0 }],
             dataZoom: [
-                { type: 'inside' },
+                {
+                    type: 'inside',
+                    zoomLock: true,
+                    zoomOnMouseWheel: false,
+                    moveOnMouseWheel: false,
+                    preventDefaultMouseMove: false,
+                },
                 { type: 'slider', height: 18, bottom: 10 },
             ],
             series: renderedSeries,

@@ -5,6 +5,7 @@ use App\Models\Parameter;
 use App\Models\ParameterValue;
 use App\Models\Report;
 use App\Models\ReportItem;
+use App\Models\ReportRecipient;
 use App\Models\Team;
 use App\Models\User;
 use Illuminate\Support\Facades\Http;
@@ -369,4 +370,149 @@ test('assistant can choose a team scoped operational data tool', function () {
     Http::assertSentCount(2);
     expect(Report::count())->toBe(0)
         ->and(ReportItem::count())->toBe(0);
+});
+
+test('saving a consideration with report charts preserves config and resolves chart data across report views', function () {
+    ParameterValue::create([
+        'team_id' => $this->team->id,
+        'monitored_system_id' => $this->system->id,
+        'parameter_id' => $this->parameter->id,
+        'measured_at' => '2026-07-28 08:00:00',
+        'measured_date' => '2026-07-28',
+        'value' => 7.25,
+        'source_type' => 'manual',
+    ]);
+
+    $otherTeam = Team::factory()->create();
+    $otherSystem = MonitoredSystem::create([
+        'team_id' => $otherTeam->id,
+        'name' => 'Sistema externo',
+        'sort_order' => 1,
+        'is_active' => true,
+    ]);
+    $otherParameter = Parameter::create([
+        'team_id' => $otherTeam->id,
+        'monitored_system_id' => $otherSystem->id,
+        'name' => 'Externo',
+        'sort_order' => 1,
+        'is_active' => true,
+    ]);
+
+    $chartAttrs = [
+        'id' => 'chart-uuid-1',
+        'title' => 'Água de Alimentação - CACE x DCACE',
+        'height' => 320,
+        'startDate' => '2026-07-22',
+        'endDate' => '2026-07-28',
+        'teamSlug' => $this->team->slug,
+        'series' => [
+            [
+                'parameter_id' => $this->parameter->id,
+                'label' => 'pH',
+                'chart_type' => 'line',
+                'color' => '#2563EB',
+                'stroke_width' => 2,
+                'axis_position' => 'left',
+                'min_val' => null,
+                'max_val' => null,
+                'show_points' => true,
+                'show_values' => false,
+            ],
+            [
+                'parameter_id' => $otherParameter->id,
+                'label' => 'Externo bloqueado',
+                'chart_type' => 'line',
+                'color' => '#E11D48',
+                'stroke_width' => 2,
+                'axis_position' => 'right',
+                'min_val' => null,
+                'max_val' => null,
+                'show_points' => true,
+                'show_values' => false,
+            ],
+        ],
+    ];
+
+    $document = [
+        'type' => 'doc',
+        'content' => [
+            [
+                'type' => 'paragraph',
+                'content' => [['type' => 'text', 'text' => 'teste']],
+            ],
+            [
+                'type' => 'reportChart',
+                'attrs' => $chartAttrs,
+            ],
+        ],
+    ];
+
+    $encodedConfig = htmlspecialchars((string) json_encode($chartAttrs), ENT_QUOTES, 'UTF-8');
+    $html = '<p>teste</p><div data-report-chart="chart-uuid-1" data-chart-id="chart-uuid-1" data-chart-config="'.$encodedConfig.'" onclick="alert(1)">Gráfico: Água de Alimentação - CACE x DCACE</div>';
+
+    $saveResponse = $this->actingAs($this->admin)
+        ->putJson(route('reports.editor.update', $this->team), [
+            'date_reference' => '2026-07-28',
+            'system_id' => $this->system->id,
+            'document' => $document,
+            'html' => $html,
+            'hide_data' => false,
+            'is_stopped' => false,
+        ]);
+
+    $saveResponse->assertOk()
+        ->assertJsonPath('item.document.content.1.attrs.id', 'chart-uuid-1')
+        ->assertJsonCount(1, 'item.charts.chart-uuid-1')
+        ->assertJsonPath('item.charts.chart-uuid-1.0.data.0.value', 7.25);
+
+    $item = ReportItem::firstOrFail();
+    expect($item->comment)->toContain('data-report-chart="chart-uuid-1"')
+        ->and($item->comment)->toContain('data-chart-config=')
+        ->and($item->comment)->not->toContain('onclick');
+
+    $report = Report::firstOrFail();
+    $report->update(['status' => 'completed', 'finished_at' => now()]);
+
+    $this->actingAs($this->admin)
+        ->get(route('reports.show', [$this->team, $report]))
+        ->assertOk()
+        ->assertInertia(fn ($page) => $page
+            ->component('Reports/Show')
+            ->where('systems.0.item.document.content.1.attrs.id', 'chart-uuid-1')
+            ->has('systems.0.item.charts.chart-uuid-1', 1)
+            ->where('systems.0.item.charts.chart-uuid-1.0.data.0.value', 7.25));
+
+    $this->actingAs($this->admin)
+        ->get(route('reports.preview', [$this->team, $report]))
+        ->assertOk()
+        ->assertInertia(fn ($page) => $page
+            ->component('Reports/Preview')
+            ->has('systems.0.item.charts.chart-uuid-1', 1)
+            ->where('systems.0.item.charts.chart-uuid-1.0.data.0.value', 7.25));
+
+    $this->actingAs($this->member)
+        ->get(route('reports.user.show', [$this->team, $report]))
+        ->assertOk()
+        ->assertInertia(fn ($page) => $page
+            ->component('Reports/UserShow')
+            ->has('systems.0.item.charts.chart-uuid-1', 1)
+            ->where('systems.0.item.charts.chart-uuid-1.0.data.0.value', 7.25));
+
+    $token = 'chart-public-token';
+    ReportRecipient::query()->create([
+        'team_id' => $this->team->id,
+        'report_id' => $report->id,
+        'user_id' => $this->member->id,
+        'name' => $this->member->name,
+        'email' => $this->member->email,
+        'access_token' => $token,
+        'token_hash' => hash('sha256', $token),
+    ]);
+
+    $this->get(route('reports.public.show', $token))
+        ->assertOk()
+        ->assertInertia(fn ($page) => $page
+            ->component('Reports/Public')
+            ->has('systems.0.item.charts.chart-uuid-1', 1)
+            ->where('systems.0.item.charts.chart-uuid-1.0.data.0.value', 7.25));
 });

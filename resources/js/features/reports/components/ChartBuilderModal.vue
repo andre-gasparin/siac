@@ -4,8 +4,12 @@ import {
     Bookmark,
     Check,
     ChevronDown,
+    ChevronUp,
+    CopyPlus,
     Loader2,
+    Pencil,
     Plus,
+    Save,
     Search,
     SlidersHorizontal,
     Star,
@@ -20,6 +24,12 @@ import type {
     ReportParameter,
 } from '@/features/reports/types';
 import { search as parameterSearchRoute } from '@/routes/parameters';
+import {
+    destroy as destroyChartTemplateRoute,
+    index as listChartTemplatesRoute,
+    store as storeChartTemplateRoute,
+    update as updateChartTemplateRoute,
+} from '@/routes/reports/chart-templates';
 import { data as chartDataRoute } from '@/routes/reports/charts';
 import EChartRenderer from '@/shared/components/charts/EChartRenderer.vue';
 import type { ChartSeries } from '@/shared/components/charts/EChartRenderer.vue';
@@ -56,7 +66,9 @@ const isSearching = ref(false);
 const isPreviewing = ref(false);
 const previewError = ref('');
 
-// Favorites management state
+// Favorites and visibility state
+const useFavorites = ref(false);
+const showSeriesEditor = ref(true);
 const favoriteTemplates = ref<ChartFavoriteTemplate[]>([]);
 const isLoadingFavorites = ref(false);
 const isSavingFavorite = ref(false);
@@ -69,6 +81,22 @@ const deleteConfirmContainer = ref<HTMLElement | null>(null);
 
 let searchTimer: ReturnType<typeof setTimeout> | undefined;
 let previewTimer: ReturnType<typeof setTimeout> | undefined;
+let suppressSearchOpen = false;
+
+const isSeriesSectionVisible = computed(
+    () => !useFavorites.value || showSeriesEditor.value,
+);
+
+const selectedFavoriteName = computed(() => {
+    if (!selectedFavoriteId.value) {
+        return '';
+    }
+
+    return (
+        favoriteTemplates.value.find((f) => f.id === selectedFavoriteId.value)
+            ?.name || title.value
+    );
+});
 
 function closeOutsideClicks(event: PointerEvent) {
     if (
@@ -93,6 +121,45 @@ function closeOutsideClicks(event: PointerEvent) {
     }
 }
 
+function toggleFavoritesMode() {
+    useFavorites.value = !useFavorites.value;
+
+    if (useFavorites.value) {
+        showSeriesEditor.value = false;
+        searchOpen.value = false;
+        favoritesDropdownOpen.value =
+            !selectedFavoriteId.value &&
+            series.value.length === 0 &&
+            favoriteTemplates.value.length > 0;
+    } else {
+        favoritesDropdownOpen.value = false;
+        showDeleteConfirm.value = false;
+        showSeriesEditor.value = true;
+
+        if (series.value.length === 0) {
+            searchOpen.value = true;
+        }
+    }
+}
+
+function toggleSeriesEditor() {
+    showSeriesEditor.value = !showSeriesEditor.value;
+
+    if (showSeriesEditor.value && series.value.length === 0) {
+        searchOpen.value = true;
+    } else if (!showSeriesEditor.value) {
+        searchOpen.value = false;
+    }
+}
+
+function isSameSystem(a: ReportParameter, b: ReportParameter): boolean {
+    if (a.monitored_system_id && b.monitored_system_id) {
+        return a.monitored_system_id === b.monitored_system_id;
+    }
+
+    return (a.system_name ?? '') === (b.system_name ?? '');
+}
+
 async function confirmDeleteSelectedFavorite() {
     if (!selectedFavoriteId.value) {
         return;
@@ -101,7 +168,7 @@ async function confirmDeleteSelectedFavorite() {
     const idToDelete = selectedFavoriteId.value;
     showDeleteConfirm.value = false;
     await deleteFavoriteTemplate(idToDelete);
-    favoriteSuccessMessage.value = 'Favorito excluído com sucesso!';
+    favoriteSuccessMessage.value = 'Favorito excluído!';
     setTimeout(() => {
         favoriteSuccessMessage.value = '';
     }, 3000);
@@ -128,7 +195,7 @@ async function fetchFavoriteTemplates() {
 
     try {
         const response = await fetch(
-            `/${props.teamSlug}/reports/chart-templates`,
+            listChartTemplatesRoute.url({ current_team: props.teamSlug }),
             {
                 headers: { Accept: 'application/json' },
             },
@@ -184,13 +251,15 @@ async function saveFavoriteTemplate(asNew = false) {
 
     try {
         const targetId = !asNew ? selectedFavoriteId.value : null;
-        const url = targetId
-            ? `/${props.teamSlug}/reports/chart-templates/${targetId}`
-            : `/${props.teamSlug}/reports/chart-templates`;
-        const method = targetId ? 'PUT' : 'POST';
+        const routeDef = targetId
+            ? updateChartTemplateRoute({
+                  current_team: props.teamSlug,
+                  chart_template: targetId,
+              })
+            : storeChartTemplateRoute({ current_team: props.teamSlug });
 
-        const response = await fetch(url, {
-            method,
+        const response = await fetch(routeDef.url, {
+            method: routeDef.method.toUpperCase(),
             headers: {
                 Accept: 'application/json',
                 'Content-Type': 'application/json',
@@ -221,16 +290,18 @@ async function saveFavoriteTemplate(asNew = false) {
 
 async function deleteFavoriteTemplate(templateId: number) {
     try {
-        const response = await fetch(
-            `/${props.teamSlug}/reports/chart-templates/${templateId}`,
-            {
-                method: 'DELETE',
-                headers: {
-                    Accept: 'application/json',
-                    'X-CSRF-TOKEN': csrfToken(),
-                },
+        const routeDef = destroyChartTemplateRoute({
+            current_team: props.teamSlug,
+            chart_template: templateId,
+        });
+
+        const response = await fetch(routeDef.url, {
+            method: routeDef.method.toUpperCase(),
+            headers: {
+                Accept: 'application/json',
+                'X-CSRF-TOKEN': csrfToken(),
             },
-        );
+        });
 
         if (response.ok) {
             if (selectedFavoriteId.value === templateId) {
@@ -248,6 +319,10 @@ async function deleteFavoriteTemplate(templateId: number) {
 function reset() {
     selectedFavoriteId.value = null;
     isFavorite.value = false;
+    useFavorites.value = false;
+    showSeriesEditor.value = true;
+    favoritesDropdownOpen.value = false;
+    showDeleteConfirm.value = false;
     favoriteSuccessMessage.value = '';
     void fetchFavoriteTemplates();
 
@@ -256,6 +331,7 @@ function reset() {
         height.value = props.initialChart.height;
         startDate.value = props.initialChart.startDate;
         endDate.value = props.initialChart.endDate;
+        suppressSearchOpen = true;
         searchQuery.value = '';
         searchOpen.value = false;
         series.value = props.initialChart.series.map((item) => ({
@@ -276,6 +352,7 @@ function reset() {
     height.value = 320;
     startDate.value = start.toISOString().slice(0, 10);
     endDate.value = end;
+    suppressSearchOpen = true;
     searchQuery.value = '';
     searchOpen.value = true;
     series.value = [];
@@ -332,7 +409,12 @@ function addParameter(parameter: ReportParameter) {
         show_points: true,
         show_values: false,
     });
-    searchQuery.value = '';
+
+    if (searchQuery.value !== '') {
+        suppressSearchOpen = true;
+        searchQuery.value = '';
+    }
+
     searchOpen.value = false;
 }
 
@@ -420,7 +502,12 @@ watch(
 );
 
 watch(searchQuery, () => {
-    searchOpen.value = true;
+    if (suppressSearchOpen) {
+        suppressSearchOpen = false;
+    } else {
+        searchOpen.value = true;
+    }
+
     clearTimeout(searchTimer);
     searchTimer = setTimeout(() => void searchParameters(), 250);
 });
@@ -479,6 +566,7 @@ onBeforeUnmount(() => {
                         </div>
                     </div>
                     <button
+                        type="button"
                         class="rounded-lg p-2 hover:bg-muted"
                         title="Fechar"
                         @click="emit('close')"
@@ -487,12 +575,84 @@ onBeforeUnmount(() => {
                     </button>
                 </header>
 
-                <div class="grid gap-5 p-5">
-                    <!-- Favorite Charts Selection -->
-                    <div ref="favoritesContainer" class="relative">
-                        <div
-                            class="mb-1 flex items-center justify-between gap-1"
+                <div class="grid gap-4 p-5">
+                    <!-- Top Controls: Start Date, End Date & Favorites Slider -->
+                    <div
+                        class="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] items-end gap-2.5"
+                    >
+                        <label
+                            class="grid min-w-0 gap-1.5 text-xs font-medium text-foreground"
                         >
+                            Data inicial
+                            <input
+                                v-model="startDate"
+                                type="date"
+                                data-test="chart-start-date"
+                                class="h-9 w-full min-w-0 rounded-lg border bg-background px-2.5 text-xs"
+                            />
+                        </label>
+                        <label
+                            class="grid min-w-0 gap-1.5 text-xs font-medium text-foreground"
+                        >
+                            Data final
+                            <input
+                                v-model="endDate"
+                                type="date"
+                                data-test="chart-end-date"
+                                class="h-9 w-full min-w-0 rounded-lg border bg-background px-2.5 text-xs"
+                            />
+                        </label>
+                        <div class="grid gap-1.5">
+                            <span class="text-xs font-medium text-foreground"
+                                >Favoritos</span
+                            >
+                            <button
+                                type="button"
+                                role="switch"
+                                data-test="favorites-toggle"
+                                :aria-checked="useFavorites"
+                                :title="
+                                    useFavorites
+                                        ? 'Desativar seleção por favoritos'
+                                        : 'Habilitar gráficos favoritos'
+                                "
+                                class="inline-flex h-9 items-center gap-2 rounded-lg border px-2.5 text-xs font-medium transition-colors"
+                                :class="
+                                    useFavorites
+                                        ? 'border-amber-500/60 bg-amber-500/10 text-amber-700 dark:text-amber-300'
+                                        : 'bg-background text-muted-foreground hover:bg-muted/50'
+                                "
+                                @click="toggleFavoritesMode"
+                            >
+                                <span
+                                    class="relative inline-flex h-5 w-9 shrink-0 rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out"
+                                    :class="
+                                        useFavorites
+                                            ? 'bg-amber-500'
+                                            : 'bg-muted-foreground/30'
+                                    "
+                                >
+                                    <span
+                                        aria-hidden="true"
+                                        class="pointer-events-none inline-block size-4 transform rounded-full bg-white shadow-sm ring-0 transition duration-200 ease-in-out"
+                                        :class="
+                                            useFavorites
+                                                ? 'translate-x-4'
+                                                : 'translate-x-0'
+                                        "
+                                    />
+                                </span>
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Favorite Charts Selection (visible when Favorites slider is enabled) -->
+                    <div
+                        v-if="useFavorites"
+                        ref="favoritesContainer"
+                        class="relative grid gap-2.5 rounded-xl border border-amber-500/25 bg-amber-500/[0.04] p-3"
+                    >
+                        <div class="flex items-center justify-between gap-2">
                             <span
                                 class="flex items-center gap-1.5 text-xs font-semibold tracking-wide text-muted-foreground uppercase"
                             >
@@ -502,151 +662,152 @@ onBeforeUnmount(() => {
                                 Gráficos favoritos
                             </span>
                             <span
-                                v-if="favoriteTemplates.length"
-                                class="shrink-0 text-[11px] text-muted-foreground"
+                                v-if="favoriteSuccessMessage"
+                                class="flex items-center gap-1 text-[11px] font-semibold text-emerald-600 dark:text-emerald-400"
+                            >
+                                <Check class="size-3" />
+                                {{ favoriteSuccessMessage }}
+                            </span>
+                            <span
+                                v-else-if="favoriteTemplates.length"
+                                class="rounded-full bg-amber-500/15 px-2 py-0.5 text-[10px] font-semibold text-amber-700 dark:text-amber-300"
                             >
                                 {{ favoriteTemplates.length }} salvo(s)
                             </span>
                         </div>
-                        <button
-                            type="button"
-                            data-test="favorite-charts-dropdown"
-                            class="flex h-10 w-full items-center justify-between rounded-lg border bg-background px-3 text-sm transition-colors hover:bg-muted/50"
-                            @click="
-                                favoritesDropdownOpen = !favoritesDropdownOpen
-                            "
-                        >
-                            <span
-                                class="flex min-w-0 flex-1 items-center gap-2 text-xs font-medium"
-                            >
-                                <Star
-                                    v-if="selectedFavoriteId"
-                                    class="size-4 shrink-0 fill-amber-500 text-amber-500"
-                                />
-                                <Star
-                                    v-else
-                                    class="size-4 shrink-0 text-muted-foreground"
-                                />
-                                <span class="truncate">
-                                    {{
-                                        selectedFavoriteId
-                                            ? favoriteTemplates.find(
-                                                  (f) =>
-                                                      f.id ===
-                                                      selectedFavoriteId,
-                                              )?.name || title
-                                            : 'Procurar ou selecionar um favorito...'
-                                    }}
-                                </span>
-                            </span>
-                            <ChevronDown
-                                class="ml-1 size-4 shrink-0 text-muted-foreground transition-transform"
-                                :class="{ 'rotate-180': favoritesDropdownOpen }"
-                            />
-                        </button>
 
-                        <div
-                            v-if="favoritesDropdownOpen"
-                            class="absolute z-30 mt-1 max-h-60 w-full overflow-y-auto rounded-xl border bg-popover p-1 shadow-xl"
-                        >
-                            <div
-                                v-if="isLoadingFavorites"
-                                class="flex items-center justify-center gap-2 p-3 text-xs text-muted-foreground"
+                        <div class="relative">
+                            <button
+                                type="button"
+                                data-test="favorite-charts-dropdown"
+                                class="flex h-9 w-full items-center justify-between rounded-lg border bg-background px-3 text-sm transition-colors hover:bg-muted/50"
+                                @click="
+                                    favoritesDropdownOpen =
+                                        !favoritesDropdownOpen
+                                "
                             >
-                                <Loader2
-                                    class="size-4 animate-spin text-blue-600"
-                                />
-                                Carregando favoritos...
-                            </div>
-                            <template v-else-if="favoriteTemplates.length">
-                                <div
-                                    v-for="fav in favoriteTemplates"
-                                    :key="fav.id"
-                                    data-test="favorite-option"
-                                    class="group flex cursor-pointer items-center justify-between rounded-lg px-3 py-2 text-xs transition-colors hover:bg-muted"
-                                    :class="{
-                                        'bg-amber-500/10 font-medium text-amber-900 dark:text-amber-200':
-                                            selectedFavoriteId === fav.id,
-                                    }"
-                                    @click="loadFavoriteTemplate(fav)"
+                                <span
+                                    class="flex min-w-0 flex-1 items-center gap-2 text-xs font-medium"
                                 >
-                                    <div class="min-w-0 flex-1 pr-2">
-                                        <div
-                                            class="flex items-center gap-1.5 truncate font-semibold"
-                                        >
-                                            <Star
-                                                class="size-3.5 shrink-0 fill-amber-500 text-amber-500"
-                                            />
-                                            <span class="truncate">{{
-                                                fav.name
-                                            }}</span>
-                                        </div>
-                                        <p
-                                            class="truncate text-[11px] text-muted-foreground"
-                                        >
-                                            {{ fav.series.length }} série(s) ·
-                                            {{
-                                                fav.series
-                                                    .map((s) => s.label)
-                                                    .join(', ')
-                                            }}
-                                        </p>
-                                    </div>
-                                    <button
-                                        type="button"
-                                        class="rounded p-1 text-muted-foreground transition-opacity hover:bg-red-50 hover:text-red-600 lg:opacity-0 lg:group-hover:opacity-100 dark:hover:bg-red-950/40"
-                                        title="Excluir favorito"
-                                        @click.stop="
-                                            deleteFavoriteTemplate(fav.id)
-                                        "
-                                    >
-                                        <Trash2 class="size-3.5" />
-                                    </button>
-                                </div>
-                            </template>
+                                    <Star
+                                        v-if="selectedFavoriteId"
+                                        class="size-3.5 shrink-0 fill-amber-500 text-amber-500"
+                                    />
+                                    <Star
+                                        v-else
+                                        class="size-3.5 shrink-0 text-muted-foreground"
+                                    />
+                                    <span class="truncate">
+                                        {{
+                                            selectedFavoriteId
+                                                ? selectedFavoriteName
+                                                : 'Procurar ou selecionar um favorito...'
+                                        }}
+                                    </span>
+                                </span>
+                                <ChevronDown
+                                    class="ml-1 size-4 shrink-0 text-muted-foreground transition-transform"
+                                    :class="{
+                                        'rotate-180': favoritesDropdownOpen,
+                                    }"
+                                />
+                            </button>
+
                             <div
-                                v-else
-                                class="p-3 text-center text-xs text-muted-foreground"
+                                v-if="favoritesDropdownOpen"
+                                class="absolute z-30 mt-1 max-h-60 w-full overflow-y-auto rounded-xl border bg-popover p-1 shadow-xl"
                             >
-                                Nenhum gráfico favorito salvo nesta empresa.
+                                <div
+                                    v-if="isLoadingFavorites"
+                                    class="flex items-center justify-center gap-2 p-3 text-xs text-muted-foreground"
+                                >
+                                    <Loader2
+                                        class="size-4 animate-spin text-blue-600"
+                                    />
+                                    Carregando favoritos...
+                                </div>
+                                <template v-else-if="favoriteTemplates.length">
+                                    <div
+                                        v-for="fav in favoriteTemplates"
+                                        :key="fav.id"
+                                        data-test="favorite-option"
+                                        class="group flex cursor-pointer items-center justify-between rounded-lg px-3 py-2 text-xs transition-colors hover:bg-muted"
+                                        :class="{
+                                            'bg-amber-500/10 font-medium text-amber-900 dark:text-amber-200':
+                                                selectedFavoriteId === fav.id,
+                                        }"
+                                        @click="loadFavoriteTemplate(fav)"
+                                    >
+                                        <div class="min-w-0 flex-1 pr-2">
+                                            <div
+                                                class="flex items-center gap-1.5 truncate font-semibold"
+                                            >
+                                                <Star
+                                                    class="size-3.5 shrink-0 fill-amber-500 text-amber-500"
+                                                />
+                                                <span class="truncate">{{
+                                                    fav.name
+                                                }}</span>
+                                            </div>
+                                            <p
+                                                class="truncate text-[11px] text-muted-foreground"
+                                            >
+                                                {{ fav.series.length }} série(s)
+                                                ·
+                                                {{
+                                                    fav.series
+                                                        .map((s) => s.label)
+                                                        .join(', ')
+                                                }}
+                                            </p>
+                                        </div>
+                                        <button
+                                            type="button"
+                                            class="rounded p-1 text-muted-foreground transition-opacity hover:bg-red-50 hover:text-red-600 lg:opacity-0 lg:group-hover:opacity-100 dark:hover:bg-red-950/40"
+                                            title="Excluir favorito"
+                                            @click.stop="
+                                                deleteFavoriteTemplate(fav.id)
+                                            "
+                                        >
+                                            <Trash2 class="size-3.5" />
+                                        </button>
+                                    </div>
+                                </template>
+                                <div
+                                    v-else
+                                    class="p-3 text-center text-xs text-muted-foreground"
+                                >
+                                    Nenhum gráfico favorito salvo nesta empresa.
+                                </div>
                             </div>
                         </div>
-                    </div>
 
-                    <!-- Title & Favorite Controls -->
-                    <div class="grid gap-2">
+                        <!-- Compact Icon Action Bar Below the Favorites Combo -->
                         <div class="flex items-center justify-between gap-2">
-                            <label class="text-xs font-medium">Título</label>
-                            <span
-                                v-if="favoriteSuccessMessage"
-                                class="flex items-center gap-1 text-xs font-semibold text-emerald-600"
-                            >
-                                <Check class="size-3.5" />
-                                {{ favoriteSuccessMessage }}
-                            </span>
-                        </div>
-                        <input
-                            v-model="title"
-                            data-test="chart-title"
-                            class="h-10 w-full rounded-lg border bg-background px-3 text-sm"
-                            placeholder="Ex: Gráfico de Vazão e pH"
-                        />
-                        <div
-                            class="flex flex-wrap items-center justify-between gap-2 pt-0.5"
-                        >
-                            <div class="flex flex-wrap items-center gap-2">
+                            <div class="flex items-center gap-1.5">
                                 <button
                                     type="button"
                                     data-test="save-favorite-btn"
-                                    class="inline-flex h-8 items-center gap-1.5 rounded-lg border px-3 text-xs font-medium transition-colors"
+                                    class="inline-flex size-8 items-center justify-center rounded-lg border transition-colors disabled:opacity-45"
                                     :class="
                                         selectedFavoriteId || isFavorite
-                                            ? 'border-amber-500/50 bg-amber-500/10 text-amber-700 hover:bg-amber-500/20 dark:text-amber-300'
-                                            : 'bg-background text-muted-foreground hover:bg-muted'
+                                            ? 'border-amber-500/50 bg-amber-500/15 text-amber-700 hover:bg-amber-500/25 dark:text-amber-300'
+                                            : 'bg-background text-muted-foreground hover:bg-muted hover:text-foreground'
                                     "
-                                    title="Salvar configurações como favorito"
+                                    :title="
+                                        selectedFavoriteId
+                                            ? 'Atualizar favorito selecionado'
+                                            : 'Salvar nos favoritos'
+                                    "
+                                    :aria-label="
+                                        selectedFavoriteId
+                                            ? 'Atualizar favorito selecionado'
+                                            : 'Salvar nos favoritos'
+                                    "
                                     :disabled="
-                                        isSavingFavorite || series.length === 0
+                                        isSavingFavorite ||
+                                        series.length === 0 ||
+                                        !title.trim()
                                     "
                                     @click="
                                         selectedFavoriteId
@@ -658,20 +819,35 @@ onBeforeUnmount(() => {
                                         v-if="isSavingFavorite"
                                         class="size-3.5 animate-spin text-amber-600"
                                     />
+                                    <Save
+                                        v-else-if="selectedFavoriteId"
+                                        class="size-3.5"
+                                    />
                                     <Star
                                         v-else
-                                        class="size-3.5 shrink-0"
+                                        class="size-3.5"
                                         :class="{
                                             'fill-amber-500 text-amber-500':
-                                                selectedFavoriteId ||
                                                 isFavorite,
                                         }"
                                     />
-                                    <span>{{
-                                        selectedFavoriteId
-                                            ? 'Atualizar Favorito'
-                                            : 'Salvar nos Favoritos'
-                                    }}</span>
+                                </button>
+
+                                <button
+                                    v-if="selectedFavoriteId"
+                                    type="button"
+                                    data-test="save-as-new-favorite-btn"
+                                    class="inline-flex size-8 items-center justify-center rounded-lg border bg-background text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-45"
+                                    title="Salvar como novo favorito"
+                                    aria-label="Salvar como novo favorito"
+                                    :disabled="
+                                        isSavingFavorite ||
+                                        series.length === 0 ||
+                                        !title.trim()
+                                    "
+                                    @click="saveFavoriteTemplate(true)"
+                                >
+                                    <CopyPlus class="size-3.5" />
                                 </button>
 
                                 <div
@@ -682,15 +858,15 @@ onBeforeUnmount(() => {
                                     <button
                                         type="button"
                                         data-test="delete-favorite-btn"
-                                        class="inline-flex h-8 items-center gap-1.5 rounded-lg border border-red-200 bg-red-50/60 px-2.5 text-xs font-medium text-red-600 transition-colors hover:bg-red-100 dark:border-red-900/50 dark:bg-red-950/30 dark:text-red-400 dark:hover:bg-red-950/60"
+                                        class="inline-flex size-8 items-center justify-center rounded-lg border border-red-200 bg-red-50/70 text-red-600 transition-colors hover:bg-red-100 dark:border-red-900/50 dark:bg-red-950/30 dark:text-red-400 dark:hover:bg-red-950/60"
                                         title="Excluir este gráfico favorito"
+                                        aria-label="Excluir este gráfico favorito"
                                         @click="
                                             showDeleteConfirm =
                                                 !showDeleteConfirm
                                         "
                                     >
-                                        <Trash2 class="size-3.5 shrink-0" />
-                                        <span>Excluir</span>
+                                        <Trash2 class="size-3.5" />
                                     </button>
 
                                     <div
@@ -728,237 +904,319 @@ onBeforeUnmount(() => {
                                 </div>
                             </div>
 
-                            <button
-                                v-if="selectedFavoriteId"
-                                type="button"
-                                class="text-[11px] font-medium text-blue-600 hover:underline"
-                                @click="saveFavoriteTemplate(true)"
-                            >
-                                Salvar como novo favorito
-                            </button>
+                            <span class="text-[11px] text-muted-foreground">
+                                {{
+                                    selectedFavoriteId
+                                        ? 'Atualize, duplique ou exclua'
+                                        : 'Salve o gráfico atual nos favoritos'
+                                }}
+                            </span>
                         </div>
                     </div>
 
-                    <div class="grid grid-cols-2 gap-3">
-                        <label class="grid gap-1.5 text-xs font-medium">
-                            Data inicial
-                            <input
-                                v-model="startDate"
-                                type="date"
-                                class="h-10 rounded-lg border bg-background px-3"
-                            />
-                        </label>
-                        <label class="grid gap-1.5 text-xs font-medium">
-                            Data final
-                            <input
-                                v-model="endDate"
-                                type="date"
-                                class="h-10 rounded-lg border bg-background px-3"
-                            />
-                        </label>
-                    </div>
-
-                    <div class="grid gap-2">
-                        <div class="flex items-center justify-between">
+                    <!-- Sistema / Parâmetro & Series Section -->
+                    <div class="grid gap-2.5">
+                        <div class="flex items-center justify-between gap-2">
                             <span
                                 class="text-xs font-semibold tracking-wide uppercase"
                             >
                                 Sistema / parâmetro
                             </span>
-                            <span class="text-[11px] text-muted-foreground">
-                                {{ series.length }}/5 séries
-                            </span>
-                        </div>
-                        <div ref="searchContainer" class="relative">
-                            <Search
-                                class="absolute top-3 left-3 size-4 text-muted-foreground"
-                            />
-                            <input
-                                v-model="searchQuery"
-                                class="h-10 w-full rounded-lg border bg-background pr-9 pl-9 text-sm"
-                                placeholder="Busque sistema, parâmetro, código ou tag..."
-                                @focus="searchOpen = true"
-                            />
-                            <Loader2
-                                v-if="isSearching"
-                                class="absolute top-3 right-3 size-4 animate-spin"
-                            />
-                            <div
-                                v-if="searchOpen"
-                                class="absolute z-20 mt-1 max-h-56 w-full overflow-y-auto rounded-xl border bg-popover p-1 shadow-xl"
-                            >
+                            <div class="flex items-center gap-2">
+                                <span class="text-[11px] text-muted-foreground">
+                                    {{ series.length }}/5 séries
+                                </span>
                                 <button
-                                    v-for="parameter in searchResults"
-                                    :key="parameter.id"
+                                    v-if="useFavorites"
                                     type="button"
-                                    data-test="chart-parameter-option"
-                                    class="flex w-full items-center justify-between rounded-lg px-3 py-2 text-left hover:bg-muted disabled:opacity-50"
-                                    :disabled="
-                                        series.some(
-                                            (item) =>
-                                                item.parameter_id ===
-                                                parameter.id,
-                                        )
+                                    data-test="toggle-system-parameters"
+                                    class="inline-flex h-7 items-center gap-1.5 rounded-lg border px-2.5 text-xs font-medium transition-colors"
+                                    :class="
+                                        showSeriesEditor
+                                            ? 'border-blue-500/50 bg-blue-500/10 text-blue-700 dark:text-blue-300'
+                                            : 'bg-background text-foreground hover:bg-muted'
                                     "
-                                    @click="addParameter(parameter)"
+                                    @click="toggleSeriesEditor"
                                 >
-                                    <span>
-                                        <strong class="block text-xs">{{
-                                            parameter.system_name
-                                        }}</strong>
-                                        <span
-                                            class="text-xs text-muted-foreground"
-                                        >
-                                            {{ parameter.name }}
-                                            <template v-if="parameter.unit">
-                                                · {{ parameter.unit }}
-                                            </template>
-                                        </span>
-                                    </span>
-                                    <Check
-                                        v-if="
-                                            series.some(
-                                                (item) =>
-                                                    item.parameter_id ===
-                                                    parameter.id,
-                                            )
-                                        "
-                                        class="size-4 text-emerald-600"
+                                    <ChevronUp
+                                        v-if="showSeriesEditor"
+                                        class="size-3.5"
                                     />
-                                    <Plus v-else class="size-4" />
+                                    <Pencil v-else class="size-3.5" />
+                                    <span>{{
+                                        showSeriesEditor ? 'Ocultar' : 'Editar'
+                                    }}</span>
                                 </button>
-                                <p
-                                    v-if="
-                                        !isSearching &&
-                                        searchResults.length === 0
-                                    "
-                                    class="p-3 text-center text-xs text-muted-foreground"
-                                >
-                                    Nenhum parâmetro encontrado.
-                                </p>
                             </div>
                         </div>
-                    </div>
 
-                    <div class="grid gap-3">
-                        <article
-                            v-for="(item, index) in series"
-                            :key="item.parameter_id"
-                            class="rounded-xl border bg-muted/20 p-3"
+                        <!-- Compact Series Summary when Favorites mode hides Sistema / Parâmetro -->
+                        <div
+                            v-if="!isSeriesSectionVisible"
+                            class="rounded-xl border border-dashed bg-muted/20 p-3 text-xs"
                         >
-                            <div class="mb-3 flex items-start gap-2">
-                                <input
-                                    v-model="item.color"
-                                    type="color"
-                                    class="h-9 w-10 cursor-pointer rounded border bg-transparent"
-                                    title="Cor da série"
+                            <div
+                                v-if="series.length"
+                                class="flex flex-wrap gap-1.5"
+                            >
+                                <span
+                                    v-for="item in series"
+                                    :key="item.parameter_id"
+                                    class="inline-flex items-center gap-1.5 rounded-full border bg-background px-2.5 py-1 text-[11px] font-medium"
+                                >
+                                    <span
+                                        class="size-2 shrink-0 rounded-full"
+                                        :style="{ backgroundColor: item.color }"
+                                    />
+                                    <span class="truncate">{{
+                                        item.label
+                                    }}</span>
+                                </span>
+                            </div>
+                            <p v-else class="text-muted-foreground">
+                                Selecione um favorito acima ou clique em
+                                <strong>Editar</strong> para escolher sistemas e
+                                parâmetros.
+                            </p>
+                        </div>
+
+                        <!-- Full Sistema / Parâmetro Combo & Series Cards -->
+                        <template v-else>
+                            <div ref="searchContainer" class="relative">
+                                <Search
+                                    class="absolute top-3 left-3 size-4 text-muted-foreground"
                                 />
-                                <div class="min-w-0 flex-1">
-                                    <p class="truncate text-xs font-semibold">
-                                        {{ item.system_name }}
-                                    </p>
-                                    <p
-                                        class="truncate text-xs text-muted-foreground"
+                                <input
+                                    v-model="searchQuery"
+                                    class="h-10 w-full rounded-lg border bg-background pr-9 pl-9 text-sm"
+                                    placeholder="Busque sistema, parâmetro, código ou tag..."
+                                    @focus="searchOpen = true"
+                                />
+                                <Loader2
+                                    v-if="isSearching"
+                                    class="absolute top-3 right-3 size-4 animate-spin"
+                                />
+                                <div
+                                    v-if="searchOpen"
+                                    class="absolute z-20 mt-1 max-h-64 w-full overflow-y-auto rounded-xl border bg-popover p-1 shadow-xl"
+                                >
+                                    <template
+                                        v-for="(
+                                            parameter, index
+                                        ) in searchResults"
+                                        :key="parameter.id"
                                     >
-                                        {{ item.label }}
+                                        <div
+                                            v-if="
+                                                index === 0 ||
+                                                !isSameSystem(
+                                                    searchResults[index - 1],
+                                                    parameter,
+                                                )
+                                            "
+                                            class="px-3 pt-2 pb-1 text-[10px] font-bold tracking-wider text-muted-foreground uppercase"
+                                        >
+                                            {{ parameter.system_name }}
+                                        </div>
+                                        <button
+                                            type="button"
+                                            data-test="chart-parameter-option"
+                                            class="flex w-full items-center justify-between rounded-lg px-3 py-1.5 text-left hover:bg-muted disabled:opacity-50"
+                                            :disabled="
+                                                series.some(
+                                                    (item) =>
+                                                        item.parameter_id ===
+                                                        parameter.id,
+                                                )
+                                            "
+                                            @click="addParameter(parameter)"
+                                        >
+                                            <span class="min-w-0 pr-2">
+                                                <span
+                                                    class="block truncate text-xs font-medium text-foreground"
+                                                >
+                                                    {{ parameter.name }}
+                                                </span>
+                                                <span
+                                                    class="block truncate text-[11px] text-muted-foreground"
+                                                >
+                                                    {{ parameter.system_name }}
+                                                    <template
+                                                        v-if="parameter.unit"
+                                                    >
+                                                        · {{ parameter.unit }}
+                                                    </template>
+                                                </span>
+                                            </span>
+                                            <Check
+                                                v-if="
+                                                    series.some(
+                                                        (item) =>
+                                                            item.parameter_id ===
+                                                            parameter.id,
+                                                    )
+                                                "
+                                                class="size-4 shrink-0 text-emerald-600"
+                                            />
+                                            <Plus
+                                                v-else
+                                                class="size-4 shrink-0"
+                                            />
+                                        </button>
+                                    </template>
+                                    <p
+                                        v-if="
+                                            !isSearching &&
+                                            searchResults.length === 0
+                                        "
+                                        class="p-3 text-center text-xs text-muted-foreground"
+                                    >
+                                        Nenhum parâmetro encontrado.
                                     </p>
                                 </div>
-                                <button
-                                    class="rounded-lg p-2 text-red-600 hover:bg-red-50 dark:hover:bg-red-950/30"
-                                    title="Remover série"
-                                    @click="series.splice(index, 1)"
-                                >
-                                    <Trash2 class="size-4" />
-                                </button>
                             </div>
-                            <div class="grid grid-cols-2 gap-2 text-xs">
-                                <select
-                                    v-model="item.chart_type"
-                                    class="h-9 rounded-lg border bg-background px-2"
+
+                            <div class="grid gap-3 pt-1">
+                                <article
+                                    v-for="(item, index) in series"
+                                    :key="item.parameter_id"
+                                    class="rounded-xl border bg-muted/20 p-3"
                                 >
-                                    <option value="line">Linha</option>
-                                    <option value="bar">Barra</option>
-                                    <option value="area">Área</option>
-                                </select>
-                                <select
-                                    v-model="item.axis_position"
-                                    class="h-9 rounded-lg border bg-background px-2"
-                                >
-                                    <option value="left">Eixo esquerdo</option>
-                                    <option value="right">Eixo direito</option>
-                                </select>
-                                <label class="grid gap-1">
-                                    Mínimo
-                                    <input
-                                        v-model.number="item.min_val"
-                                        type="number"
-                                        class="h-9 rounded-lg border bg-background px-2"
-                                    />
-                                </label>
-                                <label class="grid gap-1">
-                                    Máximo
-                                    <input
-                                        v-model.number="item.max_val"
-                                        type="number"
-                                        class="h-9 rounded-lg border bg-background px-2"
-                                    />
-                                </label>
-                                <label class="grid gap-1">
-                                    Espessura
-                                    <input
-                                        v-model.number="item.stroke_width"
-                                        type="range"
-                                        min="1"
-                                        max="8"
-                                    />
-                                </label>
-                                <div class="flex items-end gap-3 pb-1">
-                                    <label class="flex items-center gap-1">
+                                    <div class="mb-3 flex items-start gap-2">
                                         <input
-                                            v-model="item.show_points"
-                                            type="checkbox"
-                                        />Pontos
-                                    </label>
-                                    <label class="flex items-center gap-1">
-                                        <input
-                                            v-model="item.show_values"
-                                            type="checkbox"
-                                        />Valores
-                                    </label>
-                                </div>
+                                            v-model="item.color"
+                                            type="color"
+                                            class="h-9 w-10 cursor-pointer rounded border bg-transparent"
+                                            title="Cor da série"
+                                        />
+                                        <div class="min-w-0 flex-1">
+                                            <p
+                                                class="truncate text-xs font-semibold"
+                                            >
+                                                {{ item.system_name }}
+                                            </p>
+                                            <p
+                                                class="truncate text-xs text-muted-foreground"
+                                            >
+                                                {{ item.label }}
+                                            </p>
+                                        </div>
+                                        <button
+                                            type="button"
+                                            class="rounded-lg p-2 text-red-600 hover:bg-red-50 dark:hover:bg-red-950/30"
+                                            title="Remover série"
+                                            @click="series.splice(index, 1)"
+                                        >
+                                            <Trash2 class="size-4" />
+                                        </button>
+                                    </div>
+                                    <div class="grid grid-cols-2 gap-2 text-xs">
+                                        <select
+                                            v-model="item.chart_type"
+                                            class="h-9 rounded-lg border bg-background px-2"
+                                        >
+                                            <option value="line">Linha</option>
+                                            <option value="bar">Barra</option>
+                                            <option value="area">Área</option>
+                                        </select>
+                                        <select
+                                            v-model="item.axis_position"
+                                            class="h-9 rounded-lg border bg-background px-2"
+                                        >
+                                            <option value="left">
+                                                Eixo esquerdo
+                                            </option>
+                                            <option value="right">
+                                                Eixo direito
+                                            </option>
+                                        </select>
+                                        <label class="grid gap-1">
+                                            Mínimo
+                                            <input
+                                                v-model.number="item.min_val"
+                                                type="number"
+                                                class="h-9 rounded-lg border bg-background px-2"
+                                            />
+                                        </label>
+                                        <label class="grid gap-1">
+                                            Máximo
+                                            <input
+                                                v-model.number="item.max_val"
+                                                type="number"
+                                                class="h-9 rounded-lg border bg-background px-2"
+                                            />
+                                        </label>
+                                        <label class="grid gap-1">
+                                            Espessura
+                                            <input
+                                                v-model.number="
+                                                    item.stroke_width
+                                                "
+                                                type="range"
+                                                min="1"
+                                                max="8"
+                                            />
+                                        </label>
+                                        <div class="flex items-end gap-3 pb-1">
+                                            <label
+                                                class="flex items-center gap-1"
+                                            >
+                                                <input
+                                                    v-model="item.show_points"
+                                                    type="checkbox"
+                                                />Pontos
+                                            </label>
+                                            <label
+                                                class="flex items-center gap-1"
+                                            >
+                                                <input
+                                                    v-model="item.show_values"
+                                                    type="checkbox"
+                                                />Valores
+                                            </label>
+                                        </div>
+                                    </div>
+                                </article>
                             </div>
-                        </article>
+                        </template>
                     </div>
                 </div>
             </div>
 
+            <!-- Right Column: Chart Title Editor & Live Preview (no Height slider) -->
             <div class="flex min-h-[520px] flex-col bg-muted/20 p-5">
-                <div class="mb-3 flex items-center justify-between">
-                    <div>
-                        <p
-                            class="flex items-center gap-2 text-sm font-semibold"
+                <div
+                    class="mb-3 flex flex-wrap items-end justify-between gap-3"
+                >
+                    <div class="min-w-0 flex-1">
+                        <label
+                            class="mb-1 flex items-center gap-1.5 text-[11px] font-semibold tracking-wide text-muted-foreground uppercase"
                         >
-                            <SlidersHorizontal class="size-4 text-blue-600" />
+                            <Pencil class="size-3 text-blue-600" />
+                            Título do gráfico
+                        </label>
+                        <input
+                            v-model="title"
+                            data-test="chart-title"
+                            class="h-10 w-full rounded-lg border bg-card px-3 text-sm font-semibold text-foreground shadow-2xs transition focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 focus:outline-none"
+                            placeholder="Ex: Gráfico de Vazão e pH"
+                        />
+                    </div>
+                    <div class="shrink-0 text-right">
+                        <p
+                            class="flex items-center justify-end gap-1.5 text-xs font-semibold"
+                        >
+                            <SlidersHorizontal class="size-3.5 text-blue-600" />
                             Pré-visualização
                         </p>
-                        <p class="text-xs text-muted-foreground">
+                        <p class="text-[11px] text-muted-foreground">
                             Toda alteração é aplicada automaticamente
                         </p>
                     </div>
-                    <label class="flex items-center gap-2 text-xs">
-                        Altura
-                        <input
-                            v-model.number="height"
-                            type="range"
-                            min="220"
-                            max="620"
-                            step="20"
-                        />
-                        <span class="w-12">{{ height }}px</span>
-                    </label>
                 </div>
+
                 <div
-                    class="relative flex flex-1 items-start justify-center overflow-auto rounded-2xl border bg-card pt-1 shadow-sm"
+                    class="relative flex flex-1 items-center justify-center overflow-auto rounded-2xl border bg-card pt-1 shadow-sm"
                 >
                     <Loader2
                         v-if="isPreviewing"
@@ -966,13 +1224,13 @@ onBeforeUnmount(() => {
                     />
                     <EChartRenderer
                         v-if="previewSeries.length"
-                        class="w-full"
+                        class="w-full self-start"
                         :series="previewSeries"
                         :height="height"
                     />
                     <div
                         v-else
-                        class="max-w-sm text-center text-sm text-muted-foreground"
+                        class="max-w-sm p-6 text-center text-sm text-muted-foreground"
                     >
                         <BarChart3 class="mx-auto mb-3 size-10 opacity-30" />
                         <p class="font-medium text-foreground">
@@ -986,14 +1244,17 @@ onBeforeUnmount(() => {
                         </p>
                     </div>
                 </div>
+
                 <footer class="mt-4 flex justify-end gap-2">
                     <button
+                        type="button"
                         class="rounded-lg border bg-card px-4 py-2 text-sm"
                         @click="emit('close')"
                     >
                         Cancelar
                     </button>
                     <button
+                        type="button"
                         data-test="insert-chart"
                         class="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-5 py-2 text-sm font-semibold text-white shadow-sm disabled:opacity-50"
                         :disabled="!canInsert"
