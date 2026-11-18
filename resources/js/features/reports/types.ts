@@ -43,6 +43,7 @@ export interface ReportContext {
     state: 'new_report' | 'new_item' | 'existing';
     report: { id: number; status: string; date_reference: string } | null;
     item: ReportPhrase | null;
+    default_hide_data?: boolean;
     system: { id: number; name: string };
     systems: ReportSystem[];
     parameters: ReportParameter[];

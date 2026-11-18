@@ -801,3 +801,91 @@ test('external recipient without user_id can access public report via token', fu
             ->component('Reports/Public')
             ->where('recipient.email', 'visitante@externo.com'));
 });
+
+test('new report inherits hide_data defaults from the previous report and starts active when none exists', function () {
+    $firstReport = createConsolidatedReport($this);
+
+    $this->actingAs($this->admin)
+        ->get(route('reports.show', [$this->team, $firstReport]))
+        ->assertOk()
+        ->assertInertia(fn ($page) => $page
+            ->component('Reports/Show')
+            ->where('systems.0.item', null)
+            ->where('systems.0.default_hide_data', false)
+            ->where('systems.1.default_hide_data', false));
+
+    $this->actingAs($this->admin)
+        ->putJson(route('reports.systems.update', [$this->team, $firstReport]), [
+            'system_id' => $this->system->id,
+            'hide_data' => true,
+        ])
+        ->assertOk()
+        ->assertJsonPath('hide_data', true)
+        ->assertJsonPath('show_data_results', false);
+
+    $this->actingAs($this->admin)
+        ->post(route('reports.store', $this->team), ['date_reference' => '2026-08-05'])
+        ->assertRedirect();
+
+    $secondReport = Report::query()->whereDate('date_reference', '2026-08-05')->firstOrFail();
+
+    $this->actingAs($this->admin)
+        ->get(route('reports.show', [$this->team, $secondReport]))
+        ->assertOk()
+        ->assertInertia(fn ($page) => $page
+            ->component('Reports/Show')
+            ->where('systems.0.default_hide_data', true)
+            ->where('systems.1.default_hide_data', false));
+
+    $this->actingAs($this->admin)
+        ->putJson(route('reports.systems.update', [$this->team, $secondReport]), [
+            'system_id' => $this->system->id,
+            'show_data_results' => true,
+        ])
+        ->assertOk()
+        ->assertJsonPath('show_data_results', true)
+        ->assertJsonPath('hide_data', true);
+});
+
+test('hide_data omits table data in client preview and user report views while keeping considerations', function () {
+    $report = createConsolidatedReport($this);
+    $report->update(['status' => 'completed', 'finished_at' => now()]);
+
+    ReportItem::query()->create([
+        'team_id' => $this->team->id,
+        'report_id' => $report->id,
+        'monitored_system_id' => $this->system->id,
+        'date_reference' => '2026-08-04',
+        'show_data_results' => true,
+        'hide_data' => true,
+        'comment' => '<p>Consideração mantida</p>',
+    ]);
+
+    ParameterValue::query()->create([
+        'team_id' => $this->team->id,
+        'monitored_system_id' => $this->system->id,
+        'parameter_id' => $this->parameter->id,
+        'measured_at' => '2026-08-04 07:00:00',
+        'measured_date' => '2026-08-04',
+        'value' => 4.17,
+        'source_type' => 'manual',
+    ]);
+
+    $this->actingAs($this->admin)
+        ->get(route('reports.preview', [$this->team, $report]))
+        ->assertOk()
+        ->assertInertia(fn ($page) => $page
+            ->component('Reports/Preview')
+            ->where('systems.0.item.hide_data', true)
+            ->where('systems.0.item.comment', '<p>Consideração mantida</p>')
+            ->missing('dataBySystem.'.$this->system->id));
+
+    $this->actingAs($this->member)
+        ->get(route('reports.user.show', [$this->team, $report]))
+        ->assertOk()
+        ->assertInertia(fn ($page) => $page
+            ->component('Reports/UserShow')
+            ->where('systems.0.item.hide_data', true)
+            ->where('systems.0.item.comment', '<p>Consideração mantida</p>')
+            ->missing('dataBySystem.'.$this->system->id));
+});

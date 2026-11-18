@@ -11,6 +11,8 @@ import {
     Image as ImageIcon,
     Info,
     Italic,
+    Move,
+    Pin,
     Redo2,
     RefreshCw,
     Strikethrough,
@@ -30,9 +32,11 @@ const selectedInlineParameterIds = defineModel<number[]>(
     { required: true },
 );
 
-defineProps<{
+const props = defineProps<{
     editor?: Editor;
     context: ReportContext | null;
+    isFloating?: boolean;
+    showFloatingToggle?: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -44,17 +48,29 @@ const emit = defineEmits<{
     prepareChartDialog: [];
     openChartUpdater: [];
     insertImage: [file: File];
+    toggleFloating: [];
 }>();
 
 const showLatestPreview = ref(false);
 const latestCommentContainerRef = ref<HTMLElement | null>(null);
+const showTextColorPalette = ref(false);
+const textColorContainerRef = ref<HTMLElement | null>(null);
+const showHighlightPalette = ref(false);
+const highlightColorContainerRef = ref<HTMLElement | null>(null);
 const imageInputRef = ref<HTMLInputElement | null>(null);
 
 onClickOutside(latestCommentContainerRef, () => {
     showLatestPreview.value = false;
 });
+onClickOutside(textColorContainerRef, () => {
+    showTextColorPalette.value = false;
+});
+onClickOutside(highlightColorContainerRef, () => {
+    showHighlightPalette.value = false;
+});
 
 const textColors = [
+    { label: 'Rosa', value: '#ec4899' },
     { label: 'Preto', value: '#0f172a' },
     { label: 'Cinza', value: '#64748b' },
     { label: 'Vermelho', value: '#dc2626' },
@@ -64,13 +80,38 @@ const textColors = [
 ];
 
 const highlightColors = [
+    { label: 'Rosa', value: '#fecdd3' },
     { label: 'Amarelo', value: '#fef08a' },
     { label: 'Verde', value: '#bbf7d0' },
     { label: 'Azul', value: '#bae6fd' },
-    { label: 'Rosa', value: '#fecdd3' },
     { label: 'Laranja', value: '#fed7aa' },
     { label: 'Roxo', value: '#e9d5ff' },
 ];
+
+const selectedTextColor = ref(textColors[0].value);
+const selectedHighlightColor = ref(highlightColors[0].value);
+
+function applyTextColor(color = selectedTextColor.value) {
+    selectedTextColor.value = color;
+    props.editor?.chain().focus().setColor(color).run();
+    showTextColorPalette.value = false;
+}
+
+function unsetTextColor() {
+    props.editor?.chain().focus().unsetColor().run();
+    showTextColorPalette.value = false;
+}
+
+function applyHighlightColor(color = selectedHighlightColor.value) {
+    selectedHighlightColor.value = color;
+    props.editor?.chain().focus().toggleHighlight({ color }).run();
+    showHighlightPalette.value = false;
+}
+
+function unsetHighlightColor() {
+    props.editor?.chain().focus().unsetHighlight().run();
+    showHighlightPalette.value = false;
+}
 
 function formatBrazilianDate(value: string): string {
     if (!value) {
@@ -304,57 +345,107 @@ function handleImageFileSelected(event: Event) {
             <SuperscriptIcon class="size-4" />
         </button>
 
-        <!-- 5. Paleta de Cores Padrões de Texto (6 cores) -->
-        <details class="relative">
-            <summary
-                class="editor-action cursor-pointer select-none"
-                title="Cor do texto"
-            >
-                <span
-                    class="text-xs font-bold underline decoration-current decoration-2"
-                    >A</span
-                >
-            </summary>
+        <!-- 5. Paleta de Cores Padrões de Texto (Rosa padrão + 7 cores) -->
+        <div ref="textColorContainerRef" class="relative">
             <div
-                class="absolute top-full left-0 z-30 mt-1 w-44 rounded-lg border bg-popover p-2 shadow-xl"
+                class="inline-flex h-8 items-center overflow-hidden rounded-md border border-border bg-background"
+            >
+                <button
+                    type="button"
+                    data-test="apply-text-color"
+                    class="inline-flex h-full w-7 flex-col items-center justify-center gap-0.5 transition hover:bg-muted"
+                    title="Aplicar cor da fonte"
+                    @click="applyTextColor()"
+                >
+                    <span class="text-xs leading-none font-bold">A</span>
+                    <span
+                        class="h-1 w-4 rounded-full"
+                        :style="{ backgroundColor: selectedTextColor }"
+                    />
+                </button>
+                <button
+                    type="button"
+                    data-test="toggle-text-color-palette"
+                    class="inline-flex h-full w-4 items-center justify-center border-l border-border text-muted-foreground transition hover:bg-muted hover:text-foreground"
+                    title="Escolher cor do texto"
+                    @click="
+                        showTextColorPalette = !showTextColorPalette;
+                        showHighlightPalette = false;
+                    "
+                >
+                    <ChevronDown class="size-3" />
+                </button>
+            </div>
+            <div
+                v-if="showTextColorPalette"
+                data-test="text-color-palette"
+                class="absolute top-full left-0 z-30 mt-1 w-48 rounded-lg border bg-popover p-2 shadow-xl"
             >
                 <p
                     class="mb-1.5 text-[11px] font-semibold text-muted-foreground"
                 >
                     Cor da fonte
                 </p>
-                <div class="grid grid-cols-6 gap-1">
+                <div class="grid grid-cols-7 gap-1">
                     <button
                         v-for="color in textColors"
                         :key="color.value"
                         type="button"
                         :title="color.label"
                         class="size-5 rounded border border-border/80 shadow-2xs transition-transform hover:scale-110"
-                        :style="{ backgroundColor: color.value }"
-                        @click="
-                            editor?.chain().focus().setColor(color.value).run()
+                        :class="
+                            selectedTextColor === color.value
+                                ? 'ring-2 ring-primary ring-offset-1'
+                                : ''
                         "
+                        :style="{ backgroundColor: color.value }"
+                        @click="applyTextColor(color.value)"
                     />
                 </div>
                 <button
                     type="button"
                     class="mt-2 w-full rounded border px-2 py-1 text-[11px] text-muted-foreground transition hover:bg-muted"
-                    @click="editor?.chain().focus().unsetColor().run()"
+                    @click="unsetTextColor"
                 >
                     Padrão
                 </button>
             </div>
-        </details>
+        </div>
 
-        <!-- 6. Paleta de Cores Padrões de Fundo / Destaque (6 cores) -->
-        <details class="relative">
-            <summary
-                class="editor-action cursor-pointer select-none"
-                title="Cor de destaque / fundo"
-            >
-                <Highlighter class="size-4" />
-            </summary>
+        <!-- 6. Paleta de Cores Padrões de Fundo / Destaque (Rosa padrão + 6 cores) -->
+        <div ref="highlightColorContainerRef" class="relative">
             <div
+                class="inline-flex h-8 items-center overflow-hidden rounded-md border border-border bg-background"
+            >
+                <button
+                    type="button"
+                    data-test="apply-highlight-color"
+                    class="inline-flex h-full w-7 flex-col items-center justify-center gap-0.5 transition hover:bg-muted"
+                    title="Aplicar cor de destaque / fundo"
+                    @click="applyHighlightColor()"
+                >
+                    <Highlighter class="size-3.5" />
+                    <span
+                        class="h-1 w-4 rounded-full"
+                        :style="{ backgroundColor: selectedHighlightColor }"
+                    />
+                </button>
+                <button
+                    type="button"
+                    data-test="toggle-highlight-color-palette"
+                    class="inline-flex h-full w-4 items-center justify-center border-l border-border text-muted-foreground transition hover:bg-muted hover:text-foreground"
+                    title="Escolher cor de destaque / fundo"
+                    @click="
+                        showHighlightPalette = !showHighlightPalette;
+                        showTextColorPalette = false;
+                    "
+                >
+                    <ChevronDown class="size-3" />
+                </button>
+            </div>
+            <div
+                v-if="showHighlightPalette"
+                data-test="highlight-color-palette"
                 class="absolute top-full left-0 z-30 mt-1 w-44 rounded-lg border bg-popover p-2 shadow-xl"
             >
                 <p
@@ -369,25 +460,24 @@ function handleImageFileSelected(event: Event) {
                         type="button"
                         :title="color.label"
                         class="size-5 rounded border border-border/80 shadow-2xs transition-transform hover:scale-110"
-                        :style="{ backgroundColor: color.value }"
-                        @click="
-                            editor
-                                ?.chain()
-                                .focus()
-                                .toggleHighlight({ color: color.value })
-                                .run()
+                        :class="
+                            selectedHighlightColor === color.value
+                                ? 'ring-2 ring-primary ring-offset-1'
+                                : ''
                         "
+                        :style="{ backgroundColor: color.value }"
+                        @click="applyHighlightColor(color.value)"
                     />
                 </div>
                 <button
                     type="button"
                     class="mt-2 w-full rounded border px-2 py-1 text-[11px] text-muted-foreground transition hover:bg-muted"
-                    @click="editor?.chain().focus().unsetHighlight().run()"
+                    @click="unsetHighlightColor"
                 >
                     Sem destaque
                 </button>
             </div>
-        </details>
+        </div>
 
         <button
             type="button"
@@ -495,6 +585,27 @@ function handleImageFileSelected(event: Event) {
             @click="emit('openChartUpdater')"
         >
             <RefreshCw class="size-3" /> Atualizar gráficos
+        </button>
+
+        <!-- 10. Alternar Flutuar / Fixar -->
+        <button
+            v-if="showFloatingToggle"
+            type="button"
+            data-test="toggle-floating-editor"
+            class="editor-select ml-auto"
+            :class="
+                isFloating ? 'border-primary/40 bg-primary/10 text-primary' : ''
+            "
+            :title="
+                isFloating
+                    ? 'Fixar editor no bloco do sistema'
+                    : 'Flutuar editor de texto'
+            "
+            @click="emit('toggleFloating')"
+        >
+            <Pin v-if="isFloating" class="size-3.5" />
+            <Move v-else class="size-3.5" />
+            <span>{{ isFloating ? 'Fixar' : 'Flutuar' }}</span>
         </button>
     </div>
 </template>

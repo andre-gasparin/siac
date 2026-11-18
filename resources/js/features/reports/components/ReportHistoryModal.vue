@@ -79,6 +79,12 @@ function formatAction(activity: ActivityItem): string {
         'system.disabled': systemName
             ? `Desabilitou o sistema "${systemName}"`
             : 'Desabilitou sistema',
+        'system.data_hidden': systemName
+            ? `Ocultou a tabela de dados do sistema "${systemName}" no relatório do usuário`
+            : 'Ocultou a tabela de dados do sistema',
+        'system.data_shown': systemName
+            ? `Exibiu a tabela de dados do sistema "${systemName}" no relatório do usuário`
+            : 'Exibiu a tabela de dados do sistema',
         'consideration.updated': systemName
             ? `Atualizou as considerações do sistema "${systemName}"`
             : 'Atualizou as considerações do sistema',

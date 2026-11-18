@@ -3,14 +3,13 @@ import {
     Bot,
     Check,
     ChevronDown,
-    Eye,
-    EyeOff,
     Layers,
     Loader2,
     Pencil,
     Table,
     X,
 } from '@lucide/vue';
+import { onClickOutside } from '@vueuse/core';
 import { computed, ref } from 'vue';
 import ReportCommentContent from '@/features/reports/components/ReportCommentContent.vue';
 import ReportDataTable from '@/features/reports/components/ReportDataTable.vue';
@@ -50,6 +49,7 @@ interface SystemSection {
     id: number;
     name: string;
     sort_order: number;
+    default_hide_data?: boolean;
     item: ReportItem | null;
 }
 
@@ -79,6 +79,7 @@ const props = defineProps<{
     isHighlighted: boolean;
     systemDates: { start_date: string; end_date: string };
     isLoadingData: boolean;
+    isTogglingHideData?: boolean;
     systemData?: ReportData;
     currentTeam: Team;
     systems: ReportSystem[];
@@ -113,25 +114,63 @@ const isSaved = computed(() => {
 const isBlockOpen = ref(isSaved.value);
 const isEditing = ref(false);
 const isTableOpen = ref(false);
+const confirmDisableOpen = ref(false);
+const bolinhaContainerRef = ref<HTMLElement | null>(null);
 
-const statusColor = computed(() => {
+onClickOutside(bolinhaContainerRef, () => {
+    confirmDisableOpen.value = false;
+});
+
+const isDataHidden = computed(
+    () =>
+        props.system.item?.hide_data ?? props.system.default_hide_data ?? false,
+);
+const isTableVisibleInFinalReport = computed(() => !isDataHidden.value);
+
+const systemStatus = computed<'emerald' | 'amber' | 'red'>(() => {
     // Se estiver desativado: vermelho
     if (!props.system.item?.show_data_results) {
-        return 'bg-red-500';
+        return 'red';
     }
 
     // Se estiver em modo de edição (precisa salvar): amarelo
     if (isEditing.value) {
-        return 'bg-amber-500';
+        return 'amber';
     }
 
     // Se possui conteúdo salvo e não está editando: verde
     if (isSaved.value) {
-        return 'bg-emerald-500';
+        return 'emerald';
     }
 
     // Ativo porém sem comentário e não está editando: vermelho
+    return 'red';
+});
+
+const statusColor = computed(() => {
+    if (systemStatus.value === 'emerald') {
+        return 'bg-emerald-500';
+    }
+
+    if (systemStatus.value === 'amber') {
+        return 'bg-amber-500';
+    }
+
     return 'bg-red-500';
+});
+
+const blockOutlineClass = computed(() => {
+    if (systemStatus.value === 'emerald') {
+        return 'border-emerald-500/60 shadow-sm ring-1 ring-emerald-500/25';
+    }
+
+    if (systemStatus.value === 'amber') {
+        return 'border-amber-500/60 shadow-sm ring-1 ring-amber-500/25';
+    }
+
+    return props.system.item?.show_data_results
+        ? 'border-red-500/60 shadow-sm ring-1 ring-red-500/25'
+        : 'border-red-500/60 opacity-90 shadow-sm ring-1 ring-red-500/25 hover:opacity-100';
 });
 
 const bolinhaTooltip = computed(() => {
@@ -151,6 +190,8 @@ const bolinhaTooltip = computed(() => {
 });
 
 function handleHeaderClick(): void {
+    confirmDisableOpen.value = false;
+
     if (isBlockOpen.value) {
         // Fecha o bloco no cabeçalho
         isBlockOpen.value = false;
@@ -168,23 +209,38 @@ function handleHeaderClick(): void {
 }
 
 function handleBolinhaClick(): void {
-    // Se clicar na bolinha amarela ou verde, fecha e desativa o sistema
-    if (
+    // Se clicar na bolinha amarela ou verde, solicita confirmação antes de desabilitar
+    const isDisabling =
         isBlockOpen.value ||
-        (props.system.item?.show_data_results && isSaved.value)
-    ) {
-        isBlockOpen.value = false;
-        isEditing.value = false;
-        emit('toggleSystem', props.system, false);
-    } else {
-        // Se estiver vermelha, ativa e abre
-        emit('toggleSystem', props.system, true);
-        isEditing.value = !isSaved.value;
-        isBlockOpen.value = true;
+        Boolean(props.system.item?.show_data_results && isSaved.value);
+
+    if (isDisabling) {
+        confirmDisableOpen.value = !confirmDisableOpen.value;
+
+        return;
     }
+
+    // Se estiver vermelha, ativa e abre normalmente
+    confirmDisableOpen.value = false;
+    emit('toggleSystem', props.system, true);
+    isEditing.value = !isSaved.value;
+    isBlockOpen.value = true;
+}
+
+function confirmDisable(): void {
+    confirmDisableOpen.value = false;
+    isBlockOpen.value = false;
+    isEditing.value = false;
+    emit('toggleSystem', props.system, false);
+}
+
+function cancelDisable(): void {
+    confirmDisableOpen.value = false;
 }
 
 function handleEditClick(): void {
+    confirmDisableOpen.value = false;
+
     if (!props.system.item?.show_data_results) {
         emit('toggleSystem', props.system, true);
     }
@@ -227,65 +283,131 @@ function handleUngroupChild(child: { id: number; name: string }): void {
 <template>
     <section
         :data-report-system-id="system.id"
-        class="overflow-hidden rounded-xl border bg-card shadow-sm transition duration-300"
+        class="min-w-0 overflow-visible rounded-xl border bg-card transition duration-300"
         :class="[
-            system.item?.show_data_results
-                ? 'border-emerald-500/60 shadow-sm ring-1 ring-emerald-500/25'
-                : 'border-border/70 opacity-80 hover:opacity-100',
+            !isHighlighted && blockOutlineClass,
             isHighlighted &&
-                'shadow-xl ring-4 shadow-violet-950/15 ring-violet-400/50',
+                'border-violet-400 shadow-xl ring-4 shadow-violet-950/15 ring-violet-400/50',
         ]"
     >
         <header
-            class="flex cursor-pointer flex-wrap items-center justify-between gap-3 border-b px-4 py-3 transition select-none hover:bg-muted/40"
-            :class="
+            class="flex cursor-pointer flex-wrap items-center justify-between gap-3 px-4 py-3 transition select-none hover:bg-muted/40"
+            :class="[
+                isBlockOpen ? 'rounded-t-xl border-b' : 'rounded-xl',
                 system.item?.show_data_results
                     ? 'border-border/60 bg-muted/20 text-foreground'
-                    : 'border-border/50 bg-muted/20 text-muted-foreground'
-            "
+                    : 'border-border/50 bg-muted/20 text-muted-foreground',
+            ]"
             @click="handleHeaderClick"
         >
             <div class="flex flex-wrap items-center gap-3">
-                <button
-                    type="button"
-                    data-test="system-status-indicator"
-                    class="size-3.5 shrink-0 rounded-full ring-2 ring-background transition-transform hover:scale-125 focus:outline-hidden"
-                    :class="statusColor"
-                    :title="bolinhaTooltip"
-                    :aria-label="bolinhaTooltip"
-                    @click.stop="handleBolinhaClick"
-                />
+                <div
+                    ref="bolinhaContainerRef"
+                    class="relative flex items-center"
+                >
+                    <button
+                        type="button"
+                        data-test="system-status-indicator"
+                        class="size-3.5 shrink-0 rounded-full ring-2 ring-background transition-transform hover:scale-125 focus:outline-hidden"
+                        :class="statusColor"
+                        :title="bolinhaTooltip"
+                        :aria-label="bolinhaTooltip"
+                        @click.stop="handleBolinhaClick"
+                    />
+
+                    <div
+                        v-if="confirmDisableOpen"
+                        data-test="disable-system-confirmation"
+                        class="absolute top-full left-0 z-50 mt-2 w-64 rounded-xl border border-border bg-popover p-3 text-xs text-popover-foreground shadow-xl ring-1 ring-border/50"
+                        @click.stop
+                    >
+                        <p class="leading-relaxed font-medium text-foreground">
+                            Deseja realmente desabilitar este sistema?
+                        </p>
+                        <div
+                            class="mt-2.5 flex items-center justify-end gap-1.5"
+                        >
+                            <button
+                                type="button"
+                                data-test="cancel-disable-system"
+                                class="rounded-md border border-border bg-background px-2.5 py-1 text-[11px] font-medium text-muted-foreground transition hover:bg-muted hover:text-foreground"
+                                @click="cancelDisable"
+                            >
+                                Cancelar
+                            </button>
+                            <button
+                                type="button"
+                                data-test="confirm-disable-system"
+                                class="rounded-md bg-red-600 px-2.5 py-1 text-[11px] font-semibold text-white shadow-2xs transition hover:bg-red-700"
+                                @click="confirmDisable"
+                            >
+                                Desabilitar
+                            </button>
+                        </div>
+                    </div>
+                </div>
 
                 <h2 class="font-semibold text-foreground">
                     {{ combinedTitle }}
                 </h2>
             </div>
             <div class="flex items-center gap-2">
-                <button
-                    type="button"
-                    class="inline-flex items-center gap-1.5 rounded-lg border border-border bg-background px-2.5 py-1 text-xs font-medium text-foreground shadow-2xs transition hover:bg-muted"
-                    :class="{
-                        'border-amber-400 bg-amber-50 text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-300':
-                            system.item?.hide_data,
-                    }"
+                <div
+                    class="flex items-center gap-2 rounded-lg border border-border bg-background px-2.5 py-1 shadow-2xs transition-opacity"
+                    :class="isTogglingHideData ? 'opacity-80' : ''"
                     :title="
-                        system.item?.hide_data
-                            ? 'Dados ocultados neste relatório. Clique para exibir'
-                            : 'Ocultar tabela de dados deste sistema no relatório'
+                        isTableVisibleInFinalReport
+                            ? 'Ativo: tabela visível no relatório final do usuário. Desative para ocultar apenas no relatório do usuário.'
+                            : 'Desativado: tabela oculta no relatório final do usuário (continua visível nesta tela).'
                     "
-                    @click.stop="emit('toggleHideData', system)"
+                    @click.stop
                 >
-                    <EyeOff
-                        v-if="system.item?.hide_data"
-                        class="size-3.5 text-amber-600 dark:text-amber-400"
-                    />
-                    <Eye v-else class="size-3.5 text-muted-foreground" />
-                    {{
-                        system.item?.hide_data
-                            ? 'Dados ocultos'
-                            : 'Ocultar dados'
-                    }}
-                </button>
+                    <button
+                        :id="`show-table-slider-${system.id}`"
+                        type="button"
+                        role="switch"
+                        :aria-checked="isTableVisibleInFinalReport"
+                        :aria-busy="isTogglingHideData || undefined"
+                        :disabled="isTogglingHideData"
+                        data-test="toggle-hide-data-slider"
+                        class="relative inline-flex h-4 w-7 shrink-0 rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:ring-2 focus:ring-ring focus:ring-offset-1 focus:outline-hidden"
+                        :class="[
+                            isTableVisibleInFinalReport
+                                ? 'bg-emerald-600'
+                                : 'bg-muted-foreground/30',
+                            isTogglingHideData
+                                ? 'cursor-wait opacity-70'
+                                : 'cursor-pointer',
+                        ]"
+                        @click="emit('toggleHideData', system)"
+                    >
+                        <span
+                            aria-hidden="true"
+                            class="pointer-events-none inline-block size-3 transform rounded-full bg-white shadow-sm ring-0 transition duration-200 ease-in-out"
+                            :class="
+                                isTableVisibleInFinalReport
+                                    ? 'translate-x-3'
+                                    : 'translate-x-0'
+                            "
+                        />
+                    </button>
+                    <label
+                        :for="`show-table-slider-${system.id}`"
+                        class="inline-flex items-center gap-1.5 text-xs font-medium text-foreground select-none"
+                        :class="
+                            isTogglingHideData
+                                ? 'cursor-wait'
+                                : 'cursor-pointer'
+                        "
+                    >
+                        <span>Mostrar tabela</span>
+                        <Loader2
+                            v-if="isTogglingHideData"
+                            data-test="hide-data-loading"
+                            class="size-3.5 animate-spin text-muted-foreground"
+                        />
+                    </label>
+                </div>
 
                 <button
                     v-if="canGroup"
@@ -311,9 +433,9 @@ function handleUngroupChild(child: { id: number; name: string }): void {
         </header>
 
         <!-- Conteúdo do Bloco (Exibido quando aberto) -->
-        <div v-if="isBlockOpen" class="space-y-4 p-4">
+        <div v-if="isBlockOpen" class="min-w-0 space-y-4 p-4">
             <!-- 1. Bloco de Considerações: Modo Edição direto (sem borda dupla) -->
-            <div v-if="isEditing">
+            <div v-if="isEditing" class="min-w-0">
                 <ReportEditorLauncher
                     :current-team="currentTeam"
                     :systems="systems"
@@ -321,6 +443,8 @@ function handleUngroupChild(child: { id: number; name: string }): void {
                     :default-date="reportDateReference"
                     :auto-open="true"
                     :inline="true"
+                    :hide-data="isDataHidden"
+                    :system-name="system.name"
                     @saved="handleSaved"
                     @cancel="handleCancelEditing"
                 />
@@ -329,7 +453,7 @@ function handleUngroupChild(child: { id: number; name: string }): void {
             <!-- Modo Visualização das Considerações Salvas (borda única apenas no conteúdo) -->
             <div
                 v-else
-                class="rounded-xl border border-border/70 bg-card p-4 shadow-2xs"
+                class="min-w-0 rounded-xl border border-border/70 bg-card p-4 shadow-2xs"
             >
                 <ReportCommentContent
                     v-if="system.item?.comment"
@@ -368,8 +492,9 @@ function handleUngroupChild(child: { id: number; name: string }): void {
 
             <!-- 3. Tabela de Dados (fechada por padrão, aberta via botão) -->
             <div
-                v-if="isTableOpen && !system.item?.hide_data"
-                class="rounded-xl border border-border/70 bg-card p-4 shadow-2xs"
+                v-if="isTableOpen"
+                data-test="system-data-table-container"
+                class="min-w-0 overflow-hidden rounded-xl border border-border/70 bg-card p-4 shadow-2xs"
             >
                 <div
                     v-if="isLoadingData && !systemData"

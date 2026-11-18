@@ -276,7 +276,7 @@ watch(
 </script>
 
 <template>
-    <div class="report-comment-content space-y-3">
+    <div class="report-comment-content min-w-0 space-y-3">
         <template v-for="segment in segments" :key="segment.key">
             <div
                 v-if="segment.type === 'html'"
@@ -285,7 +285,7 @@ watch(
             />
             <div
                 v-else
-                class="not-prose my-3 rounded-xl border border-border/70 bg-card p-3 shadow-2xs"
+                class="not-prose my-3 min-w-0 rounded-xl border border-border/70 bg-card p-3 shadow-2xs"
                 data-report-chart-node
             >
                 <div class="mb-2 flex items-center justify-between gap-2">
@@ -334,5 +334,10 @@ watch(
 }
 .report-comment-content :deep(.report-icon-info) {
     color: #2563eb;
+}
+.report-comment-content :deep(mark[style*='background-color']) {
+    color: #0f172a;
+    border-radius: 0.2rem;
+    padding: 0.05em 0.2em;
 }
 </style>

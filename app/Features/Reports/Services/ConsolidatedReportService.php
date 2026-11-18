@@ -173,6 +173,12 @@ class ConsolidatedReportService
     {
         $this->ensureRecipientsInitialized($team, $report);
 
+        $defaultHideData = $this->defaultHideDataBySystem(
+            $team,
+            $report->date_reference?->format('Y-m-d'),
+            $report->id,
+        );
+
         $items = ReportItem::query()
             ->whereBelongsTo($report)
             ->with([
@@ -195,7 +201,7 @@ class ConsolidatedReportService
 
         return [
             'report' => $this->serializeReport($report),
-            'systems' => $systems->map(function (MonitoredSystem $system) use ($items, $team): array {
+            'systems' => $systems->map(function (MonitoredSystem $system) use ($items, $team, $defaultHideData): array {
                 /** @var ReportItem|null $item */
                 $item = $items->get($system->id);
 
@@ -203,6 +209,7 @@ class ConsolidatedReportService
                     'id' => $system->id,
                     'name' => $system->name,
                     'sort_order' => $system->sort_order,
+                    'default_hide_data' => (bool) ($defaultHideData[$system->id] ?? false),
                     'item' => $item ? $this->serializeItem($item, $team) : null,
                 ];
             })->all(),
@@ -257,6 +264,36 @@ class ConsolidatedReportService
         ];
     }
 
+    /**
+     * @return array<int, bool>
+     */
+    public function defaultHideDataBySystem(Team $team, ?string $beforeDate, ?int $excludeReportId = null): array
+    {
+        $previousReport = Report::query()
+            ->whereBelongsTo($team)
+            ->when($excludeReportId !== null, fn ($query) => $query->where('id', '!=', $excludeReportId))
+            ->when($beforeDate !== null, fn ($query) => $query->whereDate('date_reference', '<', $beforeDate))
+            ->latest('date_reference')
+            ->latest('id')
+            ->first();
+
+        if (! $previousReport) {
+            return [];
+        }
+
+        return ReportItem::query()
+            ->whereBelongsTo($previousReport)
+            ->whereNotNull('monitored_system_id')
+            ->pluck('hide_data', 'monitored_system_id')
+            ->mapWithKeys(fn (mixed $hideData, mixed $systemId): array => [(int) $systemId => (bool) $hideData])
+            ->all();
+    }
+
+    public function defaultHideDataForSystem(Team $team, ?string $beforeDate, int $systemId, ?int $excludeReportId = null): bool
+    {
+        return $this->defaultHideDataBySystem($team, $beforeDate, $excludeReportId)[$systemId] ?? false;
+    }
+
     public function setVisibility(Team $team, Report $report, User $user, int $systemId, bool $show): ReportItem
     {
         $system = MonitoredSystem::query()->whereBelongsTo($team)->whereKey($systemId)->where('is_active', true)->firstOrFail();
@@ -277,6 +314,12 @@ class ConsolidatedReportService
                     'date_reference' => $report->date_reference?->startOfDay(),
                     'sort_order' => $system->sort_order,
                     'show_data_results' => $visible,
+                    'hide_data' => $this->defaultHideDataForSystem(
+                        $team,
+                        $report->date_reference?->format('Y-m-d'),
+                        $system->id,
+                        $report->id,
+                    ),
                 ]);
             } else {
                 $item->update(['show_data_results' => $visible]);
@@ -309,7 +352,7 @@ class ConsolidatedReportService
                     'monitored_system_id' => $system->id,
                     'date_reference' => $report->date_reference?->startOfDay(),
                     'sort_order' => $system->sort_order,
-                    'show_data_results' => true,
+                    'show_data_results' => false,
                     'hide_data' => $hideData,
                 ]);
             } else {
@@ -339,6 +382,7 @@ class ConsolidatedReportService
             ->where('is_active', true)
             ->firstOrFail();
 
+        $reportDate = $report->date_reference?->format('Y-m-d');
         $parentItem = null;
         if ($parentSystemId !== null) {
             $parentSystem = MonitoredSystem::query()
@@ -358,6 +402,7 @@ class ConsolidatedReportService
                     'date_reference' => $report->date_reference?->startOfDay(),
                     'sort_order' => $parentSystem->sort_order,
                     'show_data_results' => true,
+                    'hide_data' => $this->defaultHideDataForSystem($team, $reportDate, $parentSystem->id, $report->id),
                 ]);
 
             if (! $parentItem->show_data_results) {
@@ -365,7 +410,7 @@ class ConsolidatedReportService
             }
         }
 
-        return DB::transaction(function () use ($team, $report, $user, $system, $parentItem, $clearComment): ReportItem {
+        return DB::transaction(function () use ($team, $report, $user, $system, $parentItem, $clearComment, $reportDate): ReportItem {
             $item = ReportItem::query()
                 ->whereBelongsTo($report)
                 ->whereBelongsTo($system, 'monitoredSystem')
@@ -381,6 +426,7 @@ class ConsolidatedReportService
                     'date_reference' => $report->date_reference?->startOfDay(),
                     'sort_order' => $system->sort_order,
                     'show_data_results' => true,
+                    'hide_data' => $this->defaultHideDataForSystem($team, $reportDate, $system->id, $report->id),
                     'comment' => null,
                 ]);
             } else {
@@ -951,6 +997,10 @@ class ConsolidatedReportService
             ->get();
 
         $dataBySystem = $items->mapWithKeys(function (ReportItem $item) use ($team, $report): array {
+            if ($item->hide_data) {
+                return [];
+            }
+
             $system = $item->monitoredSystem;
 
             return $system ? [$system->id => $this->dailyDataForSystem($team, $report, $system)] : [];

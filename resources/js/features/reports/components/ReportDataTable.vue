@@ -184,7 +184,7 @@ function copyTag(parameter: Parameter): void {
 </script>
 
 <template>
-    <div class="flex flex-col gap-3">
+    <div class="flex min-w-0 flex-col gap-3">
         <!-- Bloco Unificado de Controles: Período e Agrupamento à esquerda, Colunas à direita -->
         <div
             class="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border/70 bg-muted/20 px-3 py-2 text-xs"
@@ -321,7 +321,8 @@ function copyTag(parameter: Parameter): void {
 
         <div
             v-else
-            class="max-h-[550px] w-full overflow-x-auto overflow-y-auto rounded-xl border border-border bg-card shadow-2xs"
+            data-test="report-data-table-scroll"
+            class="max-h-[550px] w-full max-w-full min-w-0 overflow-x-auto overflow-y-auto rounded-xl border border-border bg-card shadow-2xs"
         >
             <table class="w-full min-w-max border-collapse text-[11px]">
                 <thead class="sticky top-0 z-20 bg-muted/90 backdrop-blur-sm">

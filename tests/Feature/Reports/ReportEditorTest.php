@@ -516,3 +516,54 @@ test('saving a consideration with report charts preserves config and resolves ch
             ->has('systems.0.item.charts.chart-uuid-1', 1)
             ->where('systems.0.item.charts.chart-uuid-1.0.data.0.value', 7.25));
 });
+
+test('report editor preserves safe color and highlight styles while stripping unsafe css and provides previous hide_data default', function () {
+    $previousReport = Report::create([
+        'team_id' => $this->team->id,
+        'created_by' => $this->admin->id,
+        'title' => 'Relatório anterior',
+        'date_reference' => '2026-07-27',
+        'status' => 'completed',
+    ]);
+    ReportItem::create([
+        'team_id' => $this->team->id,
+        'report_id' => $previousReport->id,
+        'monitored_system_id' => $this->system->id,
+        'date_reference' => '2026-07-27',
+        'show_data_results' => true,
+        'hide_data' => true,
+    ]);
+
+    $this->actingAs($this->admin)
+        ->getJson(route('reports.editor.show', [
+            'current_team' => $this->team,
+            'date_reference' => '2026-07-28',
+            'system_id' => $this->system->id,
+        ]))
+        ->assertOk()
+        ->assertJsonPath('default_hide_data', true);
+
+    $html = '<p><span style="color: #ec4899">Rosa</span> <mark data-color="#fecdd3" style="background-color: #fecdd3; color: inherit">Destaque</mark> <span style="position: fixed; background-image: url(https://evil.test); color: #0f172a">Seguro</span></p>';
+
+    $this->actingAs($this->admin)
+        ->putJson(route('reports.editor.update', $this->team), [
+            'date_reference' => '2026-07-28',
+            'system_id' => $this->system->id,
+            'document' => $this->document,
+            'html' => $html,
+            'hide_data' => true,
+            'is_stopped' => false,
+        ])
+        ->assertOk();
+
+    $item = ReportItem::query()->whereDate('date_reference', '2026-07-28')->firstOrFail();
+
+    expect($item->comment)
+        ->toContain('color: #ec4899')
+        ->toContain('data-color="#fecdd3"')
+        ->toContain('background-color: #fecdd3')
+        ->toContain('color: #0f172a')
+        ->not->toContain('position')
+        ->not->toContain('background-image')
+        ->not->toContain('evil.test');
+});

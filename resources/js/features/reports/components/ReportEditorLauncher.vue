@@ -6,6 +6,7 @@ import {
     MessageSquareText,
     Minus,
     Move,
+    Pin,
     Save,
     X,
 } from '@lucide/vue';
@@ -57,11 +58,15 @@ const props = withDefaults(
         buttonLabel?: string;
         inline?: boolean;
         autoOpen?: boolean;
+        hideData?: boolean;
+        systemName?: string;
     }>(),
     {
         buttonLabel: 'Criar relatório',
         inline: false,
         autoOpen: false,
+        hideData: undefined,
+        systemName: undefined,
     },
 );
 
@@ -100,7 +105,7 @@ const context = ref<ReportContext | null>(null);
 const isLoading = ref(false);
 const isSaving = ref(false);
 const isDirty = ref(false);
-const hideData = ref(false);
+const currentHideData = ref(false);
 const isStopped = ref(false);
 const activePanel = ref<'history' | null>(null);
 const history = ref<ReportHistoryItem[]>([]);
@@ -376,7 +381,11 @@ async function loadContext(force = false) {
 
         context.value = await response.json();
         chosenSystemId.value = context.value!.system.id;
-        hideData.value = context.value!.item?.hide_data ?? false;
+        currentHideData.value =
+            props.hideData ??
+            context.value!.item?.hide_data ??
+            context.value!.default_hide_data ??
+            false;
         isStopped.value = context.value!.item?.is_stopped ?? false;
         applyContent(
             context.value!.item?.document,
@@ -424,7 +433,7 @@ async function save(force = false) {
                     system_id: chosenSystemId.value,
                     document: editor.value.getJSON(),
                     html: editor.value.getHTML(),
-                    hide_data: hideData.value,
+                    hide_data: currentHideData.value,
                     show_data_results:
                         context.value.item?.show_data_results ?? false,
                     is_stopped: isStopped.value,
@@ -698,6 +707,15 @@ watch(
     },
 );
 
+watch(
+    () => props.hideData,
+    (value) => {
+        if (value !== undefined) {
+            currentHideData.value = value;
+        }
+    },
+);
+
 onMounted(() => {
     window.addEventListener('beforeunload', beforeUnload);
 
@@ -738,6 +756,23 @@ onBeforeUnmount(() => {
             @confirm="openEditor"
         />
 
+        <!-- Placeholder quando editor inline estiver flutuando -->
+        <div
+            v-if="inline && isFloating"
+            data-test="floating-editor-placeholder"
+            class="flex items-center justify-between gap-3 rounded-xl border border-dashed border-primary/40 bg-primary/5 px-4 py-3 text-xs text-muted-foreground"
+        >
+            <span>Editor aberto em janela flutuante.</span>
+            <button
+                type="button"
+                class="inline-flex items-center gap-1.5 rounded-lg border border-border bg-background px-2.5 py-1 font-medium text-foreground shadow-2xs transition hover:bg-muted"
+                @click="toggleFloating"
+            >
+                <Pin class="size-3.5" />
+                Fixar aqui
+            </button>
+        </div>
+
         <!-- Editor Modal/Floating Section -->
         <section
             v-if="isOpen"
@@ -746,7 +781,9 @@ onBeforeUnmount(() => {
             class="overflow-hidden rounded-xl border bg-card"
             :class="[
                 inline ? 'shadow-2xs' : 'mt-3 shadow-xl',
-                isFloating && 'fixed z-[80] resize overflow-auto',
+                isFloating &&
+                    'fixed z-[80] flex flex-col shadow-2xl ring-1 ring-border',
+                isFloating && !isMinimized && 'resize',
                 isMinimized && 'max-h-12',
             ]"
             :style="
@@ -755,7 +792,7 @@ onBeforeUnmount(() => {
                           left: `${position.x}px`,
                           top: `${position.y}px`,
                           width: `${position.width}px`,
-                          height: `${position.height}px`,
+                          height: isMinimized ? 'auto' : `${position.height}px`,
                           maxWidth: 'calc(100vw - 16px)',
                           maxHeight: 'calc(100vh - 16px)',
                       }
@@ -796,7 +833,7 @@ onBeforeUnmount(() => {
                         {{ stateLabel }}
                     </span>
                 </div>
-                <div class="flex items-center gap-1">
+                <div class="flex items-center gap-1" @pointerdown.stop>
                     <button
                         type="button"
                         class="editor-action"
@@ -840,14 +877,77 @@ onBeforeUnmount(() => {
                 </div>
             </header>
 
-            <div v-if="!isMinimized">
+            <header
+                v-else-if="isFloating"
+                data-test="floating-editor-header"
+                class="flex shrink-0 cursor-move items-center justify-between gap-2 border-b bg-muted/50 px-3 py-2 select-none"
+                @pointerdown="startDrag"
+            >
+                <div
+                    class="flex min-w-0 items-center gap-2 text-xs text-foreground"
+                >
+                    <Move class="size-3.5 shrink-0 text-muted-foreground" />
+                    <strong class="truncate">
+                        {{
+                            context?.system.name ||
+                            systemName ||
+                            'Editor de considerações'
+                        }}
+                    </strong>
+                    <span
+                        class="hidden text-[11px] text-muted-foreground sm:inline"
+                    >
+                        (Arraste para mover)
+                    </span>
+                </div>
+                <div class="flex items-center gap-1" @pointerdown.stop>
+                    <button
+                        type="button"
+                        class="editor-action"
+                        title="Fixar editor no sistema"
+                        @click.stop="toggleFloating"
+                    >
+                        <Pin class="size-3.5" />
+                    </button>
+                    <button
+                        type="button"
+                        class="editor-action"
+                        title="Minimizar"
+                        @click.stop="isMinimized = !isMinimized"
+                    >
+                        <Minus class="size-3.5" />
+                    </button>
+                    <button
+                        type="button"
+                        class="editor-action"
+                        title="Fechar editor"
+                        @click.stop="
+                            if (isFloating) {
+                                toggleFloating();
+                            }
+                            emit('cancel');
+                        "
+                    >
+                        <X class="size-3.5" />
+                    </button>
+                </div>
+            </header>
+
+            <div
+                v-if="!isMinimized"
+                :class="isFloating ? 'flex min-h-0 flex-1 flex-col' : ''"
+            >
                 <!-- TipTap Toolbar -->
                 <ReportEditorToolbar
                     :editor="editor"
                     :context="context"
+                    :is-floating="isFloating"
+                    :show-floating-toggle="inline"
+                    :class="isFloating ? 'shrink-0' : ''"
                     v-model:selected-inline-parameter-ids="
                         selectedInlineParameterIds
                     "
+                    @toggle-floating="toggleFloating"
                     @insert-check-phrase="insertCheckPhrase"
                     @insert-icon="insertIcon"
                     @insert-parameters="insertParameters"
@@ -864,6 +964,7 @@ onBeforeUnmount(() => {
                 <div
                     v-if="isLoading"
                     class="flex h-72 items-center justify-center"
+                    :class="isFloating ? 'min-h-0 flex-1' : ''"
                 >
                     <Loader2 class="size-6 animate-spin text-blue-600" />
                 </div>
@@ -871,6 +972,7 @@ onBeforeUnmount(() => {
                     v-else
                     :editor="editor"
                     class="report-editor border-b"
+                    :class="isFloating ? 'min-h-0 flex-1 overflow-y-auto' : ''"
                     @report-chart-edit="prepareChartEdit"
                 />
 
@@ -885,7 +987,9 @@ onBeforeUnmount(() => {
                     @use-historical="useHistorical"
                 />
 
-                <footer class="flex items-center justify-between gap-2 p-3">
+                <footer
+                    class="flex shrink-0 items-center justify-between gap-2 p-3"
+                >
                     <span class="text-xs text-muted-foreground">
                         {{
                             isDirty ? 'Alterações não salvas' : 'Conteúdo salvo'
@@ -972,5 +1076,10 @@ onBeforeUnmount(() => {
 }
 .report-editor :deep(.report-icon-info) {
     color: #2563eb;
+}
+.report-editor :deep(mark[style*='background-color']) {
+    color: #0f172a;
+    border-radius: 0.2rem;
+    padding: 0.05em 0.2em;
 }
 </style>

@@ -56,6 +56,7 @@ interface SystemSection {
     id: number;
     name: string;
     sort_order: number;
+    default_hide_data?: boolean;
     item: ReportItem | null;
 }
 
@@ -362,7 +363,7 @@ async function groupSystem(
             parent_report_item_id: null,
             parent_monitored_system_id: null,
             show_data_results: true,
-            hide_data: false,
+            hide_data: result.hide_data ?? system.default_hide_data ?? false,
             is_stopped: false,
             comment: null,
             updated_at: result.updated_at,
@@ -442,6 +443,7 @@ function getSystemDates() {
 
 const systemData = reactive<Record<number, ReportData>>({});
 const loadingSystems = reactive<Record<number, boolean>>({});
+const togglingHideData = reactive<Record<number, boolean>>({});
 const historyOpen = ref(false);
 const recipientsOpen = ref(false);
 const agentOpen = ref(false);
@@ -522,7 +524,7 @@ async function toggleSystem(system: SystemSection, checked: boolean) {
     system.item ??= {
         id: result.item_id,
         show_data_results: false,
-        hide_data: false,
+        hide_data: result.hide_data ?? system.default_hide_data ?? false,
         is_stopped: false,
         comment: null,
         updated_at: result.updated_at,
@@ -530,6 +532,7 @@ async function toggleSystem(system: SystemSection, checked: boolean) {
         suggestions: [],
     };
     system.item.show_data_results = result.show_data_results;
+    system.item.hide_data = result.hide_data ?? system.item.hide_data;
 
     if (result.show_data_results) {
         await loadSystem(system);
@@ -537,47 +540,54 @@ async function toggleSystem(system: SystemSection, checked: boolean) {
 }
 
 async function toggleHideData(system: SystemSection) {
-    const currentHide = system.item?.hide_data ?? false;
-    const response = await fetch(
-        updateSystem.url({
-            current_team: props.currentTeam.slug,
-            report: props.report.id,
-        }),
-        {
-            method: 'PUT',
-            headers: {
-                Accept: 'application/json',
-                'Content-Type': 'application/json',
-                'X-CSRF-TOKEN': csrfToken(),
-                'X-Requested-With': 'XMLHttpRequest',
-            },
-            body: JSON.stringify({
-                system_id: system.id,
-                hide_data: !currentHide,
-            }),
-        },
-    );
-
-    if (!response.ok) {
+    if (togglingHideData[system.id]) {
         return;
     }
 
-    const result = await response.json();
+    togglingHideData[system.id] = true;
 
-    system.item ??= {
-        id: result.item_id,
-        show_data_results: result.show_data_results ?? true,
-        hide_data: false,
-        is_stopped: false,
-        comment: null,
-        updated_at: result.updated_at,
-        comments: [],
-        suggestions: [],
-    };
-    system.item.hide_data = result.hide_data;
+    try {
+        const currentHide =
+            system.item?.hide_data ?? system.default_hide_data ?? false;
+        const response = await fetch(
+            updateSystem.url({
+                current_team: props.currentTeam.slug,
+                report: props.report.id,
+            }),
+            {
+                method: 'PUT',
+                headers: {
+                    Accept: 'application/json',
+                    'Content-Type': 'application/json',
+                    'X-CSRF-TOKEN': csrfToken(),
+                    'X-Requested-With': 'XMLHttpRequest',
+                },
+                body: JSON.stringify({
+                    system_id: system.id,
+                    hide_data: !currentHide,
+                }),
+            },
+        );
 
-    if (!system.item.hide_data && system.item.show_data_results) {
-        await loadSystem(system);
+        if (!response.ok) {
+            return;
+        }
+
+        const result = await response.json();
+
+        system.item ??= {
+            id: result.item_id,
+            show_data_results: result.show_data_results ?? false,
+            hide_data: false,
+            is_stopped: false,
+            comment: null,
+            updated_at: result.updated_at,
+            comments: [],
+            suggestions: [],
+        };
+        system.item.hide_data = result.hide_data;
+    } finally {
+        togglingHideData[system.id] = false;
     }
 }
 
@@ -747,10 +757,7 @@ function handleEditorSaved(
 
 onMounted(() =>
     sections.value
-        .filter(
-            (system) =>
-                system.item?.show_data_results && !system.item.hide_data,
-        )
+        .filter((system) => system.item?.show_data_results)
         .forEach((system) => loadSystem(system)),
 );
 </script>
@@ -758,7 +765,7 @@ onMounted(() =>
 <template>
     <Head :title="report.title" />
 
-    <div class="mx-auto grid w-full max-w-[1600px] gap-6 p-4 lg:p-7">
+    <div class="mx-auto grid w-full max-w-[1600px] min-w-0 gap-6 p-4 lg:p-7">
         <!-- Cabeçalho Executivo -->
         <ReportShowHeader
             :report="report"
@@ -796,6 +803,7 @@ onMounted(() =>
             :is-highlighted="highlightedSystemId === system.id"
             :system-dates="getSystemDates()"
             :is-loading-data="loadingSystems[system.id] || false"
+            :is-toggling-hide-data="togglingHideData[system.id] || false"
             :system-data="systemData[system.id]"
             :current-team="currentTeam"
             :systems="systems"

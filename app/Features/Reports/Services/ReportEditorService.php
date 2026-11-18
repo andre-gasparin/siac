@@ -17,6 +17,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 use Symfony\Component\HtmlSanitizer\HtmlSanitizer;
 use Symfony\Component\HtmlSanitizer\HtmlSanitizerConfig;
+use Symfony\Component\HtmlSanitizer\Visitor\AttributeSanitizer\AttributeSanitizerInterface;
 use Symfony\Component\HttpKernel\Exception\ConflictHttpException;
 
 class ReportEditorService
@@ -46,6 +47,9 @@ class ReportEditorService
             'state' => $report === null ? 'new_report' : ($item === null ? 'new_item' : 'existing'),
             'report' => $report ? ['id' => $report->id, 'status' => $report->status, 'date_reference' => $date] : null,
             'item' => $item ? $this->serializeItem($item, $team) : null,
+            'default_hide_data' => $item
+                ? (bool) $item->hide_data
+                : $this->reports->defaultHideDataForSystem($team, $date, $system->id, $report?->id),
             'system' => ['id' => $system->id, 'name' => $system->name],
             'systems' => $this->systems($team),
             'parameters' => Parameter::query()
@@ -499,11 +503,79 @@ PROMPT, ['timeout' => 25]);
             ->allowRelativeLinks()
             ->allowRelativeMedias()
             ->allowMediaSchemes(['https', 'data'])
-            ->allowElement('span', ['class', 'data-report-icon', 'data-parameter-ids'])
+            ->allowElement('span', ['class', 'data-report-icon', 'data-parameter-ids', 'style'])
+            ->allowElement('mark', ['data-color', 'style'])
             ->allowElement('div', ['class', 'data-report-chart', 'data-chart-id', 'data-chart-config'])
+            ->withAttributeSanitizer($this->colorAttributeSanitizer())
             ->withMaxInputLength(1_000_000);
 
         return (new HtmlSanitizer($config))->sanitize($html);
+    }
+
+    private function colorAttributeSanitizer(): AttributeSanitizerInterface
+    {
+        return new class implements AttributeSanitizerInterface
+        {
+            /** @return list<string> */
+            public function getSupportedElements(): array
+            {
+                return ['span', 'mark'];
+            }
+
+            /** @return list<string> */
+            public function getSupportedAttributes(): array
+            {
+                return ['style', 'data-color'];
+            }
+
+            public function sanitizeAttribute(string $element, string $attribute, string $value, HtmlSanitizerConfig $config): ?string
+            {
+                if ($attribute === 'data-color') {
+                    $trimmed = trim($value);
+
+                    return $this->isAllowedCssColor($trimmed, false) ? $trimmed : null;
+                }
+
+                $sanitized = [];
+
+                foreach (explode(';', $value) as $declaration) {
+                    $parts = explode(':', $declaration, 2);
+
+                    if (count($parts) !== 2) {
+                        continue;
+                    }
+
+                    $property = strtolower(trim($parts[0]));
+                    $cssValue = trim($parts[1]);
+
+                    if ($cssValue === '' || ! in_array($property, ['color', 'background-color'], true)) {
+                        continue;
+                    }
+
+                    if ($this->isAllowedCssColor($cssValue, $property === 'color')) {
+                        $sanitized[] = "{$property}: {$cssValue}";
+                    }
+                }
+
+                return $sanitized === [] ? null : implode('; ', $sanitized);
+            }
+
+            private function isAllowedCssColor(string $value, bool $allowInherit): bool
+            {
+                $normalized = strtolower($value);
+
+                if ($allowInherit && $normalized === 'inherit') {
+                    return true;
+                }
+
+                if (! $allowInherit && $normalized === 'transparent') {
+                    return true;
+                }
+
+                return preg_match('/^#(?:[0-9a-f]{3}|[0-9a-f]{4}|[0-9a-f]{6}|[0-9a-f]{8})$/i', $value) === 1
+                    || preg_match('/^rgba?\(\s*(?:25[0-5]|2[0-4]\d|1?\d{1,2})\s*,\s*(?:25[0-5]|2[0-4]\d|1?\d{1,2})\s*,\s*(?:25[0-5]|2[0-4]\d|1?\d{1,2})(?:\s*,\s*(?:0|1|0?\.\d+))?\s*\)$/i', $value) === 1;
+            }
+        };
     }
 
     /** @param array<string, mixed> $document */
