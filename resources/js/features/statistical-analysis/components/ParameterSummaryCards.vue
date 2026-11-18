@@ -60,9 +60,7 @@ function getTotalAlerts(res: ParameterAnalysisResult): number {
                         >
                             {{ res.parameter_name }}
                         </span>
-                        <span
-                            class="font-mono text-[11px] text-muted-foreground"
-                        >
+                        <span class="text-[11px] text-muted-foreground">
                             Unidade: {{ res.unit || 's/u' }} •
                             {{ res.summary.total_analyzed }} medições
                         </span>
@@ -93,7 +91,9 @@ function getTotalAlerts(res: ParameterAnalysisResult): number {
                         <span class="block text-[10px] text-muted-foreground"
                             >Média Alvo (μ₀):</span
                         >
-                        <span class="font-mono font-semibold text-foreground">
+                        <span
+                            class="font-semibold text-foreground tabular-nums"
+                        >
                             {{ res.baseline.effective_mu_0 }}
                         </span>
                     </div>
@@ -101,7 +101,9 @@ function getTotalAlerts(res: ParameterAnalysisResult): number {
                         <span class="block text-[10px] text-muted-foreground"
                             >Desvio Padrão (σ₀):</span
                         >
-                        <span class="font-mono font-semibold text-foreground">
+                        <span
+                            class="font-semibold text-foreground tabular-nums"
+                        >
                             {{ res.baseline.effective_sigma_0 }}
                         </span>
                     </div>
@@ -121,7 +123,9 @@ function getTotalAlerts(res: ParameterAnalysisResult): number {
                             >
                                 <TrendingUp class="h-3 w-3" /> EWMA
                             </span>
-                            <span class="font-mono font-bold text-foreground">
+                            <span
+                                class="font-bold text-foreground tabular-nums"
+                            >
                                 {{ res.summary.ewma.in_control_percentage }}%
                             </span>
                         </div>
@@ -153,7 +157,9 @@ function getTotalAlerts(res: ParameterAnalysisResult): number {
                             >
                                 <Activity class="h-3 w-3" /> CUSUM
                             </span>
-                            <span class="font-mono font-bold text-foreground">
+                            <span
+                                class="font-bold text-foreground tabular-nums"
+                            >
                                 {{ res.summary.cusum.in_control_percentage }}%
                             </span>
                         </div>

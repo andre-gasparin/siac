@@ -42,17 +42,15 @@ function handleConfirm() {
                 <DialogTitle>Colar Mapeamento com Incremento</DialogTitle>
                 <DialogDescription>
                     Você está colando o mapeamento de
-                    <strong class="font-mono text-foreground">{{
-                        sourceCell
-                    }}</strong>
+                    <strong class="text-foreground">{{ sourceCell }}</strong>
                     para
-                    <strong class="font-mono text-foreground">{{
+                    <strong class="text-foreground">{{
                         targetCells.length
                     }}</strong>
                     célula(s). Como deseja tratar a referência de data
                     <span v-if="sourceDateCell"
                         >(atual:
-                        <strong class="font-mono text-foreground">{{
+                        <strong class="text-foreground">{{
                             sourceDateCell
                         }}</strong
                         >)</span

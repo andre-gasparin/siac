@@ -675,7 +675,7 @@ onUnmounted(() => {
         >
             <div class="flex items-center gap-3">
                 <!-- Selection Info -->
-                <div class="flex items-center gap-1.5 font-mono">
+                <div class="flex items-center gap-1.5 tabular-nums">
                     <span class="text-muted-foreground">Seleção:</span>
                     <span
                         class="rounded bg-primary/10 px-2 py-0.5 font-bold text-primary"
@@ -707,13 +707,13 @@ onUnmounted(() => {
                                 (mappedLookup.get(activeCell)?.multiplier ??
                                     1) !== 1
                             "
-                            class="font-mono font-bold text-amber-600 dark:text-amber-400"
+                            class="font-bold text-amber-600 tabular-nums dark:text-amber-400"
                         >
                             (x{{ mappedLookup.get(activeCell)?.multiplier }})
                         </span>
                         <span
                             v-if="mappedLookup.get(activeCell)?.date_cell"
-                            class="font-mono text-muted-foreground"
+                            class="text-muted-foreground tabular-nums"
                         >
                             [Data:
                             {{ mappedLookup.get(activeCell)?.date_cell }}]
@@ -854,7 +854,7 @@ onUnmounted(() => {
                         v-model="jumpCellInput"
                         type="text"
                         placeholder="Ir: AA5"
-                        class="h-6 w-20 rounded border border-input bg-background px-1.5 font-mono text-[11px] uppercase shadow-xs focus-visible:ring-1 focus-visible:ring-ring focus-visible:outline-none"
+                        class="h-6 w-20 rounded border border-input bg-background px-1.5 text-[11px] uppercase tabular-nums shadow-xs focus-visible:ring-1 focus-visible:ring-ring focus-visible:outline-none"
                         title="Digite uma célula (ex: AA1, BD50) e aperte Enter para ir direto a ela"
                         @keydown.enter.prevent="handleJumpToCell"
                     />
@@ -921,7 +921,7 @@ onUnmounted(() => {
             class="flex-1 overflow-auto"
             @scroll="onGridScroll"
         >
-            <table class="w-full border-collapse font-mono text-[11px]">
+            <table class="w-full border-collapse text-[11px] tabular-nums">
                 <thead>
                     <tr class="sticky top-0 z-20 bg-muted/80">
                         <th
@@ -1172,7 +1172,7 @@ onUnmounted(() => {
                                     sampleData[getCoordinate(col, row)] !==
                                         undefined
                                 "
-                                class="truncate font-mono text-[10px] leading-tight text-muted-foreground/80"
+                                class="truncate text-[10px] leading-tight text-muted-foreground/80 tabular-nums"
                             >
                                 {{
                                     formatSampleCellValue(

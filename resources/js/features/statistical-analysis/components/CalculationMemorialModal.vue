@@ -43,18 +43,18 @@ const activeTab = ref<'ewma' | 'cusum'>('ewma');
                                 Memorial de Cálculo Passo a Passo
                             </h3>
                             <span
-                                class="rounded bg-primary/10 px-2 py-0.5 font-mono text-xs font-semibold text-primary"
+                                class="rounded bg-primary/10 px-2 py-0.5 text-xs font-semibold text-primary tabular-nums"
                             >
                                 Ponto #{{ row.index }}
                             </span>
                         </div>
                         <p class="mt-0.5 text-xs text-muted-foreground">
                             Data/Hora da Medição:
-                            <strong class="font-mono text-foreground"
+                            <strong class="text-foreground tabular-nums"
                                 >{{ row.date }} {{ row.time }}</strong
                             >
                             • Valor Medido:
-                            <strong class="font-mono text-sm text-primary">{{
+                            <strong class="text-sm text-primary tabular-nums">{{
                                 row.raw_value
                             }}</strong>
                         </p>
@@ -149,7 +149,7 @@ const activeTab = ref<'ewma' | 'cusum'>('ewma');
                                 Próximo Limite:
                                 {{ row.ewma.closest_limit.target_name }}
                             </span>
-                            <span class="font-mono text-sm font-bold">
+                            <span class="text-sm font-bold tabular-nums">
                                 {{
                                     row.ewma.closest_limit.margin >= 0
                                         ? `+${row.ewma.closest_limit.margin.toFixed(3)}`
@@ -175,7 +175,7 @@ const activeTab = ref<'ewma' | 'cusum'>('ewma');
                                 >Fórmula de Recorrência Teórica</span
                             >
                             <code
-                                class="rounded bg-muted px-2 py-0.5 font-mono text-[11px] font-bold text-primary"
+                                class="rounded bg-muted px-2 py-0.5 font-sans text-[11px] font-bold text-primary"
                             >
                                 {{ row.ewma.memorial.formula_str }}
                             </code>
@@ -188,7 +188,7 @@ const activeTab = ref<'ewma' | 'cusum'>('ewma');
                                 Substituição Aritmética Etapa por Etapa:
                             </span>
                             <div
-                                class="overflow-x-auto rounded-md border bg-background p-3 font-mono text-xs font-semibold text-foreground shadow-2xs"
+                                class="overflow-x-auto rounded-md border bg-background p-3 text-xs font-semibold text-foreground tabular-nums shadow-2xs"
                             >
                                 {{ row.ewma.memorial.substitution_str }}
                             </div>
@@ -210,7 +210,7 @@ const activeTab = ref<'ewma' | 'cusum'>('ewma');
                                     >Valor Medido Atual (Xᵢ)</span
                                 >
                                 <span
-                                    class="font-mono text-sm font-bold text-foreground"
+                                    class="text-sm font-bold text-foreground tabular-nums"
                                     >{{ row.raw_value }}</span
                                 >
                             </div>
@@ -220,7 +220,7 @@ const activeTab = ref<'ewma' | 'cusum'>('ewma');
                                     >Valor EWMA Anterior (Zᵢ₋₁)</span
                                 >
                                 <span
-                                    class="font-mono text-sm font-bold text-foreground"
+                                    class="text-sm font-bold text-foreground tabular-nums"
                                     >{{
                                         row.ewma.memorial.previous_z.toFixed(4)
                                     }}</span
@@ -232,7 +232,7 @@ const activeTab = ref<'ewma' | 'cusum'>('ewma');
                                     >Fator Lambda (λ)</span
                                 >
                                 <span
-                                    class="font-mono text-sm font-bold text-foreground"
+                                    class="text-sm font-bold text-foreground tabular-nums"
                                     >{{ row.ewma.memorial.lambda }}</span
                                 >
                             </div>
@@ -242,7 +242,7 @@ const activeTab = ref<'ewma' | 'cusum'>('ewma');
                                     >Média Alvo Nominal (μ₀)</span
                                 >
                                 <span
-                                    class="font-mono text-sm font-bold text-foreground"
+                                    class="text-sm font-bold text-foreground tabular-nums"
                                     >{{
                                         row.ewma.memorial.mu_0.toFixed(4)
                                     }}</span
@@ -254,7 +254,7 @@ const activeTab = ref<'ewma' | 'cusum'>('ewma');
                                     >Desvio Linha de Base (σ₀)</span
                                 >
                                 <span
-                                    class="font-mono text-sm font-bold text-foreground"
+                                    class="text-sm font-bold text-foreground tabular-nums"
                                     >{{
                                         row.ewma.memorial.sigma_0.toFixed(4)
                                     }}</span
@@ -266,7 +266,7 @@ const activeTab = ref<'ewma' | 'cusum'>('ewma');
                                     >Desvio EWMA no Passo i (σ_{Zᵢ})</span
                                 >
                                 <span
-                                    class="font-mono text-sm font-bold text-primary"
+                                    class="text-sm font-bold text-primary tabular-nums"
                                     >{{ row.ewma.sigma_z.toFixed(4) }}</span
                                 >
                             </div>
@@ -298,7 +298,7 @@ const activeTab = ref<'ewma' | 'cusum'>('ewma');
                                     <th class="px-4 py-2">Status</th>
                                 </tr>
                             </thead>
-                            <tbody class="divide-y font-mono">
+                            <tbody class="divide-y tabular-nums">
                                 <tr
                                     v-for="lvl in row.ewma.levels"
                                     :key="lvl.level"
@@ -395,7 +395,7 @@ const activeTab = ref<'ewma' | 'cusum'>('ewma');
                                 Próximo Patamar:
                                 {{ row.cusum.closest_threshold.target_name }}
                             </span>
-                            <span class="font-mono text-sm font-bold">
+                            <span class="text-sm font-bold tabular-nums">
                                 {{
                                     row.cusum.closest_threshold.margin >= 0
                                         ? `+${row.cusum.closest_threshold.margin.toFixed(3)}`
@@ -426,13 +426,13 @@ const activeTab = ref<'ewma' | 'cusum'>('ewma');
                                     >C⁺ (Desvio Positivo)</span
                                 >
                                 <code
-                                    class="rounded bg-muted px-2 py-0.5 font-mono text-[10px] text-muted-foreground"
+                                    class="rounded bg-muted px-2 py-0.5 font-sans text-[10px] text-muted-foreground"
                                 >
                                     C_i^+ = max(0, X_i - (μ + K) + C_{i-1}^+)
                                 </code>
                             </div>
                             <div
-                                class="overflow-x-auto rounded-md border bg-background p-2.5 font-mono text-[11px] font-semibold text-foreground"
+                                class="overflow-x-auto rounded-md border bg-background p-2.5 text-[11px] font-semibold text-foreground tabular-nums"
                             >
                                 {{ row.cusum.memorial.substitution_pos_str }}
                             </div>
@@ -450,13 +450,13 @@ const activeTab = ref<'ewma' | 'cusum'>('ewma');
                                     >C⁻ (Desvio Negativo)</span
                                 >
                                 <code
-                                    class="rounded bg-muted px-2 py-0.5 font-mono text-[10px] text-muted-foreground"
+                                    class="rounded bg-muted px-2 py-0.5 font-sans text-[10px] text-muted-foreground"
                                 >
                                     C_i^- = max(0, (μ - K) - X_i + C_{i-1}^-)
                                 </code>
                             </div>
                             <div
-                                class="overflow-x-auto rounded-md border bg-background p-2.5 font-mono text-[11px] font-semibold text-foreground"
+                                class="overflow-x-auto rounded-md border bg-background p-2.5 text-[11px] font-semibold text-foreground tabular-nums"
                             >
                                 {{ row.cusum.memorial.substitution_neg_str }}
                             </div>
@@ -476,7 +476,7 @@ const activeTab = ref<'ewma' | 'cusum'>('ewma');
                                     >Fator de Folga (k)</span
                                 >
                                 <span
-                                    class="font-mono text-sm font-bold text-foreground"
+                                    class="text-sm font-bold text-foreground tabular-nums"
                                     >{{ row.cusum.memorial.k_factor }}σ</span
                                 >
                             </div>
@@ -486,7 +486,7 @@ const activeTab = ref<'ewma' | 'cusum'>('ewma');
                                     >Valor K Real (k · σ₀)</span
                                 >
                                 <span
-                                    class="font-mono text-sm font-bold text-foreground"
+                                    class="text-sm font-bold text-foreground tabular-nums"
                                     >{{ row.cusum.k_value.toFixed(4) }}</span
                                 >
                             </div>
@@ -496,7 +496,7 @@ const activeTab = ref<'ewma' | 'cusum'>('ewma');
                                     >Acumulado Anterior C⁺</span
                                 >
                                 <span
-                                    class="font-mono text-sm font-bold text-sky-600"
+                                    class="text-sm font-bold text-sky-600 tabular-nums"
                                     >{{
                                         row.cusum.memorial.previous_c_pos.toFixed(
                                             4,
@@ -510,7 +510,7 @@ const activeTab = ref<'ewma' | 'cusum'>('ewma');
                                     >Acumulado Anterior C⁻</span
                                 >
                                 <span
-                                    class="font-mono text-sm font-bold text-orange-600"
+                                    class="text-sm font-bold text-orange-600 tabular-nums"
                                     >{{
                                         row.cusum.memorial.previous_c_neg.toFixed(
                                             4,
@@ -544,7 +544,7 @@ const activeTab = ref<'ewma' | 'cusum'>('ewma');
                                     <th class="px-4 py-2">Status</th>
                                 </tr>
                             </thead>
-                            <tbody class="divide-y font-mono">
+                            <tbody class="divide-y tabular-nums">
                                 <tr
                                     v-for="lvl in row.cusum.levels"
                                     :key="lvl.level"

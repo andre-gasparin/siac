@@ -11,6 +11,7 @@ export interface ChartSeries {
     axis_position: 'left' | 'right';
     min_val?: number | null;
     max_val?: number | null;
+    decimals?: number;
     unit?: string;
     show_points?: boolean;
     show_values?: boolean;
@@ -58,10 +59,19 @@ function formatTooltipDateTime(value: number | string): string {
     return `${day}/${month}/${year} ${hours}:${minutes}`;
 }
 
-function formatNumericValue(value: number): string {
-    return Number.isFinite(value)
-        ? value.toLocaleString('pt-BR', { maximumFractionDigits: 4 })
-        : '';
+function formatNumericValue(value: number, decimals?: number): string {
+    if (!Number.isFinite(value)) {
+        return '';
+    }
+
+    if (decimals !== undefined && Number.isFinite(decimals)) {
+        return value.toLocaleString('pt-BR', {
+            minimumFractionDigits: decimals,
+            maximumFractionDigits: decimals,
+        });
+    }
+
+    return value.toLocaleString('pt-BR', { maximumFractionDigits: 4 });
 }
 
 function toFiniteNumber(value: unknown): number | null {
@@ -100,12 +110,13 @@ function computeAxisBounds(axisSeries: ChartSeries[]): {
         if (candidates.length > 0) {
             const lowest = Math.min(...candidates);
             const highest = Math.max(...allValues, ...maxLimits, lowest);
-            const span = Math.max(
-                Math.abs(highest - lowest),
-                Math.abs(lowest),
-                1,
-            );
-            computedMin = Number((lowest - span * 0.15).toFixed(2));
+            const rawRange = Math.abs(highest - lowest);
+            const span =
+                rawRange > 0
+                    ? rawRange
+                    : Math.max(Math.abs(lowest) * 0.2, 0.01);
+            const precision = span < 0.5 ? 4 : 2;
+            computedMin = Number((lowest - span * 0.15).toFixed(precision));
         } else {
             computedMin = undefined;
         }
@@ -123,8 +134,11 @@ function computeAxisBounds(axisSeries: ChartSeries[]): {
     ) {
         const highest = Math.max(...maxCandidates);
         const lowest = computedMin ?? Math.min(...allValues, ...minLimits, 0);
-        const span = Math.max(Math.abs(highest - lowest), 1);
-        computedMax = Number((highest + span * 0.1).toFixed(2));
+        const rawRange = Math.abs(highest - lowest);
+        const span =
+            rawRange > 0 ? rawRange : Math.max(Math.abs(highest) * 0.2, 0.01);
+        const precision = span < 0.5 ? 4 : 2;
+        computedMax = Number((highest + span * 0.12).toFixed(precision));
     }
 
     return { min: computedMin, max: computedMax };
@@ -170,6 +184,9 @@ function renderChart() {
                 min: bounds.min,
                 max: bounds.max,
                 name: series.unit ?? '',
+                axisLabel: {
+                    formatter: (value: number) => formatNumericValue(value),
+                },
                 splitLine: { show: axisIndex === 0 },
             });
         }
@@ -183,33 +200,39 @@ function renderChart() {
         const markLineData: Array<Record<string, unknown>> = [];
 
         if (minVal !== null) {
+            const formattedMin = formatNumericValue(minVal, series.decimals);
             markLineData.push({
                 yAxis: minVal,
                 name: 'Limite Mín.',
                 lineStyle: { color: limitColor, type: 'dashed', width: 1.5 },
                 label: {
                     formatter: hasMultipleLimitSeries
-                        ? `Mín (${series.label}): ${formatNumericValue(minVal)}`
-                        : `Mín: ${formatNumericValue(minVal)}`,
+                        ? `Mín (${series.label}): ${formattedMin}`
+                        : `Mín: ${formattedMin}`,
                     position: 'insideStartTop',
                     color: limitColor,
                     fontSize: 10,
+                    fontWeight: 600,
+                    fontFamily: "'Poppins', sans-serif",
                 },
             });
         }
 
         if (maxVal !== null) {
+            const formattedMax = formatNumericValue(maxVal, series.decimals);
             markLineData.push({
                 yAxis: maxVal,
                 name: 'Limite Máx.',
                 lineStyle: { color: limitColor, type: 'dashed', width: 1.5 },
                 label: {
                     formatter: hasMultipleLimitSeries
-                        ? `Máx (${series.label}): ${formatNumericValue(maxVal)}`
-                        : `Máx: ${formatNumericValue(maxVal)}`,
+                        ? `Máx (${series.label}): ${formattedMax}`
+                        : `Máx: ${formattedMax}`,
                     position: 'insideEndTop',
                     color: limitColor,
                     fontSize: 10,
+                    fontWeight: 600,
+                    fontFamily: "'Poppins', sans-serif",
                 },
             });
         }
@@ -261,8 +284,14 @@ function renderChart() {
     chart.setOption(
         {
             animation: false,
+            textStyle: {
+                fontFamily: "'Poppins', sans-serif",
+            },
             tooltip: {
                 trigger: 'axis',
+                textStyle: {
+                    fontFamily: "'Poppins', sans-serif",
+                },
                 formatter: (params: unknown) => {
                     const items = Array.isArray(params) ? params : [params];
 

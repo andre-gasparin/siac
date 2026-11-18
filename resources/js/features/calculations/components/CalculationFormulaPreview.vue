@@ -45,9 +45,7 @@ const hasResultMultiplier = computed(
 </script>
 
 <template>
-    <div
-        class="flex flex-wrap items-center gap-1.5 font-mono text-sm leading-relaxed"
-    >
+    <div class="flex flex-wrap items-center gap-1.5 text-sm leading-relaxed">
         <CalculationParameterBadge
             role="destination"
             :name="destinationName"

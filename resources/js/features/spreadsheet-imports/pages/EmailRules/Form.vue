@@ -387,7 +387,7 @@ function handleSubmit() {
                             id="custom-pattern"
                             v-model="form.date_extraction_pattern"
                             placeholder="Ex: /data[_-](\d{4}[-_]\d{2}[-_]\d{2})/i"
-                            class="font-mono text-xs"
+                            class="text-xs"
                         />
                         <p class="text-[10px] text-muted-foreground">
                             Deixe em branco para usar os padrões automáticos do

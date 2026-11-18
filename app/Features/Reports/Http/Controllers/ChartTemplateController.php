@@ -158,7 +158,7 @@ class ChartTemplateController extends Controller
     {
         $seriesList = $template->series->values();
         $resolvedColors = ConsolidatedReportService::resolveSeriesColors(
-            $seriesList->map(fn (ChartSeries $seriesItem): ?string => $seriesItem->color)->values()->all()
+            array_values($seriesList->map(fn (ChartSeries $seriesItem): ?string => $seriesItem->color)->all())
         );
 
         return [

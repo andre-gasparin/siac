@@ -216,7 +216,7 @@ function getAlertBadgeClass(level: number) {
                     >
                         <!-- Ponto -->
                         <td
-                            class="px-3 py-2 font-mono text-[11px] text-muted-foreground"
+                            class="px-3 py-2 text-[11px] text-muted-foreground tabular-nums"
                         >
                             #{{ row.index }}
                         </td>
@@ -227,21 +227,21 @@ function getAlertBadgeClass(level: number) {
                                 row.date
                             }}</span>
                             <span
-                                class="font-mono text-[10px] text-muted-foreground"
+                                class="text-[10px] text-muted-foreground tabular-nums"
                                 >{{ row.time }}</span
                             >
                         </td>
 
                         <!-- Medição Real -->
                         <td
-                            class="px-3 py-2 text-right font-mono font-bold text-foreground"
+                            class="px-3 py-2 text-right font-bold text-foreground tabular-nums"
                         >
                             {{ row.raw_value.toFixed(result.decimals) }}
                         </td>
 
                         <!-- EWMA Z_i -->
                         <td
-                            class="border-l bg-primary/5 px-3 py-2 text-center font-mono font-semibold text-primary"
+                            class="border-l bg-primary/5 px-3 py-2 text-center font-semibold text-primary tabular-nums"
                         >
                             {{ row.ewma.z_value.toFixed(result.decimals + 1) }}
                         </td>
@@ -269,7 +269,7 @@ function getAlertBadgeClass(level: number) {
 
                         <!-- EWMA Closest Limit -->
                         <td
-                            class="bg-primary/5 px-3 py-2 font-mono text-[11px]"
+                            class="bg-primary/5 px-3 py-2 text-[11px] tabular-nums"
                         >
                             <div
                                 class="flex items-center justify-between gap-2"
@@ -300,7 +300,7 @@ function getAlertBadgeClass(level: number) {
 
                         <!-- CUSUM (C+ / C-) -->
                         <td
-                            class="border-l bg-amber-500/5 px-3 py-2 text-center font-mono font-semibold"
+                            class="border-l bg-amber-500/5 px-3 py-2 text-center font-semibold tabular-nums"
                         >
                             <span class="text-sky-600">{{
                                 row.cusum.c_pos.toFixed(2)
@@ -334,7 +334,7 @@ function getAlertBadgeClass(level: number) {
 
                         <!-- CUSUM Closest Threshold -->
                         <td
-                            class="bg-amber-500/5 px-3 py-2 font-mono text-[11px]"
+                            class="bg-amber-500/5 px-3 py-2 text-[11px] tabular-nums"
                         >
                             <div
                                 class="flex items-center justify-between gap-2"

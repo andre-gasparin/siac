@@ -11,7 +11,7 @@ defineProps<{
 <template>
     <span
         v-if="multiplier !== null && multiplier !== undefined"
-        class="inline-flex items-center gap-1 font-mono text-sm"
+        class="inline-flex items-center gap-1 text-sm tabular-nums"
     >
         <span class="font-semibold text-muted-foreground">(</span>
         <CalculationParameterBadge :role="role" :name="name" />

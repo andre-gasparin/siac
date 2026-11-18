@@ -13,7 +13,19 @@ beforeEach(function () {
     $this->user->update(['current_team_id' => $this->team->id]);
     $this->system = MonitoredSystem::query()->create(['team_id' => $this->team->id, 'name' => 'Sistema principal', 'sort_order' => 1, 'is_active' => true]);
     MonitoredSystem::query()->create(['team_id' => $this->team->id, 'name' => 'Sistema seguinte', 'sort_order' => 2, 'is_active' => true]);
-    $this->parameter = Parameter::query()->create(['team_id' => $this->team->id, 'monitored_system_id' => $this->system->id, 'name' => 'pH', 'tag' => 'PH-001', 'sort_order' => 1, 'is_active' => true]);
+    $this->parameter = Parameter::query()->create([
+        'team_id' => $this->team->id,
+        'monitored_system_id' => $this->system->id,
+        'name' => 'pH',
+        'tag' => 'PH-001',
+        'category' => 'ON',
+        'unit' => 'pH',
+        'decimals' => 2,
+        'alert_1_min' => 6.5,
+        'alert_1_max' => 8.5,
+        'sort_order' => 1,
+        'is_active' => true,
+    ]);
     ParameterValue::query()->create(['team_id' => $this->team->id, 'monitored_system_id' => $this->system->id, 'parameter_id' => $this->parameter->id, 'measured_at' => now()->startOfHour(), 'measured_date' => today(), 'value' => 7.5]);
     $this->actingAs($this->user);
 });
@@ -23,7 +35,11 @@ test('table charts are loaded only when requested and support lines and bars', f
         ->assertDontSee('Criar relatório')
         ->assertDontSee('Editar considerações Consucal')
         ->click('Carregar')
-        ->assertSee('PH-001')
+        ->assertSee('TAG: PH-001')
+        ->assertSee('ON')
+        ->assertSee('mín. 6,50')
+        ->assertSee('máx. 8,50')
+        ->assertDontSee('Limite mínimo Al.1')
         ->assertSee($this->team->name.' - '.$this->system->name)
         ->assertDontSee('Sistema:')
         ->assertSeeIn('div:has(> span[role="status"])', '1 de 1 colunas')
@@ -36,8 +52,12 @@ test('table charts are loaded only when requested and support lines and bars', f
         ->assertMissing('[data-report-chart-renderer]')
         ->click('[aria-label="Gráfico de linha de pH"]')
         ->assertSee('Leituras do período carregado')
+        ->assertSeeIn('[data-test="chart-dialog-limits"]', 'Mínimo: 6,50 pH')
+        ->assertSeeIn('[data-test="chart-dialog-limits"]', 'Máximo: 8,50 pH')
         ->assertPresent('[data-report-chart-renderer]')
         ->click('Barras')
+        ->assertSeeIn('[data-test="chart-dialog-limits"]', 'Mínimo: 6,50 pH')
+        ->assertSeeIn('[data-test="chart-dialog-limits"]', 'Máximo: 8,50 pH')
         ->screenshot(filename: 'data-table-chart')
         ->assertNoJavaScriptErrors();
 });
@@ -80,16 +100,41 @@ test('table system selection navigation and options work independently', functio
         ->assertNoJavaScriptErrors();
 });
 
-test('data entry shows a clickable EWMA calculation while typing', function () {
-    $parameter = Parameter::query()->create(['team_id' => $this->team->id, 'monitored_system_id' => $this->system->id, 'name' => 'Temperatura', 'tag' => 'TT-001', 'is_active' => true]);
+test('data entry shows ordered columns, tag, category, Poppins font and clickable EWMA calculation while typing', function () {
+    $parameter = Parameter::query()->create([
+        'team_id' => $this->team->id,
+        'monitored_system_id' => $this->system->id,
+        'name' => 'Temperatura',
+        'tag' => 'TT-001',
+        'category' => 'LAB',
+        'unit' => '°C',
+        'decimals' => 2,
+        'alert_1_min' => 10,
+        'alert_1_max' => 30,
+        'sort_order' => 2,
+        'is_active' => true,
+    ]);
     for ($index = 1; $index <= 25; $index++) {
         $at = now()->startOfMinute()->subHours($index);
         ParameterValue::query()->create(['team_id' => $this->team->id, 'monitored_system_id' => $this->system->id, 'parameter_id' => $parameter->id, 'measured_at' => $at, 'measured_date' => $at->toDateString(), 'value' => 10 + $index % 2]);
     }
 
-    visit(route('data-entry.index', $this->team))
-        ->assertSee('TT-001')
-        ->fill('[aria-label="Resultado de Temperatura"]', '100')
+    $page = visit(route('data-entry.index', $this->team))
+        ->assertSee('TAG: TT-001')
+        ->assertSee('LAB');
+
+    $headers = $page->script(<<<'JS'
+        () => [...document.querySelectorAll('table thead th')].map((el) => el.textContent.trim())
+    JS);
+    expect($headers)->toBe(['Parâmetro / TAG', 'Origem', 'Unidade', 'Resultado', 'Mínimo', 'Máximo', 'Predição']);
+
+    $allPoppins = $page->script(<<<'JS'
+        () => [...document.querySelectorAll('table :is(th, td), input, span, p')]
+            .every((el) => /^["']?Poppins["']?,/.test(getComputedStyle(el).fontFamily))
+    JS);
+    expect($allPoppins)->toBeTrue();
+
+    $page->fill('[aria-label="Resultado de Temperatura"]', '100')
         ->click('[aria-label="Ver cálculo EWMA de Temperatura"]')
         ->assertSee('acima do limite superior')
         ->assertSee('20 leituras anteriores')

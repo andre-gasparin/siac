@@ -598,34 +598,34 @@ function isOutside(row: DataRow, parameter: ParameterItem): boolean {
                                 {{ param.system_name }}
                             </th>
                         </tr>
-                        <!-- Linha 1: Nome do Parâmetro + colunas fixas com rowspan="4" -->
-                        <tr class="border-b">
+                        <!-- Linha 1: Nome do Parâmetro + Origem e colunas fixas com rowspan="5" -->
+                        <tr>
                             <th
-                                rowspan="4"
-                                class="border-r bg-card px-2 py-2 align-middle text-xs font-semibold"
+                                rowspan="5"
+                                class="border-r border-b bg-card px-2 py-2 align-middle text-xs font-semibold"
                             >
                                 Ações
                             </th>
                             <th
-                                rowspan="4"
-                                class="border-r bg-card px-2 py-2 align-middle text-xs font-semibold"
+                                rowspan="5"
+                                class="border-r border-b bg-card px-2 py-2 align-middle text-xs font-semibold"
                             >
                                 Data
                             </th>
                             <th
-                                rowspan="4"
-                                class="border-r bg-card px-2 py-2 align-middle text-xs font-semibold"
+                                rowspan="5"
+                                class="border-r border-b bg-card px-2 py-2 align-middle text-xs font-semibold"
                             >
                                 Hora
                             </th>
                             <th
                                 v-for="param in visibleParameters"
                                 :key="param.id"
-                                class="border-r px-2 pt-2 pb-1 align-middle text-xs leading-tight font-bold wrap-anywhere"
+                                class="border-r px-2 pt-2.5 pb-0.5 align-middle text-xs leading-tight font-bold wrap-anywhere text-foreground"
                                 :class="[
                                     getSystemStyle(param.monitored_system_id)
                                         .colBg,
-                                    !fitToScreen && 'min-w-[96px]',
+                                    !fitToScreen && 'min-w-[110px]',
                                 ]"
                             >
                                 <div
@@ -639,26 +639,12 @@ function isOutside(row: DataRow, parameter: ParameterItem): boolean {
                                 </div>
                             </th>
                         </tr>
-                        <!-- Linha 2: Unidade -->
-                        <tr class="border-b">
+                        <!-- Linha 2: TAG / Código -->
+                        <tr>
                             <th
                                 v-for="param in visibleParameters"
                                 :key="param.id"
-                                class="border-r px-2 py-1 align-middle text-[11px] font-normal wrap-anywhere text-muted-foreground"
-                                :class="
-                                    getSystemStyle(param.monitored_system_id)
-                                        .colBg
-                                "
-                            >
-                                {{ param.unit || '—' }}
-                            </th>
-                        </tr>
-                        <!-- Linha 3: TAG / Código (alinhada no topo, tamanho reduzido e truncada com tooltip) -->
-                        <tr class="border-b">
-                            <th
-                                v-for="param in visibleParameters"
-                                :key="param.id"
-                                class="border-r px-1.5 py-0.5 align-top text-[10px] leading-tight font-medium text-primary"
+                                class="border-r px-1.5 py-0.5 align-middle text-[10px] leading-tight font-normal text-muted-foreground"
                                 :class="
                                     getSystemStyle(param.monitored_system_id)
                                         .colBg
@@ -667,34 +653,96 @@ function isOutside(row: DataRow, parameter: ParameterItem): boolean {
                                 <Tooltip v-if="param.tag || param.code">
                                     <TooltipTrigger as-child>
                                         <span
-                                            class="mx-auto block max-w-[84px] cursor-default truncate"
-                                            :title="param.tag || param.code"
+                                            class="mx-auto block max-w-[104px] cursor-default truncate"
+                                            :title="`TAG: ${param.tag || param.code}`"
                                         >
-                                            {{ param.tag || param.code }}
+                                            TAG: {{ param.tag || param.code }}
                                         </span>
                                     </TooltipTrigger>
                                     <TooltipContent side="top">
-                                        {{ param.tag || param.code }}
+                                        TAG: {{ param.tag || param.code }}
                                     </TooltipContent>
                                 </Tooltip>
-                                <span v-else class="block text-muted-foreground"
-                                    >—</span
-                                >
+                                <span v-else class="block">—</span>
                             </th>
                         </tr>
-                        <!-- Linha 4: Ícones de Ação (Gráfico de Linha e Gráfico de Coluna/Barra) -->
-                        <tr class="border-b">
+                        <!-- Linha 3: Unidade -->
+                        <tr>
                             <th
                                 v-for="param in visibleParameters"
                                 :key="param.id"
-                                class="border-r px-2 py-1.5 align-middle"
+                                class="border-r px-2 py-0.5 align-middle text-[11px] font-normal wrap-anywhere text-muted-foreground"
+                                :class="
+                                    getSystemStyle(param.monitored_system_id)
+                                        .colBg
+                                "
+                            >
+                                {{ param.unit || '—' }}
+                            </th>
+                        </tr>
+                        <!-- Linha 4: Limites (mínimo / máximo) em pílulas -->
+                        <tr>
+                            <th
+                                v-for="param in visibleParameters"
+                                :key="param.id"
+                                class="border-r px-1.5 py-1 align-middle font-normal"
                                 :class="
                                     getSystemStyle(param.monitored_system_id)
                                         .colBg
                                 "
                             >
                                 <div
-                                    class="flex items-center justify-center gap-1"
+                                    v-if="
+                                        param.alert_1_min != null ||
+                                        param.alert_1_max != null
+                                    "
+                                    class="flex flex-wrap items-center justify-center gap-1"
+                                >
+                                    <span
+                                        v-if="param.alert_1_min != null"
+                                        class="inline-flex items-center rounded-full bg-emerald-500/15 px-2 py-0.5 text-[10px] leading-none font-medium text-emerald-800 tabular-nums dark:bg-emerald-500/20 dark:text-emerald-300"
+                                    >
+                                        mín.
+                                        {{
+                                            formatValue(
+                                                param.alert_1_min,
+                                                param.decimals,
+                                            )
+                                        }}
+                                    </span>
+                                    <span
+                                        v-if="param.alert_1_max != null"
+                                        class="inline-flex items-center rounded-full bg-emerald-500/15 px-2 py-0.5 text-[10px] leading-none font-medium text-emerald-800 tabular-nums dark:bg-emerald-500/20 dark:text-emerald-300"
+                                    >
+                                        máx.
+                                        {{
+                                            formatValue(
+                                                param.alert_1_max,
+                                                param.decimals,
+                                            )
+                                        }}
+                                    </span>
+                                </div>
+                                <span
+                                    v-else
+                                    class="block text-[10px] text-muted-foreground"
+                                    >—</span
+                                >
+                            </th>
+                        </tr>
+                        <!-- Linha 5: Ícones de Ação (Gráfico de Linha e Gráfico de Coluna/Barra) -->
+                        <tr class="border-b">
+                            <th
+                                v-for="param in visibleParameters"
+                                :key="param.id"
+                                class="border-r px-2 pt-0.5 pb-2 align-middle"
+                                :class="
+                                    getSystemStyle(param.monitored_system_id)
+                                        .colBg
+                                "
+                            >
+                                <div
+                                    class="flex items-center justify-center gap-1.5"
                                 >
                                     <button
                                         type="button"
@@ -719,38 +767,6 @@ function isOutside(row: DataRow, parameter: ParameterItem): boolean {
                                         <ChartColumn class="size-3.5" />
                                     </button>
                                 </div>
-                            </th>
-                        </tr>
-                        <!-- Linhas 5 e 6: AL1 (mínimo e máximo) -->
-                        <tr
-                            v-for="limit in ['min', 'max'] as const"
-                            :key="limit"
-                            class="border-b text-[11px] text-muted-foreground"
-                        >
-                            <th
-                                colspan="3"
-                                class="border-r bg-card px-2 py-1.5 text-left font-medium"
-                            >
-                                Limite
-                                {{ limit === 'min' ? 'mínimo' : 'máximo' }} Al.1
-                            </th>
-                            <th
-                                v-for="param in visibleParameters"
-                                :key="param.id"
-                                class="border-r px-2 py-1.5 font-normal wrap-anywhere tabular-nums"
-                                :class="
-                                    getSystemStyle(param.monitored_system_id)
-                                        .colBg
-                                "
-                            >
-                                {{
-                                    formatValue(
-                                        limit === 'min'
-                                            ? param.alert_1_min
-                                            : param.alert_1_max,
-                                        param.decimals,
-                                    )
-                                }}
                             </th>
                         </tr>
                     </thead>

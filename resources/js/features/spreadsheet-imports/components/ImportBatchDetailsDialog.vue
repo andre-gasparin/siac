@@ -106,7 +106,7 @@ function formatDateTime(val?: string | null): string {
                     <div class="flex items-center gap-2">
                         <span>Dados Importados do Lote</span>
                         <span
-                            class="rounded bg-muted px-2.5 py-0.5 font-mono text-xs font-medium text-foreground"
+                            class="rounded bg-muted px-2.5 py-0.5 text-xs font-medium text-foreground"
                         >
                             {{ fileName }}
                         </span>
@@ -310,7 +310,7 @@ function formatDateTime(val?: string | null): string {
                                         : '',
                                 ]"
                             >
-                                <td class="p-2 font-mono">
+                                <td class="p-2 tabular-nums">
                                     <span class="font-bold">{{
                                         item.cell || '-'
                                     }}</span>
@@ -334,10 +334,10 @@ function formatDateTime(val?: string | null): string {
                                         {{ item.unit ? `• ${item.unit}` : '' }}
                                     </div>
                                 </td>
-                                <td class="p-2 text-right font-mono">
+                                <td class="p-2 text-right tabular-nums">
                                     {{ item.raw_value ?? '-' }}
                                 </td>
-                                <td class="p-2 text-center font-mono">
+                                <td class="p-2 text-center tabular-nums">
                                     <span
                                         v-if="
                                             item.multiplier &&
@@ -352,7 +352,7 @@ function formatDateTime(val?: string | null): string {
                                     >
                                 </td>
                                 <td
-                                    class="p-2 text-right font-mono font-bold text-foreground"
+                                    class="p-2 text-right font-bold text-foreground tabular-nums"
                                 >
                                     <span
                                         v-if="
@@ -372,7 +372,9 @@ function formatDateTime(val?: string | null): string {
                                         >-</span
                                     >
                                 </td>
-                                <td class="p-2 font-mono text-muted-foreground">
+                                <td
+                                    class="p-2 text-muted-foreground tabular-nums"
+                                >
                                     {{ formatDateTime(item.measured_at) }}
                                 </td>
                                 <td class="p-2 text-center">

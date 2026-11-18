@@ -887,7 +887,7 @@ class ConsolidatedReportService
             ->values();
 
         $resolvedColors = self::resolveSeriesColors(
-            $filteredSeries->map(fn (array $config): ?string => is_string($config['color'] ?? null) ? $config['color'] : null)->values()->all()
+            array_values($filteredSeries->map(fn (array $config): ?string => is_string($config['color'] ?? null) ? $config['color'] : null)->all())
         );
 
         $builtSeries = $filteredSeries

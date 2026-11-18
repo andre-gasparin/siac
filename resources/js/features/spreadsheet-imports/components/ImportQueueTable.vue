@@ -158,7 +158,7 @@ const selectedErrorItem = ref<ImportQueueItem | null>(null);
                         <td class="px-4 py-3">
                             <span
                                 v-if="item.reference_date"
-                                class="font-mono text-foreground"
+                                class="text-foreground tabular-nums"
                             >
                                 {{ formatBrazilianDate(item.reference_date) }}
                             </span>
@@ -224,7 +224,9 @@ const selectedErrorItem = ref<ImportQueueItem | null>(null);
                         </td>
 
                         <!-- Created At -->
-                        <td class="px-4 py-3 font-mono text-muted-foreground">
+                        <td
+                            class="px-4 py-3 text-muted-foreground tabular-nums"
+                        >
                             {{ formatBrazilianDateTime(item.created_at) }}
                         </td>
 
@@ -305,9 +307,7 @@ const selectedErrorItem = ref<ImportQueueItem | null>(null);
                         class="rounded-md bg-destructive/10 p-3 text-destructive"
                     >
                         <p class="font-semibold">Mensagem de Erro:</p>
-                        <p
-                            class="mt-1 font-mono text-[11px] whitespace-pre-wrap"
-                        >
+                        <p class="mt-1 text-[11px] whitespace-pre-wrap">
                             {{
                                 selectedErrorItem?.error_message ||
                                 'Erro desconhecido durante o processamento da planilha.'
@@ -323,7 +323,7 @@ const selectedErrorItem = ref<ImportQueueItem | null>(null);
                             Rastreamento técnico (Stack trace):
                         </p>
                         <pre
-                            class="max-h-40 overflow-y-auto rounded-md bg-muted p-2 font-mono text-[10px] text-foreground/80"
+                            class="max-h-40 overflow-y-auto rounded-md bg-muted p-2 font-sans text-[10px] text-foreground/80"
                             >{{ selectedErrorItem.error_trace }}</pre>
                     </div>
                 </div>

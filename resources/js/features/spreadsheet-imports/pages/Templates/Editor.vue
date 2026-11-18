@@ -777,13 +777,13 @@ function handleSaveTemplate() {
                     <span class="font-medium text-muted-foreground">Data:</span>
                     <Input
                         v-model="activeSheet.date_cell"
-                        class="h-7 w-16 font-mono text-xs uppercase"
+                        class="h-7 w-16 text-xs uppercase tabular-nums"
                         placeholder="ex: B6"
                     />
                     <span class="font-medium text-muted-foreground">Hora:</span>
                     <Input
                         v-model="activeSheet.time_cell"
-                        class="h-7 w-16 font-mono text-xs uppercase"
+                        class="h-7 w-16 text-xs uppercase tabular-nums"
                         placeholder="ex: C7"
                     />
                 </div>
@@ -942,7 +942,7 @@ function handleSaveTemplate() {
                             >
                             <Input
                                 v-model="activeSheet.date_cell"
-                                class="h-7 w-16 font-mono text-xs uppercase"
+                                class="h-7 w-16 text-xs uppercase tabular-nums"
                                 placeholder="ex: B6"
                             />
                         </div>
@@ -953,7 +953,7 @@ function handleSaveTemplate() {
                             >
                             <Input
                                 v-model="activeSheet.time_cell"
-                                class="h-7 w-16 font-mono text-xs uppercase"
+                                class="h-7 w-16 text-xs uppercase tabular-nums"
                                 placeholder="ex: C7"
                             />
                         </div>
@@ -976,7 +976,7 @@ function handleSaveTemplate() {
                                 v-model.number="activeSheet.date_row"
                                 type="number"
                                 min="1"
-                                class="flex h-7 w-14 rounded-md border border-input bg-background px-2 text-center font-mono text-xs font-bold text-primary shadow-xs transition-colors focus-visible:ring-1 focus-visible:ring-ring focus-visible:outline-none"
+                                class="flex h-7 w-14 rounded-md border border-input bg-background px-2 text-center text-xs font-bold text-primary tabular-nums shadow-xs transition-colors focus-visible:ring-1 focus-visible:ring-ring focus-visible:outline-none"
                                 placeholder="2"
                             />
                         </div>
@@ -990,7 +990,7 @@ function handleSaveTemplate() {
                                 v-model.number="activeSheet.time_row"
                                 type="number"
                                 min="1"
-                                class="flex h-7 w-16 rounded-md border border-input bg-background px-2 text-center font-mono text-xs font-bold text-primary shadow-xs transition-colors focus-visible:ring-1 focus-visible:ring-ring focus-visible:outline-none"
+                                class="flex h-7 w-16 rounded-md border border-input bg-background px-2 text-center text-xs font-bold text-primary tabular-nums shadow-xs transition-colors focus-visible:ring-1 focus-visible:ring-ring focus-visible:outline-none"
                                 placeholder="Opcional"
                                 title="Deixe vazio se o horário estiver junto com a data na mesma célula"
                             />
@@ -1022,7 +1022,7 @@ function handleSaveTemplate() {
                                     v-for="timeTag in activeSheet.allowed_times ??
                                     []"
                                     :key="timeTag"
-                                    class="inline-flex items-center gap-1 rounded-md border border-primary/30 bg-primary/10 px-1.5 py-0.5 font-mono text-[11px] font-bold text-primary"
+                                    class="inline-flex items-center gap-1 rounded-md border border-primary/30 bg-primary/10 px-1.5 py-0.5 text-[11px] font-bold text-primary tabular-nums"
                                 >
                                     {{ timeTag }}
                                     <button
@@ -1041,7 +1041,7 @@ function handleSaveTemplate() {
                                     v-model="newTimeInput"
                                     type="text"
                                     placeholder="+ ex: 07:00"
-                                    class="h-7 w-20 rounded-md border border-input bg-background px-1.5 font-mono text-xs shadow-xs focus-visible:ring-1 focus-visible:ring-ring focus-visible:outline-none"
+                                    class="h-7 w-20 rounded-md border border-input bg-background px-1.5 text-xs tabular-nums shadow-xs focus-visible:ring-1 focus-visible:ring-ring focus-visible:outline-none"
                                     @keydown="handleKeydownTimeInput"
                                 />
                                 <Button
@@ -1075,7 +1075,7 @@ function handleSaveTemplate() {
                             >
                             <Input
                                 v-model="activeSheet.date_column"
-                                class="h-7 w-14 text-center font-mono text-xs font-bold text-primary uppercase"
+                                class="h-7 w-14 text-center text-xs font-bold text-primary uppercase tabular-nums"
                                 placeholder="A"
                             />
                         </div>
@@ -1087,7 +1087,7 @@ function handleSaveTemplate() {
                             >
                             <input
                                 v-model="activeSheet.time_column"
-                                class="flex h-7 w-16 rounded-md border border-input bg-background px-2 text-center font-mono text-xs font-bold text-primary uppercase shadow-xs transition-colors focus-visible:ring-1 focus-visible:ring-ring focus-visible:outline-none"
+                                class="flex h-7 w-16 rounded-md border border-input bg-background px-2 text-center text-xs font-bold text-primary uppercase tabular-nums shadow-xs transition-colors focus-visible:ring-1 focus-visible:ring-ring focus-visible:outline-none"
                                 placeholder="Opcional"
                                 title="Deixe vazio se o horário estiver junto com a data na mesma célula"
                             />
@@ -1119,7 +1119,7 @@ function handleSaveTemplate() {
                                     v-for="timeTag in activeSheet.allowed_times ??
                                     []"
                                     :key="timeTag"
-                                    class="inline-flex items-center gap-1 rounded-md border border-primary/30 bg-primary/10 px-1.5 py-0.5 font-mono text-[11px] font-bold text-primary"
+                                    class="inline-flex items-center gap-1 rounded-md border border-primary/30 bg-primary/10 px-1.5 py-0.5 text-[11px] font-bold text-primary tabular-nums"
                                 >
                                     {{ timeTag }}
                                     <button
@@ -1138,7 +1138,7 @@ function handleSaveTemplate() {
                                     v-model="newTimeInput"
                                     type="text"
                                     placeholder="+ ex: 07:00"
-                                    class="h-7 w-20 rounded-md border border-input bg-background px-1.5 font-mono text-xs shadow-xs focus-visible:ring-1 focus-visible:ring-ring focus-visible:outline-none"
+                                    class="h-7 w-20 rounded-md border border-input bg-background px-1.5 text-xs tabular-nums shadow-xs focus-visible:ring-1 focus-visible:ring-ring focus-visible:outline-none"
                                     @keydown="handleKeydownTimeInput"
                                 />
                                 <Button
@@ -1213,7 +1213,7 @@ function handleSaveTemplate() {
                             }}</span>
                             <span
                                 :class="[
-                                    'inline-flex h-4 min-w-4.5 items-center justify-center rounded-full px-1.5 font-mono text-[10px] leading-none font-semibold transition-colors',
+                                    'inline-flex h-4 min-w-4.5 items-center justify-center rounded-full px-1.5 text-[10px] leading-none font-semibold tabular-nums transition-colors',
                                     (sheet.mappings?.length ?? 0) > 0
                                         ? activeSheetIndex === sIdx
                                             ? 'bg-emerald-500 text-white shadow-xs'

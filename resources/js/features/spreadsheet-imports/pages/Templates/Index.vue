@@ -167,7 +167,7 @@ function handleDelete(template: SpreadsheetTemplateItem) {
                     class="space-y-2 py-2 text-xs text-muted-foreground"
                 >
                     <div
-                        class="grid grid-cols-2 gap-2 rounded-md bg-muted/40 p-2.5 font-mono"
+                        class="grid grid-cols-2 gap-2 rounded-md bg-muted/40 p-2.5 tabular-nums"
                     >
                         <div>
                             <div

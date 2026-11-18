@@ -899,7 +899,7 @@ async function revertSingleSystem(batchId: number, groupUuid: string) {
                                                     {{ p.name }}
                                                 </td>
                                                 <td
-                                                    class="py-1.5 pr-2 text-right font-mono font-bold"
+                                                    class="py-1.5 pr-2 text-right font-bold tabular-nums"
                                                     :class="[
                                                         isParamOutOfLimits(p)
                                                             ? 'text-red-600 dark:text-red-400'
@@ -929,7 +929,7 @@ async function revertSingleSystem(batchId: number, groupUuid: string) {
                                                     {{ p.unit || '-' }}
                                                 </td>
                                                 <td
-                                                    class="px-2 py-1.5 text-center font-mono text-[10px] text-muted-foreground"
+                                                    class="px-2 py-1.5 text-center text-[10px] text-muted-foreground tabular-nums"
                                                 >
                                                     <span
                                                         v-if="
@@ -974,9 +974,7 @@ async function revertSingleSystem(batchId: number, groupUuid: string) {
                                     <MessageSquare
                                         class="mt-0.5 h-3 w-3 shrink-0 text-muted-foreground"
                                     />
-                                    <p
-                                        class="font-mono text-[11px] whitespace-pre-wrap"
-                                    >
+                                    <p class="text-[11px] whitespace-pre-wrap">
                                         {{ systemItem.comment }}
                                     </p>
                                 </div>

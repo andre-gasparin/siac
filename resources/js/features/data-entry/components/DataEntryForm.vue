@@ -272,7 +272,7 @@ const hasAnyOutOfLimits = computed<boolean>(() => {
                         Hora do registro
                     </span>
                     <div
-                        class="flex items-center gap-2 font-mono text-sm font-medium text-muted-foreground"
+                        class="flex items-center gap-2 text-sm font-medium text-muted-foreground tabular-nums"
                     >
                         <Clock class="h-4 w-4 opacity-70" />
                         <span>{{ liveTimestamp }}</span>
@@ -309,7 +309,7 @@ const hasAnyOutOfLimits = computed<boolean>(() => {
                                         )
                                 "
                                 type="time"
-                                class="h-9 px-2 text-center font-mono text-sm"
+                                class="h-9 px-2 text-center font-sans text-sm tabular-nums"
                             />
                         </div>
                         <div
@@ -372,12 +372,15 @@ const hasAnyOutOfLimits = computed<boolean>(() => {
                         <tr
                             class="divide-x divide-border/60 border-b border-border/80 bg-muted/40 text-xs font-bold text-foreground dark:bg-muted/20"
                         >
-                            <th class="w-52 px-3 py-3 text-left">Parâmetro</th>
-                            <th class="w-40 px-3 py-3 text-left">Resultado</th>
-                            <th class="w-28 px-2 py-3 text-center">Predição</th>
+                            <th class="w-56 px-3 py-3 text-left">
+                                Parâmetro / TAG
+                            </th>
+                            <th class="w-24 px-2 py-3 text-center">Origem</th>
                             <th class="w-24 px-2 py-3 text-center">Unidade</th>
-                            <th class="w-28 px-2 py-3 text-center">Minimo</th>
-                            <th class="w-28 px-2 py-3 text-center">Maximo</th>
+                            <th class="w-40 px-3 py-3 text-left">Resultado</th>
+                            <th class="w-28 px-2 py-3 text-center">Mínimo</th>
+                            <th class="w-28 px-2 py-3 text-center">Máximo</th>
+                            <th class="w-28 px-2 py-3 text-center">Predição</th>
                         </tr>
                     </thead>
                     <tbody class="divide-y divide-border/50">
@@ -386,22 +389,34 @@ const hasAnyOutOfLimits = computed<boolean>(() => {
                             :key="param.id"
                             class="divide-x divide-border/50 transition-colors hover:bg-muted/20 dark:hover:bg-muted/10"
                         >
-                            <!-- Nome do Parâmetro -->
+                            <!-- Nome do Parâmetro e TAG -->
                             <td class="px-3 py-3 font-semibold text-foreground">
-                                <div
-                                    class="flex flex-wrap items-center gap-1.5"
-                                >
-                                    <span>{{ param.name }}</span>
-                                    <ParameterCategoryBadge
-                                        v-if="param.category"
-                                        :category="param.category"
-                                    />
-                                </div>
+                                <span>{{ param.name }}</span>
                                 <span
                                     v-if="param.tag || param.code"
-                                    class="block text-xs font-normal text-muted-foreground"
-                                    >{{ param.tag || param.code }}</span
+                                    class="mt-0.5 block text-xs font-normal text-muted-foreground"
+                                    >TAG: {{ param.tag || param.code }}</span
                                 >
+                            </td>
+
+                            <!-- Origem -->
+                            <td class="px-2 py-3 text-center">
+                                <ParameterCategoryBadge
+                                    v-if="param.category"
+                                    :category="param.category"
+                                />
+                                <span
+                                    v-else
+                                    class="text-xs text-muted-foreground"
+                                    >-</span
+                                >
+                            </td>
+
+                            <!-- Unidade -->
+                            <td
+                                class="px-2 py-3 text-center font-medium text-muted-foreground"
+                            >
+                                {{ param.unit || '-' }}
                             </td>
 
                             <!-- Resultado (Input) -->
@@ -420,13 +435,37 @@ const hasAnyOutOfLimits = computed<boolean>(() => {
                                     type="text"
                                     inputmode="decimal"
                                     :aria-label="'Resultado de ' + param.name"
-                                    class="h-9 w-32 rounded-md border bg-background px-3 text-left text-sm font-medium transition-all outline-none"
+                                    class="h-9 w-32 rounded-md border bg-background px-3 text-left text-sm font-medium tabular-nums transition-all outline-none"
                                     :class="[
                                         isParamOutOfLimits(param)
                                             ? 'border-red-500 bg-red-50/20 font-bold text-red-600 ring-2 ring-red-500/20 dark:bg-red-950/20 dark:text-red-400'
                                             : 'border-border/80 text-foreground focus:border-primary focus:ring-2 focus:ring-primary/20',
                                     ]"
                                 />
+                            </td>
+
+                            <!-- Mínimo -->
+                            <td
+                                class="px-2 py-3 text-center text-muted-foreground tabular-nums"
+                            >
+                                {{
+                                    formatDisplayLimit(
+                                        param.alert_1_min,
+                                        param.decimals,
+                                    )
+                                }}
+                            </td>
+
+                            <!-- Máximo -->
+                            <td
+                                class="px-2 py-3 text-center text-muted-foreground tabular-nums"
+                            >
+                                {{
+                                    formatDisplayLimit(
+                                        param.alert_1_max,
+                                        param.decimals,
+                                    )
+                                }}
                             </td>
 
                             <!-- Predição (EWMA) -->
@@ -441,43 +480,12 @@ const hasAnyOutOfLimits = computed<boolean>(() => {
                                     />
                                     <span
                                         v-else
-                                        class="font-mono text-xs text-muted-foreground/30"
+                                        class="text-xs text-muted-foreground/30"
                                         aria-hidden="true"
                                     >
                                         -
                                     </span>
                                 </div>
-                            </td>
-
-                            <!-- Unidade -->
-                            <td
-                                class="px-2 py-3 text-center font-medium text-muted-foreground"
-                            >
-                                {{ param.unit || '-' }}
-                            </td>
-
-                            <!-- Mínimo -->
-                            <td
-                                class="px-2 py-3 text-center font-mono text-muted-foreground"
-                            >
-                                {{
-                                    formatDisplayLimit(
-                                        param.alert_1_min,
-                                        param.decimals,
-                                    )
-                                }}
-                            </td>
-
-                            <!-- Máximo -->
-                            <td
-                                class="px-2 py-3 text-center font-mono text-muted-foreground"
-                            >
-                                {{
-                                    formatDisplayLimit(
-                                        param.alert_1_max,
-                                        param.decimals,
-                                    )
-                                }}
                             </td>
                         </tr>
 
@@ -488,7 +496,7 @@ const hasAnyOutOfLimits = computed<boolean>(() => {
                             "
                         >
                             <td
-                                colspan="6"
+                                colspan="7"
                                 class="py-8 text-center text-sm text-muted-foreground"
                             >
                                 Nenhum parâmetro cadastrado para este sistema.

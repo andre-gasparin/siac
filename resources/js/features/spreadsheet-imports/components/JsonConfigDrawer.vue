@@ -197,14 +197,14 @@ function handleFileUpload(event: Event) {
             <div class="flex min-h-0 flex-1 flex-col py-4">
                 <textarea
                     v-model="rawJson"
-                    class="w-full flex-1 resize-none overflow-auto rounded-md border border-input bg-zinc-950 p-4 font-mono text-xs text-zinc-100 shadow-sm focus-visible:ring-1 focus-visible:ring-ring focus-visible:outline-none"
+                    class="w-full flex-1 resize-none overflow-auto rounded-md border border-input bg-zinc-950 p-4 text-xs text-zinc-100 shadow-sm focus-visible:ring-1 focus-visible:ring-ring focus-visible:outline-none"
                     spellcheck="false"
                     @input="jsonError = null"
                 />
 
                 <div
                     v-if="jsonError"
-                    class="mt-2 rounded-md border border-destructive/20 bg-destructive/10 p-2 font-mono text-xs text-destructive"
+                    class="mt-2 rounded-md border border-destructive/20 bg-destructive/10 p-2 text-xs text-destructive"
                 >
                     ⚠️ {{ jsonError }}
                 </div>

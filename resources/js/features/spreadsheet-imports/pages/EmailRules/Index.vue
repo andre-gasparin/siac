@@ -156,7 +156,7 @@ function handleDeleteRule(rule: SpreadsheetEmailRuleItem) {
                                 class="transition-colors hover:bg-muted/30"
                             >
                                 <td
-                                    class="px-4 py-3 font-mono font-semibold text-foreground"
+                                    class="px-4 py-3 font-semibold text-foreground tabular-nums"
                                 >
                                     {{ rule.priority }}
                                 </td>

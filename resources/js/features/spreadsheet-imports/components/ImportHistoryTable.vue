@@ -158,7 +158,7 @@ async function openDetailsDialog(batch: SpreadsheetImportBatchItem) {
                         :key="batch.id"
                         class="transition-colors hover:bg-muted/20"
                     >
-                        <td class="p-3 font-mono text-muted-foreground">
+                        <td class="p-3 text-muted-foreground tabular-nums">
                             {{ formatBrazilianDateTime(batch.created_at) }}
                         </td>
                         <td v-if="showTeamColumn" class="p-3">
@@ -201,12 +201,12 @@ async function openDetailsDialog(batch: SpreadsheetImportBatchItem) {
                             {{ batch.user?.name || '-' }}
                         </td>
                         <td
-                            class="p-3 text-center font-mono text-muted-foreground"
+                            class="p-3 text-center text-muted-foreground tabular-nums"
                         >
                             {{ formatBrazilianDate(batch.reference_date) }}
                         </td>
                         <td
-                            class="p-3 text-center font-mono font-bold text-foreground"
+                            class="p-3 text-center font-bold text-foreground tabular-nums"
                         >
                             {{ batch.saved_values_count }}
                         </td>
@@ -299,7 +299,7 @@ async function openDetailsDialog(batch: SpreadsheetImportBatchItem) {
                         Esta ação irá desfazer todas as
                         <strong>{{ batchToRevert?.saved_values_count }}</strong>
                         medições importadas a partir do arquivo
-                        <strong class="font-mono text-foreground">{{
+                        <strong class="text-foreground">{{
                             batchToRevert?.file_name
                         }}</strong
                         >. Registros atualizados voltarão ao seu valor anterior

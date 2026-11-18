@@ -327,7 +327,7 @@ function handleConfirm() {
                                             </Badge>
                                         </td>
                                         <td
-                                            class="py-2 pr-3 text-right font-mono font-bold"
+                                            class="py-2 pr-3 text-right font-bold tabular-nums"
                                         >
                                             <div
                                                 v-if="p.status === 'updated'"
@@ -410,7 +410,7 @@ function handleConfirm() {
                                             {{ p.param.unit || '-' }}
                                         </td>
                                         <td
-                                            class="px-3 py-2 text-center font-mono text-muted-foreground"
+                                            class="px-3 py-2 text-center text-muted-foreground tabular-nums"
                                         >
                                             <span
                                                 v-if="
@@ -450,13 +450,13 @@ function handleConfirm() {
                             >
                             <p
                                 v-if="item.newComment"
-                                class="mt-0.5 font-mono whitespace-pre-wrap"
+                                class="mt-0.5 whitespace-pre-wrap"
                             >
                                 {{ item.newComment }}
                             </p>
                             <p
                                 v-else
-                                class="mt-0.5 font-mono text-muted-foreground italic"
+                                class="mt-0.5 text-muted-foreground italic"
                             >
                                 (Comentário removido)
                             </p>

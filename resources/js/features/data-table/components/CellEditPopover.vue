@@ -115,7 +115,7 @@ function handleSave() {
                         @keydown.enter.prevent="handleSave"
                         @keydown.esc="emit('close')"
                         placeholder="Digite o valor ou deixe em branco"
-                        class="w-full rounded-md border bg-background px-2.5 py-1.5 font-mono text-xs text-foreground shadow-sm focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 focus:outline-none"
+                        class="w-full rounded-md border bg-background px-2.5 py-1.5 text-xs text-foreground tabular-nums shadow-sm focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 focus:outline-none"
                     />
                 </div>
 

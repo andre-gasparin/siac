@@ -160,9 +160,15 @@ function initChart() {
     }
 
     const option = {
+        textStyle: {
+            fontFamily: "'Poppins', sans-serif",
+        },
         tooltip: {
             trigger: 'axis',
             axisPointer: { type: 'cross' },
+            textStyle: {
+                fontFamily: "'Poppins', sans-serif",
+            },
         },
 
         legend: {

@@ -146,7 +146,7 @@ function updateNumLevels(val: number) {
                                 class="w-full cursor-pointer accent-primary"
                             />
                             <span
-                                class="w-12 text-right font-mono text-xs font-semibold text-foreground"
+                                class="w-12 text-right text-xs font-semibold text-foreground tabular-nums"
                             >
                                 {{ ewmaLambda.toFixed(2) }}
                             </span>
@@ -184,10 +184,9 @@ function updateNumLevels(val: number) {
                                         min="0.5"
                                         max="6.0"
                                         v-model.number="ewmaLevels[idx - 1]"
-                                        class="h-8 w-full rounded border bg-background px-2 font-mono text-xs font-semibold"
+                                        class="h-8 w-full rounded border bg-background px-2 text-xs font-semibold tabular-nums"
                                     />
-                                    <span
-                                        class="font-mono text-xs text-muted-foreground"
+                                    <span class="text-xs text-muted-foreground"
                                         >σ</span
                                     >
                                 </div>
@@ -235,7 +234,7 @@ function updateNumLevels(val: number) {
                                 class="w-full cursor-pointer accent-primary"
                             />
                             <span
-                                class="w-12 text-right font-mono text-xs font-semibold text-foreground"
+                                class="w-12 text-right text-xs font-semibold text-foreground tabular-nums"
                             >
                                 {{ cusumK.toFixed(2) }}σ
                             </span>
@@ -273,10 +272,9 @@ function updateNumLevels(val: number) {
                                         min="1.0"
                                         max="10.0"
                                         v-model.number="cusumLevels[idx - 1]"
-                                        class="h-8 w-full rounded border bg-background px-2 font-mono text-xs font-semibold"
+                                        class="h-8 w-full rounded border bg-background px-2 text-xs font-semibold tabular-nums"
                                     />
-                                    <span
-                                        class="font-mono text-xs text-muted-foreground"
+                                    <span class="text-xs text-muted-foreground"
                                         >σ</span
                                     >
                                 </div>

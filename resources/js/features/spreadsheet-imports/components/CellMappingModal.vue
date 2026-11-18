@@ -229,7 +229,7 @@ function handleRemove() {
                 <DialogTitle class="flex items-center gap-2">
                     <span>{{ titleLabel }}</span>
                     <span
-                        class="rounded bg-primary/10 px-2 py-0.5 font-mono text-base font-bold text-primary"
+                        class="rounded bg-primary/10 px-2 py-0.5 text-base font-bold text-primary tabular-nums"
                     >
                         {{
                             isHorizontal
@@ -303,7 +303,9 @@ function handleRemove() {
                 <div class="grid gap-2 border-t pt-2">
                     <div class="flex items-center justify-between">
                         <Label class="text-xs">Fator Multiplicador</Label>
-                        <span class="font-mono text-xs font-bold text-primary">
+                        <span
+                            class="text-xs font-bold text-primary tabular-nums"
+                        >
                             x{{ multiplier }}
                         </span>
                     </div>
@@ -329,7 +331,7 @@ function handleRemove() {
                         >
                         <Input
                             v-model="customMultiplier"
-                            class="h-8 w-32 font-mono text-xs"
+                            class="h-8 w-32 text-xs tabular-nums"
                             placeholder="ex: 0.05"
                             @input="onCustomMultiplierChange"
                         />
@@ -348,7 +350,7 @@ function handleRemove() {
                         <Input
                             id="date-cell"
                             v-model="dateCell"
-                            class="h-8 font-mono text-xs uppercase"
+                            class="h-8 text-xs uppercase tabular-nums"
                             placeholder="ex: A7 ou B6"
                         />
                     </div>
@@ -359,7 +361,7 @@ function handleRemove() {
                         <Input
                             id="time-cell"
                             v-model="timeCell"
-                            class="h-8 font-mono text-xs uppercase"
+                            class="h-8 text-xs uppercase tabular-nums"
                             placeholder="ex: C7"
                         />
                     </div>

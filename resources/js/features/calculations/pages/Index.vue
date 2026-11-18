@@ -289,7 +289,7 @@ function remove() {
                         </h2>
                     </div>
                     <div
-                        class="rounded-md bg-muted/60 p-3 font-mono text-sm break-words text-muted-foreground"
+                        class="rounded-md bg-muted/60 p-3 text-sm break-words text-muted-foreground tabular-nums"
                     >
                         {{
                             formatFormulaWithoutNames(
@@ -426,7 +426,7 @@ function remove() {
                             </select>
                         </div>
                         <div
-                            class="rounded-md bg-muted/60 p-3 font-mono text-sm break-words text-muted-foreground"
+                            class="rounded-md bg-muted/60 p-3 text-sm break-words text-muted-foreground tabular-nums"
                         >
                             {{
                                 formatFormulaWithoutNames(

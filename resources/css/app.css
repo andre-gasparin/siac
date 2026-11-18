@@ -9,6 +9,8 @@
 
 @theme inline {
     --font-sans: 'Poppins', sans-serif;
+    --font-mono: 'Poppins', sans-serif;
+    --font-serif: 'Poppins', sans-serif;
 
     --radius-lg: var(--radius);
     --radius-md: calc(var(--radius) - 2px);
@@ -153,8 +155,9 @@
     * {
         @apply border-border outline-ring/50;
     }
+    html,
     body {
-        @apply bg-background text-foreground;
+        @apply bg-background font-sans text-foreground;
     }
 }
 

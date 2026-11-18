@@ -163,7 +163,7 @@ onUnmounted(() => {
                     >
                     <span
                         v-if="selectedParameterIds.length > 0"
-                        class="font-mono text-[10px] font-medium text-primary"
+                        class="text-[10px] font-medium text-primary tabular-nums"
                     >
                         {{ selectedParameterIds.length }} selecionado(s)
                     </span>
@@ -245,7 +245,7 @@ onUnmounted(() => {
                             }}</span>
                             <span
                                 v-if="param.unit"
-                                class="font-mono text-[10px] text-muted-foreground"
+                                class="text-[10px] text-muted-foreground"
                             >
                                 {{ param.unit }}
                             </span>

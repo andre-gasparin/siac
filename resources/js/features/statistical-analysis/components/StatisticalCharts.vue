@@ -128,8 +128,14 @@ function renderEwma() {
 
     ewmaChart.setOption(
         {
+            textStyle: {
+                fontFamily: "'Poppins', sans-serif",
+            },
             tooltip: {
                 trigger: 'axis',
+                textStyle: {
+                    fontFamily: "'Poppins', sans-serif",
+                },
                 valueFormatter: (val: any) =>
                     typeof val === 'number' ? val.toFixed(3) : val,
             },
@@ -266,8 +272,14 @@ function renderCusum() {
 
     cusumChart.setOption(
         {
+            textStyle: {
+                fontFamily: "'Poppins', sans-serif",
+            },
             tooltip: {
                 trigger: 'axis',
+                textStyle: {
+                    fontFamily: "'Poppins', sans-serif",
+                },
                 valueFormatter: (val: any) =>
                     typeof val === 'number' ? val.toFixed(3) : val,
             },
