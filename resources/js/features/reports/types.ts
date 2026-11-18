@@ -13,6 +13,8 @@ export interface ReportParameter {
     code?: string | null;
     tag?: string | null;
     unit?: string | null;
+    alert_1_min?: number | null;
+    alert_1_max?: number | null;
     system_name?: string;
     display_name?: string;
 }
@@ -60,6 +62,7 @@ export interface ReportChartSeriesConfig {
     axis_position: 'left' | 'right';
     min_val: number | null;
     max_val: number | null;
+    show_limits?: boolean;
     show_points: boolean;
     show_values: boolean;
 }
@@ -85,6 +88,9 @@ export interface ChartFavoriteSeries {
     axis_position: 'left' | 'right';
     min_val: number | null;
     max_val: number | null;
+    parameter_min?: number | null;
+    parameter_max?: number | null;
+    show_limits?: boolean;
     show_points: boolean;
     show_values: boolean;
 }

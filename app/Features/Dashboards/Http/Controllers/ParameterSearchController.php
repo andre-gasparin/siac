@@ -62,6 +62,8 @@ class ParameterSearchController extends Controller
                 'tag' => $param->tag,
                 'unit' => $param->unit,
                 'decimals' => $param->decimals,
+                'alert_1_min' => $param->alert_1_min,
+                'alert_1_max' => $param->alert_1_max,
             ];
         });
 

@@ -242,6 +242,8 @@ test('system data and seven day charts are scoped to the report company', functi
             'type' => 'bar',
         ]))->assertOk()
         ->assertJsonPath('series.0.chart_type', 'bar')
+        ->assertJsonPath('series.0.min_val', 0)
+        ->assertJsonPath('series.0.max_val', 5)
         ->assertJsonPath('series.0.data.0.value', 4.17);
 });
 

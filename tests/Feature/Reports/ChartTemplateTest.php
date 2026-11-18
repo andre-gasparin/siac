@@ -24,6 +24,8 @@ beforeEach(function () {
         'name' => 'pH Entrata',
         'unit' => 'pH',
         'sort_order' => 1,
+        'alert_1_min' => 6.5,
+        'alert_1_max' => 8.5,
         'is_active' => true,
     ]);
 
@@ -33,6 +35,8 @@ beforeEach(function () {
         'name' => 'Vazão Principal',
         'unit' => 'm3/h',
         'sort_order' => 2,
+        'alert_1_min' => 10,
+        'alert_1_max' => 50,
         'is_active' => true,
     ]);
 });
@@ -71,7 +75,48 @@ test('user can list team chart templates', function () {
         ->assertJsonPath('0.name', 'Gráfico Favorito Teste')
         ->assertJsonPath('0.is_favorite', true)
         ->assertJsonPath('0.series.0.parameter_id', $this->parameter1->id)
-        ->assertJsonPath('0.series.0.system_name', 'Sistema de Produção');
+        ->assertJsonPath('0.series.0.system_name', 'Sistema de Produção')
+        ->assertJsonPath('0.series.0.show_limits', true)
+        ->assertJsonPath('0.series.0.min_val', 6.5)
+        ->assertJsonPath('0.series.0.max_val', 8.5);
+});
+
+test('chart templates assign distinct palette colors when series have no saved color and preserve saved colors', function () {
+    $template = ChartTemplate::create([
+        'team_id' => $this->team->id,
+        'user_id' => $this->user->id,
+        'name' => 'Favorito Sem Cores',
+        'is_favorite' => true,
+    ]);
+
+    $template->series()->create([
+        'team_id' => $this->team->id,
+        'monitored_system_id' => $this->system->id,
+        'parameter_id' => $this->parameter1->id,
+        'axis' => 1,
+        'sort_order' => 0,
+        'label' => 'pH Entrata',
+        'color' => null,
+        'options' => ['chart_type' => 'line'],
+    ]);
+
+    $template->series()->create([
+        'team_id' => $this->team->id,
+        'monitored_system_id' => $this->system->id,
+        'parameter_id' => $this->parameter2->id,
+        'axis' => 2,
+        'sort_order' => 1,
+        'label' => 'Vazão Principal',
+        'color' => '#059669',
+        'options' => ['chart_type' => 'line'],
+    ]);
+
+    $response = $this->actingAs($this->user)
+        ->getJson(route('reports.chart-templates.index', ['current_team' => $this->team]));
+
+    $response->assertOk()
+        ->assertJsonPath('0.series.0.color', '#2563EB')
+        ->assertJsonPath('0.series.1.color', '#059669');
 });
 
 test('user can store a new favorite chart template', function () {
@@ -87,6 +132,9 @@ test('user can store a new favorite chart template', function () {
                 'color' => '#2563EB',
                 'stroke_width' => 2,
                 'axis_position' => 'left',
+                'min_val' => 6.5,
+                'max_val' => 8.5,
+                'show_limits' => true,
                 'show_points' => true,
                 'show_values' => false,
             ],
@@ -97,6 +145,9 @@ test('user can store a new favorite chart template', function () {
                 'color' => '#E11D48',
                 'stroke_width' => 3,
                 'axis_position' => 'right',
+                'min_val' => 10,
+                'max_val' => 50,
+                'show_limits' => false,
                 'show_points' => false,
                 'show_values' => true,
             ],
@@ -109,7 +160,11 @@ test('user can store a new favorite chart template', function () {
     $response->assertCreated()
         ->assertJsonPath('name', 'Novo Gráfico Favorito')
         ->assertJsonPath('is_favorite', true)
-        ->assertJsonCount(2, 'series');
+        ->assertJsonCount(2, 'series')
+        ->assertJsonPath('series.0.show_limits', true)
+        ->assertJsonPath('series.0.min_val', 6.5)
+        ->assertJsonPath('series.1.show_limits', false)
+        ->assertJsonPath('series.1.min_val', 10);
 
     $this->assertDatabaseHas('chart_templates', [
         'team_id' => $this->team->id,

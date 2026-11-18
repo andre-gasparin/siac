@@ -567,3 +567,95 @@ test('report editor preserves safe color and highlight styles while stripping un
         ->not->toContain('background-image')
         ->not->toContain('evil.test');
 });
+
+test('chart data resolves parameter limits with first series enabled by default and respects show_limits selection', function () {
+    $this->parameter->update([
+        'alert_1_min' => 6.5,
+        'alert_1_max' => 8.5,
+    ]);
+
+    $secondParameter = Parameter::create([
+        'team_id' => $this->team->id,
+        'monitored_system_id' => $this->system->id,
+        'name' => 'Cloro',
+        'unit' => 'mg/L',
+        'sort_order' => 2,
+        'alert_1_min' => 0.5,
+        'alert_1_max' => 2.0,
+        'is_active' => true,
+    ]);
+
+    // Legacy payload without show_limits: defaults to 1st series only using parameter alert_1 limits
+    $this->actingAs($this->admin)
+        ->postJson(route('reports.charts.data', $this->team), [
+            'start_date' => '2026-07-22',
+            'end_date' => '2026-07-28',
+            'series' => [
+                [
+                    'parameter_id' => $this->parameter->id,
+                    'label' => 'pH',
+                    'chart_type' => 'line',
+                    'color' => '#2563EB',
+                    'stroke_width' => 2,
+                    'axis_position' => 'left',
+                    'min_val' => null,
+                    'max_val' => null,
+                ],
+                [
+                    'parameter_id' => $secondParameter->id,
+                    'label' => 'Cloro',
+                    'chart_type' => 'line',
+                    'color' => '#E11D48',
+                    'stroke_width' => 2,
+                    'axis_position' => 'right',
+                    'min_val' => null,
+                    'max_val' => null,
+                ],
+            ],
+        ])
+        ->assertOk()
+        ->assertJsonPath('series.0.show_limits', true)
+        ->assertJsonPath('series.0.min_val', 6.5)
+        ->assertJsonPath('series.0.max_val', 8.5)
+        ->assertJsonPath('series.1.show_limits', false)
+        ->assertJsonPath('series.1.min_val', null)
+        ->assertJsonPath('series.1.max_val', null);
+
+    // Explicit show_limits: user hides 1st parameter limits and enables 2nd parameter limits
+    $this->actingAs($this->admin)
+        ->postJson(route('reports.charts.data', $this->team), [
+            'start_date' => '2026-07-22',
+            'end_date' => '2026-07-28',
+            'series' => [
+                [
+                    'parameter_id' => $this->parameter->id,
+                    'label' => 'pH',
+                    'chart_type' => 'line',
+                    'color' => '#2563EB',
+                    'stroke_width' => 2,
+                    'axis_position' => 'left',
+                    'min_val' => 6.5,
+                    'max_val' => 8.5,
+                    'show_limits' => false,
+                ],
+                [
+                    'parameter_id' => $secondParameter->id,
+                    'label' => 'Cloro',
+                    'chart_type' => 'line',
+                    'color' => '#E11D48',
+                    'stroke_width' => 2,
+                    'axis_position' => 'right',
+                    'min_val' => 0.5,
+                    'max_val' => 2.0,
+                    'show_limits' => true,
+                ],
+            ],
+        ])
+        ->assertOk()
+        ->assertJsonPath('series.0.show_limits', false)
+        ->assertJsonPath('series.0.min_val', null)
+        ->assertJsonPath('series.0.max_val', null)
+        ->assertJsonPath('series.1.show_limits', true)
+        ->assertJsonPath('series.1.min_val', 0.5)
+        ->assertJsonPath('series.1.max_val', 2);
+});

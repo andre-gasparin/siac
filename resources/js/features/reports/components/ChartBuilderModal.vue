@@ -11,7 +11,6 @@ import {
     Plus,
     Save,
     Search,
-    SlidersHorizontal,
     Star,
     Trash2,
     X,
@@ -36,6 +35,9 @@ import type { ChartSeries } from '@/shared/components/charts/EChartRenderer.vue'
 
 interface EditableSeries extends ReportChartSeriesConfig {
     system_name: string;
+    parameter_min?: number | null;
+    parameter_max?: number | null;
+    has_explicit_show_limits?: boolean;
 }
 
 const props = defineProps<{
@@ -67,12 +69,12 @@ const isPreviewing = ref(false);
 const previewError = ref('');
 
 // Favorites and visibility state
-const useFavorites = ref(false);
-const showSeriesEditor = ref(true);
+const useFavorites = ref(true);
+const showSeriesEditor = ref(false);
 const favoriteTemplates = ref<ChartFavoriteTemplate[]>([]);
 const isLoadingFavorites = ref(false);
 const isSavingFavorite = ref(false);
-const favoritesDropdownOpen = ref(false);
+const favoritesDropdownOpen = ref(true);
 const selectedFavoriteId = ref<number | null>(null);
 const isFavorite = ref(false);
 const favoriteSuccessMessage = ref('');
@@ -107,13 +109,6 @@ function closeOutsideClicks(event: PointerEvent) {
     }
 
     if (
-        favoritesDropdownOpen.value &&
-        !favoritesContainer.value?.contains(event.target as Node)
-    ) {
-        favoritesDropdownOpen.value = false;
-    }
-
-    if (
         showDeleteConfirm.value &&
         !deleteConfirmContainer.value?.contains(event.target as Node)
     ) {
@@ -127,10 +122,7 @@ function toggleFavoritesMode() {
     if (useFavorites.value) {
         showSeriesEditor.value = false;
         searchOpen.value = false;
-        favoritesDropdownOpen.value =
-            !selectedFavoriteId.value &&
-            series.value.length === 0 &&
-            favoriteTemplates.value.length > 0;
+        favoritesDropdownOpen.value = true;
     } else {
         favoritesDropdownOpen.value = false;
         showDeleteConfirm.value = false;
@@ -145,9 +137,13 @@ function toggleFavoritesMode() {
 function toggleSeriesEditor() {
     showSeriesEditor.value = !showSeriesEditor.value;
 
-    if (showSeriesEditor.value && series.value.length === 0) {
-        searchOpen.value = true;
-    } else if (!showSeriesEditor.value) {
+    if (showSeriesEditor.value) {
+        favoritesDropdownOpen.value = false;
+
+        if (series.value.length === 0) {
+            searchOpen.value = true;
+        }
+    } else {
         searchOpen.value = false;
     }
 }
@@ -211,27 +207,65 @@ async function fetchFavoriteTemplates() {
     }
 }
 
+function normalizeNullableNumber(value: unknown): number | null {
+    if (value === null || value === undefined || value === '') {
+        return null;
+    }
+
+    const numeric = typeof value === 'number' ? value : Number(value);
+
+    return Number.isFinite(numeric) ? numeric : null;
+}
+
+function resolveSeriesColors(
+    items: Array<{ color?: string | null }>,
+): string[] {
+    const used = new Set(
+        items
+            .map((item) => item.color?.trim().toUpperCase())
+            .filter((color): color is string => Boolean(color)),
+    );
+
+    return items.map((item, index) => {
+        const savedColor = item.color?.trim();
+
+        if (savedColor) {
+            return savedColor;
+        }
+
+        const picked =
+            palette.find((candidate) => !used.has(candidate.toUpperCase())) ??
+            palette[index % palette.length];
+        used.add(picked.toUpperCase());
+
+        return picked;
+    });
+}
+
 function loadFavoriteTemplate(template: ChartFavoriteTemplate) {
     selectedFavoriteId.value = template.id;
     isFavorite.value = true;
     title.value = template.name;
     height.value = template.options?.height ?? 320;
+    const resolvedColors = resolveSeriesColors(template.series);
 
-    series.value = template.series.map((s) => ({
+    series.value = template.series.map((s, index) => ({
         parameter_id: s.parameter_id,
         system_name: s.system_name || 'Sistema',
         label: s.label,
         chart_type: s.chart_type || 'line',
-        color: s.color || palette[0],
+        color: resolvedColors[index],
         stroke_width: s.stroke_width ?? 2,
         axis_position: s.axis_position || 'left',
-        min_val: s.min_val ?? null,
-        max_val: s.max_val ?? null,
+        min_val: normalizeNullableNumber(s.min_val),
+        max_val: normalizeNullableNumber(s.max_val),
+        parameter_min: normalizeNullableNumber(s.parameter_min ?? s.min_val),
+        parameter_max: normalizeNullableNumber(s.parameter_max ?? s.max_val),
+        show_limits: s.show_limits ?? index === 0,
+        has_explicit_show_limits: true,
         show_points: s.show_points ?? true,
         show_values: s.show_values ?? false,
     }));
-
-    favoritesDropdownOpen.value = false;
 }
 
 async function saveFavoriteTemplate(asNew = false) {
@@ -319,9 +353,9 @@ async function deleteFavoriteTemplate(templateId: number) {
 function reset() {
     selectedFavoriteId.value = null;
     isFavorite.value = false;
-    useFavorites.value = false;
-    showSeriesEditor.value = true;
-    favoritesDropdownOpen.value = false;
+    useFavorites.value = true;
+    showSeriesEditor.value = false;
+    favoritesDropdownOpen.value = true;
     showDeleteConfirm.value = false;
     favoriteSuccessMessage.value = '';
     void fetchFavoriteTemplates();
@@ -334,10 +368,25 @@ function reset() {
         suppressSearchOpen = true;
         searchQuery.value = '';
         searchOpen.value = false;
-        series.value = props.initialChart.series.map((item) => ({
-            ...item,
-            system_name: 'Parâmetro do gráfico',
-        }));
+        const resolvedColors = resolveSeriesColors(props.initialChart.series);
+        series.value = props.initialChart.series.map((item, index) => {
+            const minVal = normalizeNullableNumber(item.min_val);
+            const maxVal = normalizeNullableNumber(item.max_val);
+            const hasExplicitShowLimits = typeof item.show_limits === 'boolean';
+            const hasCustomLimits = minVal !== null || maxVal !== null;
+
+            return {
+                ...item,
+                color: resolvedColors[index],
+                min_val: minVal,
+                max_val: maxVal,
+                show_limits: hasExplicitShowLimits
+                    ? item.show_limits
+                    : hasCustomLimits || index === 0,
+                has_explicit_show_limits: hasExplicitShowLimits,
+                system_name: 'Parâmetro do gráfico',
+            };
+        });
         previewSeries.value = [];
         previewError.value = '';
         void searchParameters();
@@ -354,7 +403,7 @@ function reset() {
     endDate.value = end;
     suppressSearchOpen = true;
     searchQuery.value = '';
-    searchOpen.value = true;
+    searchOpen.value = false;
     series.value = [];
     previewSeries.value = [];
     previewError.value = '';
@@ -380,6 +429,21 @@ async function searchParameters() {
 
             if (parameter) {
                 item.system_name = parameter.system_name ?? 'Sistema';
+                item.parameter_min = normalizeNullableNumber(
+                    parameter.alert_1_min,
+                );
+                item.parameter_max = normalizeNullableNumber(
+                    parameter.alert_1_max,
+                );
+
+                if (
+                    !item.has_explicit_show_limits &&
+                    item.min_val === null &&
+                    item.max_val === null
+                ) {
+                    item.min_val = item.parameter_min;
+                    item.max_val = item.parameter_max;
+                }
             }
         });
     } finally {
@@ -396,16 +460,26 @@ function addParameter(parameter: ReportParameter) {
     }
 
     const index = series.value.length;
+    const paramMin = normalizeNullableNumber(parameter.alert_1_min);
+    const paramMax = normalizeNullableNumber(parameter.alert_1_max);
+    const nextColor =
+        palette.find((c) => !series.value.some((s) => s.color === c)) ??
+        palette[index % palette.length];
+
     series.value.push({
         parameter_id: parameter.id,
         label: parameter.name,
         system_name: parameter.system_name ?? 'Sistema',
         chart_type: 'line',
-        color: palette[index],
+        color: nextColor,
         stroke_width: 2,
         axis_position: index === 1 ? 'right' : 'left',
-        min_val: null,
-        max_val: null,
+        min_val: paramMin,
+        max_val: paramMax,
+        parameter_min: paramMin,
+        parameter_max: paramMax,
+        show_limits: index === 0,
+        has_explicit_show_limits: true,
         show_points: true,
         show_values: false,
     });
@@ -418,6 +492,42 @@ function addParameter(parameter: ReportParameter) {
     searchOpen.value = false;
 }
 
+function removeSeries(index: number) {
+    const [removed] = series.value.splice(index, 1);
+
+    if (
+        series.value.length > 0 &&
+        removed?.show_limits &&
+        !series.value.some((item) => item.show_limits)
+    ) {
+        series.value[0].show_limits = true;
+    }
+}
+
+function toggleSeriesLimits(item: EditableSeries, checked: boolean) {
+    item.show_limits = checked;
+    item.has_explicit_show_limits = true;
+
+    if (checked && item.min_val === null && item.max_val === null) {
+        item.min_val = item.parameter_min ?? null;
+        item.max_val = item.parameter_max ?? null;
+    }
+}
+
+function updateSeriesLimit(
+    item: EditableSeries,
+    field: 'min_val' | 'max_val',
+    rawValue: string,
+) {
+    const normalized = normalizeNullableNumber(rawValue);
+    item[field] = normalized;
+    item.has_explicit_show_limits = true;
+
+    if (normalized !== null) {
+        item.show_limits = true;
+    }
+}
+
 function serializeSeries(item: EditableSeries): ReportChartSeriesConfig {
     return {
         parameter_id: item.parameter_id,
@@ -426,8 +536,9 @@ function serializeSeries(item: EditableSeries): ReportChartSeriesConfig {
         color: item.color,
         stroke_width: item.stroke_width,
         axis_position: item.axis_position,
-        min_val: item.min_val,
-        max_val: item.max_val,
+        min_val: normalizeNullableNumber(item.min_val),
+        max_val: normalizeNullableNumber(item.max_val),
+        show_limits: Boolean(item.show_limits),
         show_points: item.show_points,
         show_values: item.show_values,
     };
@@ -540,34 +651,36 @@ onBeforeUnmount(() => {
         @click.self="emit('close')"
     >
         <section
-            class="grid h-[94vh] max-h-[94vh] min-h-0 w-full max-w-6xl overflow-hidden rounded-2xl border bg-card shadow-2xl lg:grid-cols-[minmax(430px,0.9fr)_minmax(0,1.4fr)]"
+            class="flex h-[94vh] max-h-[94vh] min-h-0 w-full max-w-7xl flex-col overflow-y-auto rounded-2xl border bg-card shadow-2xl lg:grid lg:grid-cols-[minmax(360px,0.8fr)_minmax(0,1.6fr)] lg:overflow-hidden"
         >
-            <div class="min-h-0 overflow-y-auto border-r">
+            <div
+                class="min-w-0 overflow-x-hidden border-b lg:min-h-0 lg:overflow-y-auto lg:border-r lg:border-b-0"
+            >
                 <header
-                    class="sticky top-0 z-10 flex items-center justify-between border-b bg-card/95 px-5 py-4 backdrop-blur"
+                    class="sticky top-0 z-10 flex items-center justify-between gap-2 border-b bg-card/95 px-5 py-4 backdrop-blur"
                 >
-                    <div class="flex items-center gap-3">
+                    <div class="flex min-w-0 flex-1 items-center gap-3">
                         <span
-                            class="grid size-10 place-items-center rounded-xl bg-blue-600 text-white shadow-sm"
+                            class="grid size-10 shrink-0 place-items-center rounded-xl bg-blue-600 text-white shadow-sm"
                         >
                             <BarChart3 class="size-5" />
                         </span>
-                        <div>
-                            <h2 class="font-semibold">
+                        <div class="min-w-0">
+                            <h2 class="truncate font-semibold">
                                 {{
                                     initialChart
                                         ? 'Editar gráfico'
                                         : 'Criar gráfico'
                                 }}
                             </h2>
-                            <p class="text-xs text-muted-foreground">
+                            <p class="truncate text-xs text-muted-foreground">
                                 Monte as séries e acompanhe a prévia ao vivo
                             </p>
                         </div>
                     </div>
                     <button
                         type="button"
-                        class="rounded-lg p-2 hover:bg-muted"
+                        class="shrink-0 rounded-lg p-2 hover:bg-muted"
                         title="Fechar"
                         @click="emit('close')"
                     >
@@ -575,7 +688,7 @@ onBeforeUnmount(() => {
                     </button>
                 </header>
 
-                <div class="grid gap-4 p-5">
+                <div class="grid min-w-0 gap-4 p-5">
                     <!-- Top Controls: Start Date, End Date & Favorites Slider -->
                     <div
                         class="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] items-end gap-2.5"
@@ -650,37 +763,32 @@ onBeforeUnmount(() => {
                     <div
                         v-if="useFavorites"
                         ref="favoritesContainer"
-                        class="relative grid gap-2.5 rounded-xl border border-amber-500/25 bg-amber-500/[0.04] p-3"
+                        class="relative grid min-w-0 gap-2.5 overflow-hidden rounded-xl border border-amber-500/25 bg-amber-500/[0.04] p-3"
                     >
-                        <div class="flex items-center justify-between gap-2">
+                        <div
+                            class="flex min-w-0 items-center justify-between gap-2"
+                        >
                             <span
-                                class="flex items-center gap-1.5 text-xs font-semibold tracking-wide text-muted-foreground uppercase"
+                                class="flex min-w-0 items-center gap-1.5 text-xs font-semibold tracking-wide text-muted-foreground uppercase"
                             >
                                 <Bookmark
                                     class="size-3.5 shrink-0 text-amber-500"
                                 />
-                                Gráficos favoritos
+                                <span class="truncate">Gráficos favoritos</span>
                             </span>
                             <span
-                                v-if="favoriteSuccessMessage"
-                                class="flex items-center gap-1 text-[11px] font-semibold text-emerald-600 dark:text-emerald-400"
-                            >
-                                <Check class="size-3" />
-                                {{ favoriteSuccessMessage }}
-                            </span>
-                            <span
-                                v-else-if="favoriteTemplates.length"
-                                class="rounded-full bg-amber-500/15 px-2 py-0.5 text-[10px] font-semibold text-amber-700 dark:text-amber-300"
+                                v-if="favoriteTemplates.length"
+                                class="shrink-0 rounded-full bg-amber-500/15 px-2 py-0.5 text-[10px] font-semibold text-amber-700 dark:text-amber-300"
                             >
                                 {{ favoriteTemplates.length }} salvo(s)
                             </span>
                         </div>
 
-                        <div class="relative">
+                        <div class="grid min-w-0 gap-1.5">
                             <button
                                 type="button"
                                 data-test="favorite-charts-dropdown"
-                                class="flex h-9 w-full items-center justify-between rounded-lg border bg-background px-3 text-sm transition-colors hover:bg-muted/50"
+                                class="flex h-9 w-full min-w-0 items-center justify-between rounded-lg border bg-background px-3 text-sm transition-colors hover:bg-muted/50"
                                 @click="
                                     favoritesDropdownOpen =
                                         !favoritesDropdownOpen
@@ -701,7 +809,7 @@ onBeforeUnmount(() => {
                                         {{
                                             selectedFavoriteId
                                                 ? selectedFavoriteName
-                                                : 'Procurar ou selecionar um favorito...'
+                                                : 'Selecione um gráfico favorito...'
                                         }}
                                     </span>
                                 </span>
@@ -715,7 +823,8 @@ onBeforeUnmount(() => {
 
                             <div
                                 v-if="favoritesDropdownOpen"
-                                class="absolute z-30 mt-1 max-h-60 w-full overflow-y-auto rounded-xl border bg-popover p-1 shadow-xl"
+                                data-test="favorites-list"
+                                class="max-h-60 w-full min-w-0 overflow-x-hidden overflow-y-auto rounded-xl border bg-background p-1"
                             >
                                 <div
                                     v-if="isLoadingFavorites"
@@ -731,16 +840,16 @@ onBeforeUnmount(() => {
                                         v-for="fav in favoriteTemplates"
                                         :key="fav.id"
                                         data-test="favorite-option"
-                                        class="group flex cursor-pointer items-center justify-between rounded-lg px-3 py-2 text-xs transition-colors hover:bg-muted"
+                                        class="group flex min-w-0 cursor-pointer items-center justify-between gap-1 rounded-lg px-3 py-2 text-xs transition-colors hover:bg-muted"
                                         :class="{
                                             'bg-amber-500/10 font-medium text-amber-900 dark:text-amber-200':
                                                 selectedFavoriteId === fav.id,
                                         }"
                                         @click="loadFavoriteTemplate(fav)"
                                     >
-                                        <div class="min-w-0 flex-1 pr-2">
+                                        <div class="min-w-0 flex-1 pr-1">
                                             <div
-                                                class="flex items-center gap-1.5 truncate font-semibold"
+                                                class="flex min-w-0 items-center gap-1.5 font-semibold"
                                             >
                                                 <Star
                                                     class="size-3.5 shrink-0 fill-amber-500 text-amber-500"
@@ -763,7 +872,7 @@ onBeforeUnmount(() => {
                                         </div>
                                         <button
                                             type="button"
-                                            class="rounded p-1 text-muted-foreground transition-opacity hover:bg-red-50 hover:text-red-600 lg:opacity-0 lg:group-hover:opacity-100 dark:hover:bg-red-950/40"
+                                            class="shrink-0 rounded p-1 text-muted-foreground transition-opacity hover:bg-red-50 hover:text-red-600 lg:opacity-0 lg:group-hover:opacity-100 dark:hover:bg-red-950/40"
                                             title="Excluir favorito"
                                             @click.stop="
                                                 deleteFavoriteTemplate(fav.id)
@@ -782,147 +891,76 @@ onBeforeUnmount(() => {
                             </div>
                         </div>
 
-                        <!-- Compact Icon Action Bar Below the Favorites Combo -->
-                        <div class="flex items-center justify-between gap-2">
-                            <div class="flex items-center gap-1.5">
+                        <div
+                            v-if="selectedFavoriteId"
+                            class="flex min-w-0 flex-wrap items-center justify-between gap-2"
+                        >
+                            <span
+                                class="min-w-0 truncate text-[11px] text-muted-foreground"
+                            >
+                                Favorito selecionado para edição
+                            </span>
+                            <div
+                                ref="deleteConfirmContainer"
+                                class="relative shrink-0"
+                            >
                                 <button
                                     type="button"
-                                    data-test="save-favorite-btn"
-                                    class="inline-flex size-8 items-center justify-center rounded-lg border transition-colors disabled:opacity-45"
-                                    :class="
-                                        selectedFavoriteId || isFavorite
-                                            ? 'border-amber-500/50 bg-amber-500/15 text-amber-700 hover:bg-amber-500/25 dark:text-amber-300'
-                                            : 'bg-background text-muted-foreground hover:bg-muted hover:text-foreground'
-                                    "
-                                    :title="
-                                        selectedFavoriteId
-                                            ? 'Atualizar favorito selecionado'
-                                            : 'Salvar nos favoritos'
-                                    "
-                                    :aria-label="
-                                        selectedFavoriteId
-                                            ? 'Atualizar favorito selecionado'
-                                            : 'Salvar nos favoritos'
-                                    "
-                                    :disabled="
-                                        isSavingFavorite ||
-                                        series.length === 0 ||
-                                        !title.trim()
-                                    "
+                                    data-test="delete-favorite-btn"
+                                    class="inline-flex h-7 items-center gap-1.5 rounded-lg border border-red-200 bg-red-50/70 px-2.5 text-[11px] font-medium text-red-600 transition-colors hover:bg-red-100 dark:border-red-900/50 dark:bg-red-950/30 dark:text-red-400 dark:hover:bg-red-950/60"
+                                    title="Excluir este gráfico favorito"
+                                    aria-label="Excluir este gráfico favorito"
                                     @click="
-                                        selectedFavoriteId
-                                            ? saveFavoriteTemplate(false)
-                                            : saveFavoriteTemplate(true)
+                                        showDeleteConfirm = !showDeleteConfirm
                                     "
                                 >
-                                    <Loader2
-                                        v-if="isSavingFavorite"
-                                        class="size-3.5 animate-spin text-amber-600"
-                                    />
-                                    <Save
-                                        v-else-if="selectedFavoriteId"
-                                        class="size-3.5"
-                                    />
-                                    <Star
-                                        v-else
-                                        class="size-3.5"
-                                        :class="{
-                                            'fill-amber-500 text-amber-500':
-                                                isFavorite,
-                                        }"
-                                    />
-                                </button>
-
-                                <button
-                                    v-if="selectedFavoriteId"
-                                    type="button"
-                                    data-test="save-as-new-favorite-btn"
-                                    class="inline-flex size-8 items-center justify-center rounded-lg border bg-background text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-45"
-                                    title="Salvar como novo favorito"
-                                    aria-label="Salvar como novo favorito"
-                                    :disabled="
-                                        isSavingFavorite ||
-                                        series.length === 0 ||
-                                        !title.trim()
-                                    "
-                                    @click="saveFavoriteTemplate(true)"
-                                >
-                                    <CopyPlus class="size-3.5" />
+                                    <Trash2 class="size-3" />
+                                    Excluir
                                 </button>
 
                                 <div
-                                    v-if="selectedFavoriteId"
-                                    ref="deleteConfirmContainer"
-                                    class="relative"
+                                    v-if="showDeleteConfirm"
+                                    class="absolute top-full right-0 z-40 mt-1.5 w-52 rounded-xl border bg-popover p-3 text-xs shadow-xl"
                                 >
-                                    <button
-                                        type="button"
-                                        data-test="delete-favorite-btn"
-                                        class="inline-flex size-8 items-center justify-center rounded-lg border border-red-200 bg-red-50/70 text-red-600 transition-colors hover:bg-red-100 dark:border-red-900/50 dark:bg-red-950/30 dark:text-red-400 dark:hover:bg-red-950/60"
-                                        title="Excluir este gráfico favorito"
-                                        aria-label="Excluir este gráfico favorito"
-                                        @click="
-                                            showDeleteConfirm =
-                                                !showDeleteConfirm
-                                        "
-                                    >
-                                        <Trash2 class="size-3.5" />
-                                    </button>
-
+                                    <p class="mb-2 font-medium text-foreground">
+                                        Excluir este gráfico favorito?
+                                    </p>
                                     <div
-                                        v-if="showDeleteConfirm"
-                                        class="absolute top-full left-0 z-40 mt-1.5 w-52 rounded-xl border bg-popover p-3 text-xs shadow-xl"
+                                        class="flex items-center justify-end gap-2"
                                     >
-                                        <p
-                                            class="mb-2 font-medium text-foreground"
+                                        <button
+                                            type="button"
+                                            class="rounded-md border bg-background px-2.5 py-1 text-[11px] font-medium text-muted-foreground hover:bg-muted"
+                                            @click="showDeleteConfirm = false"
                                         >
-                                            Excluir este gráfico favorito?
-                                        </p>
-                                        <div
-                                            class="flex items-center justify-end gap-2"
+                                            Cancelar
+                                        </button>
+                                        <button
+                                            type="button"
+                                            class="rounded-md bg-red-600 px-2.5 py-1 text-[11px] font-semibold text-white shadow-sm hover:bg-red-700"
+                                            @click="
+                                                confirmDeleteSelectedFavorite
+                                            "
                                         >
-                                            <button
-                                                type="button"
-                                                class="rounded-md border bg-background px-2.5 py-1 text-[11px] font-medium text-muted-foreground hover:bg-muted"
-                                                @click="
-                                                    showDeleteConfirm = false
-                                                "
-                                            >
-                                                Cancelar
-                                            </button>
-                                            <button
-                                                type="button"
-                                                class="rounded-md bg-red-600 px-2.5 py-1 text-[11px] font-semibold text-white shadow-sm hover:bg-red-700"
-                                                @click="
-                                                    confirmDeleteSelectedFavorite
-                                                "
-                                            >
-                                                Confirmar
-                                            </button>
-                                        </div>
+                                            Confirmar
+                                        </button>
                                     </div>
                                 </div>
                             </div>
-
-                            <span class="text-[11px] text-muted-foreground">
-                                {{
-                                    selectedFavoriteId
-                                        ? 'Atualize, duplique ou exclua'
-                                        : 'Salve o gráfico atual nos favoritos'
-                                }}
-                            </span>
                         </div>
                     </div>
 
                     <!-- Sistema / Parâmetro & Series Section -->
-                    <div class="grid gap-2.5">
-                        <div class="flex items-center justify-between gap-2">
+                    <div class="grid min-w-0 gap-2.5">
+                        <div
+                            class="flex min-w-0 flex-wrap items-center justify-between gap-2"
+                        >
                             <span
                                 class="text-xs font-semibold tracking-wide uppercase"
                             >
                                 Sistema / parâmetro
                             </span>
-                            <div class="flex items-center gap-2">
+                            <div class="flex shrink-0 items-center gap-2">
                                 <span class="text-[11px] text-muted-foreground">
                                     {{ series.length }}/5 séries
                                 </span>
@@ -953,16 +991,18 @@ onBeforeUnmount(() => {
                         <!-- Compact Series Summary when Favorites mode hides Sistema / Parâmetro -->
                         <div
                             v-if="!isSeriesSectionVisible"
-                            class="rounded-xl border border-dashed bg-muted/20 p-3 text-xs"
+                            data-test="series-summary-box"
+                            class="min-w-0 rounded-xl border border-dashed bg-muted/20 p-3 text-xs"
                         >
                             <div
                                 v-if="series.length"
-                                class="flex flex-wrap gap-1.5"
+                                class="flex min-w-0 flex-wrap gap-1.5"
                             >
                                 <span
-                                    v-for="item in series"
+                                    v-for="(item, index) in series"
                                     :key="item.parameter_id"
-                                    class="inline-flex items-center gap-1.5 rounded-full border bg-background px-2.5 py-1 text-[11px] font-medium"
+                                    data-test="series-summary-chip"
+                                    class="inline-flex max-w-full min-w-0 items-center gap-1.5 rounded-full border bg-background py-1 pr-1.5 pl-2.5 text-[11px] font-medium"
                                 >
                                     <span
                                         class="size-2 shrink-0 rounded-full"
@@ -971,6 +1011,14 @@ onBeforeUnmount(() => {
                                     <span class="truncate">{{
                                         item.label
                                     }}</span>
+                                    <button
+                                        type="button"
+                                        class="shrink-0 rounded-full p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground"
+                                        title="Remover série"
+                                        @click="removeSeries(index)"
+                                    >
+                                        <X class="size-3" />
+                                    </button>
                                 </span>
                             </div>
                             <p v-else class="text-muted-foreground">
@@ -980,9 +1028,9 @@ onBeforeUnmount(() => {
                             </p>
                         </div>
 
-                        <!-- Full Sistema / Parâmetro Combo & Series Cards -->
+                        <!-- Parameter Search Selector -->
                         <template v-else>
-                            <div ref="searchContainer" class="relative">
+                            <div ref="searchContainer" class="relative min-w-0">
                                 <Search
                                     class="absolute top-3 left-3 size-4 text-muted-foreground"
                                 />
@@ -1075,118 +1123,17 @@ onBeforeUnmount(() => {
                                     </p>
                                 </div>
                             </div>
-
-                            <div class="grid gap-3 pt-1">
-                                <article
-                                    v-for="(item, index) in series"
-                                    :key="item.parameter_id"
-                                    class="rounded-xl border bg-muted/20 p-3"
-                                >
-                                    <div class="mb-3 flex items-start gap-2">
-                                        <input
-                                            v-model="item.color"
-                                            type="color"
-                                            class="h-9 w-10 cursor-pointer rounded border bg-transparent"
-                                            title="Cor da série"
-                                        />
-                                        <div class="min-w-0 flex-1">
-                                            <p
-                                                class="truncate text-xs font-semibold"
-                                            >
-                                                {{ item.system_name }}
-                                            </p>
-                                            <p
-                                                class="truncate text-xs text-muted-foreground"
-                                            >
-                                                {{ item.label }}
-                                            </p>
-                                        </div>
-                                        <button
-                                            type="button"
-                                            class="rounded-lg p-2 text-red-600 hover:bg-red-50 dark:hover:bg-red-950/30"
-                                            title="Remover série"
-                                            @click="series.splice(index, 1)"
-                                        >
-                                            <Trash2 class="size-4" />
-                                        </button>
-                                    </div>
-                                    <div class="grid grid-cols-2 gap-2 text-xs">
-                                        <select
-                                            v-model="item.chart_type"
-                                            class="h-9 rounded-lg border bg-background px-2"
-                                        >
-                                            <option value="line">Linha</option>
-                                            <option value="bar">Barra</option>
-                                            <option value="area">Área</option>
-                                        </select>
-                                        <select
-                                            v-model="item.axis_position"
-                                            class="h-9 rounded-lg border bg-background px-2"
-                                        >
-                                            <option value="left">
-                                                Eixo esquerdo
-                                            </option>
-                                            <option value="right">
-                                                Eixo direito
-                                            </option>
-                                        </select>
-                                        <label class="grid gap-1">
-                                            Mínimo
-                                            <input
-                                                v-model.number="item.min_val"
-                                                type="number"
-                                                class="h-9 rounded-lg border bg-background px-2"
-                                            />
-                                        </label>
-                                        <label class="grid gap-1">
-                                            Máximo
-                                            <input
-                                                v-model.number="item.max_val"
-                                                type="number"
-                                                class="h-9 rounded-lg border bg-background px-2"
-                                            />
-                                        </label>
-                                        <label class="grid gap-1">
-                                            Espessura
-                                            <input
-                                                v-model.number="
-                                                    item.stroke_width
-                                                "
-                                                type="range"
-                                                min="1"
-                                                max="8"
-                                            />
-                                        </label>
-                                        <div class="flex items-end gap-3 pb-1">
-                                            <label
-                                                class="flex items-center gap-1"
-                                            >
-                                                <input
-                                                    v-model="item.show_points"
-                                                    type="checkbox"
-                                                />Pontos
-                                            </label>
-                                            <label
-                                                class="flex items-center gap-1"
-                                            >
-                                                <input
-                                                    v-model="item.show_values"
-                                                    type="checkbox"
-                                                />Valores
-                                            </label>
-                                        </div>
-                                    </div>
-                                </article>
-                            </div>
                         </template>
                     </div>
                 </div>
             </div>
 
-            <!-- Right Column: Chart Title Editor & Live Preview (no Height slider) -->
-            <div class="flex min-h-[520px] flex-col bg-muted/20 p-5">
+            <!-- Right Column: Title, Save Favorite, Chart Preview & Series Items Editor -->
+            <div
+                class="flex min-h-[520px] min-w-0 flex-col bg-muted/20 p-5 lg:min-h-0"
+            >
                 <div
-                    class="mb-3 flex flex-wrap items-end justify-between gap-3"
+                    class="mb-3 flex shrink-0 flex-wrap items-end justify-between gap-3"
                 >
                     <div class="min-w-0 flex-1">
                         <label
@@ -1202,50 +1149,383 @@ onBeforeUnmount(() => {
                             placeholder="Ex: Gráfico de Vazão e pH"
                         />
                     </div>
-                    <div class="shrink-0 text-right">
-                        <p
-                            class="flex items-center justify-end gap-1.5 text-xs font-semibold"
+
+                    <div class="flex shrink-0 flex-col items-end gap-1">
+                        <div class="flex items-center gap-1.5">
+                            <button
+                                type="button"
+                                data-test="save-favorite-btn"
+                                class="inline-flex h-10 items-center gap-2 rounded-lg border px-3.5 text-xs font-semibold transition-colors disabled:opacity-45"
+                                :class="
+                                    selectedFavoriteId || isFavorite
+                                        ? 'border-amber-500/50 bg-amber-500/15 text-amber-700 hover:bg-amber-500/25 dark:text-amber-300'
+                                        : 'border-amber-500/40 bg-card text-amber-700 hover:bg-amber-500/10 dark:text-amber-300'
+                                "
+                                :title="
+                                    selectedFavoriteId
+                                        ? 'Atualizar favorito selecionado'
+                                        : 'Salvar nos favoritos'
+                                "
+                                :aria-label="
+                                    selectedFavoriteId
+                                        ? 'Atualizar favorito selecionado'
+                                        : 'Salvar nos favoritos'
+                                "
+                                :disabled="
+                                    isSavingFavorite ||
+                                    series.length === 0 ||
+                                    !title.trim()
+                                "
+                                @click="
+                                    selectedFavoriteId
+                                        ? saveFavoriteTemplate(false)
+                                        : saveFavoriteTemplate(true)
+                                "
+                            >
+                                <Loader2
+                                    v-if="isSavingFavorite"
+                                    class="size-3.5 animate-spin text-amber-600"
+                                />
+                                <Save
+                                    v-else-if="selectedFavoriteId"
+                                    class="size-3.5"
+                                />
+                                <Star
+                                    v-else
+                                    class="size-3.5"
+                                    :class="{
+                                        'fill-amber-500 text-amber-500':
+                                            isFavorite,
+                                    }"
+                                />
+                                <span>{{
+                                    selectedFavoriteId
+                                        ? 'Atualizar favorito'
+                                        : 'Salvar favorito'
+                                }}</span>
+                            </button>
+
+                            <button
+                                v-if="selectedFavoriteId"
+                                type="button"
+                                data-test="save-as-new-favorite-btn"
+                                class="inline-flex size-10 items-center justify-center rounded-lg border bg-card text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-45"
+                                title="Salvar como novo favorito"
+                                aria-label="Salvar como novo favorito"
+                                :disabled="
+                                    isSavingFavorite ||
+                                    series.length === 0 ||
+                                    !title.trim()
+                                "
+                                @click="saveFavoriteTemplate(true)"
+                            >
+                                <CopyPlus class="size-4" />
+                            </button>
+                        </div>
+                        <span
+                            v-if="favoriteSuccessMessage"
+                            class="flex items-center gap-1 text-[11px] font-semibold text-emerald-600 dark:text-emerald-400"
                         >
-                            <SlidersHorizontal class="size-3.5 text-blue-600" />
-                            Pré-visualização
-                        </p>
-                        <p class="text-[11px] text-muted-foreground">
-                            Toda alteração é aplicada automaticamente
-                        </p>
+                            <Check class="size-3" />
+                            {{ favoriteSuccessMessage }}
+                        </span>
                     </div>
                 </div>
 
-                <div
-                    class="relative flex flex-1 items-center justify-center overflow-auto rounded-2xl border bg-card pt-1 shadow-sm"
-                >
-                    <Loader2
-                        v-if="isPreviewing"
-                        class="absolute top-4 right-4 z-10 size-5 animate-spin text-blue-600"
-                    />
-                    <EChartRenderer
-                        v-if="previewSeries.length"
-                        class="w-full self-start"
-                        :series="previewSeries"
-                        :height="height"
-                    />
+                <div class="min-h-0 flex-1 space-y-4 overflow-y-auto pr-1">
                     <div
-                        v-else
-                        class="max-w-sm p-6 text-center text-sm text-muted-foreground"
+                        class="relative flex min-h-[328px] shrink-0 items-center justify-center rounded-2xl border bg-card pt-1 shadow-sm"
                     >
-                        <BarChart3 class="mx-auto mb-3 size-10 opacity-30" />
-                        <p class="font-medium text-foreground">
-                            Selecione um sistema e parâmetro
-                        </p>
-                        <p class="mt-1 text-xs">
-                            A prévia será carregada com os dados do período.
-                        </p>
-                        <p v-if="previewError" class="mt-2 text-red-600">
-                            {{ previewError }}
-                        </p>
+                        <Loader2
+                            v-if="isPreviewing"
+                            class="absolute top-4 right-4 z-10 size-5 animate-spin text-blue-600"
+                        />
+                        <EChartRenderer
+                            v-if="previewSeries.length"
+                            class="w-full self-start"
+                            :series="previewSeries"
+                            :height="height"
+                        />
+                        <div
+                            v-else
+                            class="max-w-sm p-6 text-center text-sm text-muted-foreground"
+                        >
+                            <BarChart3
+                                class="mx-auto mb-3 size-10 opacity-30"
+                            />
+                            <p class="font-medium text-foreground">
+                                Selecione um sistema e parâmetro
+                            </p>
+                            <p class="mt-1 text-xs">
+                                A prévia será carregada com os dados do período.
+                            </p>
+                            <p v-if="previewError" class="mt-2 text-red-600">
+                                {{ previewError }}
+                            </p>
+                        </div>
+                    </div>
+
+                    <div
+                        v-if="series.length"
+                        data-test="chart-series-editor"
+                        class="grid gap-2.5"
+                    >
+                        <div
+                            class="flex flex-wrap items-center justify-between gap-2"
+                        >
+                            <span
+                                class="text-xs font-semibold tracking-wide text-muted-foreground uppercase"
+                            >
+                                Itens do gráfico ({{ series.length }}/5)
+                            </span>
+                            <span class="text-[11px] text-muted-foreground">
+                                Selecione em quais parâmetros exibir mínimo e
+                                máximo
+                            </span>
+                        </div>
+
+                        <div class="grid gap-2.5">
+                            <article
+                                v-for="(item, index) in series"
+                                :key="item.parameter_id"
+                                data-test="chart-series-item"
+                                class="rounded-xl border bg-card p-3 shadow-2xs"
+                            >
+                                <div
+                                    class="mb-2.5 flex flex-wrap items-center justify-between gap-2"
+                                >
+                                    <div
+                                        class="flex min-w-0 flex-1 items-center gap-2"
+                                    >
+                                        <input
+                                            v-model="item.color"
+                                            type="color"
+                                            class="h-8 w-9 shrink-0 cursor-pointer rounded border bg-transparent"
+                                            title="Cor da série"
+                                        />
+                                        <div class="min-w-0 flex-1">
+                                            <p
+                                                class="truncate text-xs font-semibold text-foreground"
+                                            >
+                                                {{ item.system_name }}
+                                            </p>
+                                            <p
+                                                class="truncate text-xs text-muted-foreground"
+                                            >
+                                                {{ item.label }}
+                                            </p>
+                                        </div>
+                                    </div>
+
+                                    <div class="flex items-center gap-2">
+                                        <button
+                                            type="button"
+                                            role="switch"
+                                            data-test="series-show-limits"
+                                            :aria-checked="
+                                                Boolean(item.show_limits)
+                                            "
+                                            class="inline-flex h-8 items-center gap-2 rounded-lg border px-2.5 text-[11px] font-medium transition-colors"
+                                            :class="
+                                                item.show_limits
+                                                    ? 'border-blue-500/40 bg-blue-500/10 text-blue-700 dark:text-blue-300'
+                                                    : 'bg-background text-muted-foreground hover:bg-muted/50'
+                                            "
+                                            @click="
+                                                toggleSeriesLimits(
+                                                    item,
+                                                    !item.show_limits,
+                                                )
+                                            "
+                                        >
+                                            <span>Exibir mín/máx</span>
+                                            <span
+                                                class="relative inline-flex h-4 w-7 shrink-0 rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out"
+                                                :class="
+                                                    item.show_limits
+                                                        ? 'bg-blue-600'
+                                                        : 'bg-muted-foreground/30'
+                                                "
+                                            >
+                                                <span
+                                                    aria-hidden="true"
+                                                    class="pointer-events-none inline-block size-3 transform rounded-full bg-white shadow-sm ring-0 transition duration-200 ease-in-out"
+                                                    :class="
+                                                        item.show_limits
+                                                            ? 'translate-x-3'
+                                                            : 'translate-x-0'
+                                                    "
+                                                />
+                                            </span>
+                                        </button>
+                                        <button
+                                            type="button"
+                                            class="rounded-lg p-1.5 text-red-600 hover:bg-red-50 dark:hover:bg-red-950/30"
+                                            title="Remover série"
+                                            @click="removeSeries(index)"
+                                        >
+                                            <Trash2 class="size-4" />
+                                        </button>
+                                    </div>
+                                </div>
+
+                                <div
+                                    class="grid grid-cols-2 gap-2 text-xs sm:grid-cols-4"
+                                >
+                                    <label
+                                        class="grid gap-1 text-[11px] text-muted-foreground"
+                                    >
+                                        Tipo
+                                        <select
+                                            v-model="item.chart_type"
+                                            data-test="series-chart-type"
+                                            class="h-8 rounded-lg border bg-background px-2 text-xs text-foreground"
+                                        >
+                                            <option value="line">Linha</option>
+                                            <option value="bar">Barra</option>
+                                            <option value="area">Área</option>
+                                        </select>
+                                    </label>
+                                    <label
+                                        class="grid gap-1 text-[11px] text-muted-foreground"
+                                    >
+                                        Eixo
+                                        <select
+                                            v-model="item.axis_position"
+                                            data-test="series-axis-position"
+                                            class="h-8 rounded-lg border bg-background px-2 text-xs text-foreground"
+                                        >
+                                            <option value="left">
+                                                Eixo esquerdo
+                                            </option>
+                                            <option value="right">
+                                                Eixo direito
+                                            </option>
+                                        </select>
+                                    </label>
+                                    <label
+                                        class="grid gap-1 text-[11px] text-muted-foreground"
+                                    >
+                                        Mínimo
+                                        <input
+                                            :value="item.min_val ?? ''"
+                                            type="number"
+                                            step="any"
+                                            placeholder="Nenhum"
+                                            data-test="series-min-val"
+                                            class="h-8 rounded-lg border bg-background px-2 text-xs text-foreground"
+                                            @input="
+                                                updateSeriesLimit(
+                                                    item,
+                                                    'min_val',
+                                                    (
+                                                        $event.target as HTMLInputElement
+                                                    ).value,
+                                                )
+                                            "
+                                        />
+                                    </label>
+                                    <label
+                                        class="grid gap-1 text-[11px] text-muted-foreground"
+                                    >
+                                        Máximo
+                                        <input
+                                            :value="item.max_val ?? ''"
+                                            type="number"
+                                            step="any"
+                                            placeholder="Nenhum"
+                                            data-test="series-max-val"
+                                            class="h-8 rounded-lg border bg-background px-2 text-xs text-foreground"
+                                            @input="
+                                                updateSeriesLimit(
+                                                    item,
+                                                    'max_val',
+                                                    (
+                                                        $event.target as HTMLInputElement
+                                                    ).value,
+                                                )
+                                            "
+                                        />
+                                    </label>
+                                </div>
+
+                                <div
+                                    class="mt-2 flex flex-wrap items-center justify-between gap-3 border-t pt-2 text-xs"
+                                >
+                                    <label
+                                        class="flex items-center gap-2 text-[11px] text-muted-foreground"
+                                    >
+                                        Espessura
+                                        <input
+                                            v-model.number="item.stroke_width"
+                                            type="range"
+                                            min="1"
+                                            max="8"
+                                            class="w-24"
+                                        />
+                                    </label>
+                                    <div class="flex items-center gap-2">
+                                        <button
+                                            v-for="toggle in [
+                                                {
+                                                    key: 'show_points' as const,
+                                                    label: 'Pontos',
+                                                    testId: 'series-show-points',
+                                                },
+                                                {
+                                                    key: 'show_values' as const,
+                                                    label: 'Valores',
+                                                    testId: 'series-show-values',
+                                                },
+                                            ]"
+                                            :key="toggle.key"
+                                            type="button"
+                                            role="switch"
+                                            :data-test="toggle.testId"
+                                            :aria-checked="
+                                                Boolean(item[toggle.key])
+                                            "
+                                            class="inline-flex h-7 items-center gap-2 rounded-lg border px-2 text-[11px] font-medium transition-colors"
+                                            :class="
+                                                item[toggle.key]
+                                                    ? 'border-blue-500/40 bg-blue-500/10 text-blue-700 dark:text-blue-300'
+                                                    : 'bg-background text-muted-foreground hover:bg-muted/50'
+                                            "
+                                            @click="
+                                                item[toggle.key] =
+                                                    !item[toggle.key]
+                                            "
+                                        >
+                                            <span>{{ toggle.label }}</span>
+                                            <span
+                                                class="relative inline-flex h-4 w-7 shrink-0 rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out"
+                                                :class="
+                                                    item[toggle.key]
+                                                        ? 'bg-blue-600'
+                                                        : 'bg-muted-foreground/30'
+                                                "
+                                            >
+                                                <span
+                                                    aria-hidden="true"
+                                                    class="pointer-events-none inline-block size-3 transform rounded-full bg-white shadow-sm ring-0 transition duration-200 ease-in-out"
+                                                    :class="
+                                                        item[toggle.key]
+                                                            ? 'translate-x-3'
+                                                            : 'translate-x-0'
+                                                    "
+                                                />
+                                            </span>
+                                        </button>
+                                    </div>
+                                </div>
+                            </article>
+                        </div>
                     </div>
                 </div>
 
-                <footer class="mt-4 flex justify-end gap-2">
+                <footer
+                    class="mt-4 flex shrink-0 justify-end gap-2 border-t pt-3"
+                >
                     <button
                         type="button"
                         class="rounded-lg border bg-card px-4 py-2 text-sm"

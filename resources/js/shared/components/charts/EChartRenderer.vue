@@ -64,6 +64,16 @@ function formatNumericValue(value: number): string {
         : '';
 }
 
+function toFiniteNumber(value: unknown): number | null {
+    if (value === null || value === undefined || value === '') {
+        return null;
+    }
+
+    const numeric = typeof value === 'number' ? value : Number(value);
+
+    return Number.isFinite(numeric) ? numeric : null;
+}
+
 function computeAxisBounds(axisSeries: ChartSeries[]): {
     min: number | undefined;
     max: number | undefined;
@@ -72,11 +82,11 @@ function computeAxisBounds(axisSeries: ChartSeries[]): {
         s.data.map((d) => d.value).filter((v) => Number.isFinite(v)),
     );
     const minLimits = axisSeries
-        .map((s) => s.min_val)
-        .filter((v): v is number => v != null && Number.isFinite(v));
+        .map((s) => toFiniteNumber(s.min_val))
+        .filter((v): v is number => v !== null);
     const maxLimits = axisSeries
-        .map((s) => s.max_val)
-        .filter((v): v is number => v != null && Number.isFinite(v));
+        .map((s) => toFiniteNumber(s.max_val))
+        .filter((v): v is number => v !== null);
 
     const hasPh = axisSeries.some((s) => s.label.toLowerCase().includes('ph'));
     const hasNegative =
@@ -105,9 +115,12 @@ function computeAxisBounds(axisSeries: ChartSeries[]): {
     }
 
     let computedMax: number | undefined = undefined;
-    const maxCandidates = [...allValues, ...maxLimits];
+    const maxCandidates = [...allValues, ...maxLimits, ...minLimits];
 
-    if (maxCandidates.length > 0 && maxLimits.length > 0) {
+    if (
+        maxCandidates.length > 0 &&
+        (maxLimits.length > 0 || minLimits.length > 0)
+    ) {
         const highest = Math.max(...maxCandidates);
         const lowest = computedMin ?? Math.min(...allValues, ...minLimits, 0);
         const span = Math.max(Math.abs(highest - lowest), 1);
@@ -134,6 +147,13 @@ function renderChart() {
         seriesByAxis.set(key, group);
     }
 
+    const seriesWithLimitsCount = props.series.filter(
+        (s) =>
+            toFiniteNumber(s.min_val) !== null ||
+            toFiniteNumber(s.max_val) !== null,
+    ).length;
+    const hasMultipleLimitSeries = seriesWithLimitsCount > 1;
+
     const renderedSeries = props.series.map((series) => {
         const key = series.axis_position ?? 'left';
         let axisIndex = axes.get(key);
@@ -156,34 +176,39 @@ function renderChart() {
 
         const isBar = series.chart_type === 'bar';
         const isArea = series.chart_type === 'area';
-        const minVal = series.min_val;
-        const maxVal = series.max_val;
+        const minVal = toFiniteNumber(series.min_val);
+        const maxVal = toFiniteNumber(series.max_val);
+        const limitColor = hasMultipleLimitSeries ? series.color : '#ef4444';
 
         const markLineData: Array<Record<string, unknown>> = [];
 
-        if (minVal != null && Number.isFinite(minVal)) {
+        if (minVal !== null) {
             markLineData.push({
                 yAxis: minVal,
                 name: 'Limite Mín.',
-                lineStyle: { color: '#ef4444', type: 'dashed', width: 1.5 },
+                lineStyle: { color: limitColor, type: 'dashed', width: 1.5 },
                 label: {
-                    formatter: `Mín: ${formatNumericValue(minVal)}`,
+                    formatter: hasMultipleLimitSeries
+                        ? `Mín (${series.label}): ${formatNumericValue(minVal)}`
+                        : `Mín: ${formatNumericValue(minVal)}`,
                     position: 'insideStartTop',
-                    color: '#ef4444',
+                    color: limitColor,
                     fontSize: 10,
                 },
             });
         }
 
-        if (maxVal != null && Number.isFinite(maxVal)) {
+        if (maxVal !== null) {
             markLineData.push({
                 yAxis: maxVal,
                 name: 'Limite Máx.',
-                lineStyle: { color: '#ef4444', type: 'dashed', width: 1.5 },
+                lineStyle: { color: limitColor, type: 'dashed', width: 1.5 },
                 label: {
-                    formatter: `Máx: ${formatNumericValue(maxVal)}`,
+                    formatter: hasMultipleLimitSeries
+                        ? `Máx (${series.label}): ${formatNumericValue(maxVal)}`
+                        : `Máx: ${formatNumericValue(maxVal)}`,
                     position: 'insideEndTop',
-                    color: '#ef4444',
+                    color: limitColor,
                     fontSize: 10,
                 },
             });
@@ -191,8 +216,8 @@ function renderChart() {
 
         const dataPoints = series.data.map((point) => {
             const isOutOfBounds =
-                (minVal != null && point.value < minVal) ||
-                (maxVal != null && point.value > maxVal);
+                (minVal !== null && point.value < minVal) ||
+                (maxVal !== null && point.value > maxVal);
 
             if (isBar && isOutOfBounds) {
                 return {

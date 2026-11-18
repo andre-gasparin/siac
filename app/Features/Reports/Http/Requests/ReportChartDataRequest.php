@@ -28,6 +28,9 @@ class ReportChartDataRequest extends FormRequest
             'series.*.axis_position' => ['required', 'string', 'in:left,right'],
             'series.*.min_val' => ['nullable', 'numeric'],
             'series.*.max_val' => ['nullable', 'numeric'],
+            'series.*.show_limits' => ['nullable', 'boolean'],
+            'series.*.show_points' => ['nullable', 'boolean'],
+            'series.*.show_values' => ['nullable', 'boolean'],
         ];
     }
 }

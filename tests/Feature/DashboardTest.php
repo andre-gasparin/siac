@@ -306,6 +306,8 @@ test('parameter search matches multi-word query across system name and parameter
         'tag' => 'TAG-PH',
         'unit' => 'pH',
         'decimals' => 2,
+        'alert_1_min' => 6.5,
+        'alert_1_max' => 8.5,
         'is_active' => true,
     ]);
 
@@ -318,6 +320,8 @@ test('parameter search matches multi-word query across system name and parameter
     $response->assertOk()
         ->assertJsonFragment([
             'display_name' => 'Água de alimentação - pH',
+            'alert_1_min' => 6.5,
+            'alert_1_max' => 8.5,
         ]);
 });
 

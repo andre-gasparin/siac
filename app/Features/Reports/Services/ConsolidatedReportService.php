@@ -25,7 +25,56 @@ use Illuminate\Validation\ValidationException;
 
 class ConsolidatedReportService
 {
+    /** @var list<string> */
+    public const SERIES_PALETTE = ['#2563EB', '#E11D48', '#059669', '#D97706', '#7C3AED'];
+
     public function __construct(private DataTableDataBuilder $dataBuilder) {}
+
+    /**
+     * Resolve distinct colors for series without a saved color while preserving saved ones.
+     *
+     * @param  list<string|null>  $rawColors
+     * @return list<string>
+     */
+    public static function resolveSeriesColors(array $rawColors): array
+    {
+        $usedColors = [];
+
+        foreach ($rawColors as $rawColor) {
+            $trimmed = is_string($rawColor) ? trim($rawColor) : '';
+
+            if ($trimmed !== '') {
+                $usedColors[] = strtoupper($trimmed);
+            }
+        }
+
+        $resolved = [];
+
+        foreach ($rawColors as $index => $rawColor) {
+            $trimmed = is_string($rawColor) ? trim($rawColor) : '';
+
+            if ($trimmed !== '') {
+                $resolved[] = $trimmed;
+
+                continue;
+            }
+
+            $picked = null;
+
+            foreach (self::SERIES_PALETTE as $candidate) {
+                if (! in_array(strtoupper($candidate), $usedColors, true)) {
+                    $picked = $candidate;
+                    $usedColors[] = strtoupper($candidate);
+
+                    break;
+                }
+            }
+
+            $resolved[] = $picked ?? self::SERIES_PALETTE[$index % count(self::SERIES_PALETTE)];
+        }
+
+        return $resolved;
+    }
 
     /**
      * @return array{status: string, search: string}
@@ -710,6 +759,8 @@ class ConsolidatedReportService
             'color' => '#2563eb',
             'stroke_width' => 2,
             'axis_position' => 'left',
+            'min_val' => $parameter->alert_1_min,
+            'max_val' => $parameter->alert_1_max,
             'unit' => $parameter->unit,
             'show_points' => true,
             'show_values' => false,
@@ -807,7 +858,7 @@ class ConsolidatedReportService
         }
 
         $parameters = $parameterQuery
-            ->get(['id', 'name', 'unit', 'decimals'])
+            ->get(['id', 'name', 'unit', 'decimals', 'alert_1_min', 'alert_1_max'])
             ->keyBy('id');
 
         if ($strict && $parameters->count() !== $parameterIds->count()) {
@@ -831,16 +882,47 @@ class ConsolidatedReportService
             ->get(['parameter_id', 'measured_at', 'value'])
             ->groupBy('parameter_id');
 
-        $builtSeries = collect($series)
+        $filteredSeries = collect($series)
             ->filter(fn (array $config): bool => $parameters->has((int) ($config['parameter_id'] ?? 0)))
-            ->map(function (array $config) use ($parameters, $values): array {
+            ->values();
+
+        $resolvedColors = self::resolveSeriesColors(
+            $filteredSeries->map(fn (array $config): ?string => is_string($config['color'] ?? null) ? $config['color'] : null)->values()->all()
+        );
+
+        $builtSeries = $filteredSeries
+            ->map(function (array $config, int $index) use ($parameters, $values, $resolvedColors): array {
                 /** @var Parameter $parameter */
                 $parameter = $parameters->get((int) $config['parameter_id']);
+                $hasShowLimits = array_key_exists('show_limits', $config) && $config['show_limits'] !== null;
+                $rawMin = $config['min_val'] ?? null;
+                $rawMax = $config['max_val'] ?? null;
+                $hasCustomLimits = ($rawMin !== null && $rawMin !== '') || ($rawMax !== null && $rawMax !== '');
+                $showLimits = $hasShowLimits
+                    ? (bool) $config['show_limits']
+                    : ($hasCustomLimits || $index === 0);
+
+                $resolvedMin = null;
+                $resolvedMax = null;
+
+                if ($showLimits) {
+                    if ($hasShowLimits || $hasCustomLimits) {
+                        $resolvedMin = is_numeric($rawMin) ? (float) $rawMin : null;
+                        $resolvedMax = is_numeric($rawMax) ? (float) $rawMax : null;
+                    } else {
+                        $resolvedMin = $parameter->alert_1_min !== null ? (float) $parameter->alert_1_min : null;
+                        $resolvedMax = $parameter->alert_1_max !== null ? (float) $parameter->alert_1_max : null;
+                    }
+                }
 
                 return [
                     ...$config,
+                    'color' => $resolvedColors[$index],
                     'label' => $config['label'] ?? $parameter->name,
                     'unit' => $parameter->unit,
+                    'min_val' => $resolvedMin,
+                    'max_val' => $resolvedMax,
+                    'show_limits' => $showLimits,
                     'data' => $values->get($parameter->id, collect())->map(fn (ParameterValue $value): array => [
                         'timestamp' => $value->measured_at->toIso8601String(),
                         'formatted_time' => $value->measured_at->format('d/m H:i'),
@@ -848,7 +930,6 @@ class ConsolidatedReportService
                     ])->values()->all(),
                 ];
             })
-            ->values()
             ->all();
 
         return array_values($builtSeries);
