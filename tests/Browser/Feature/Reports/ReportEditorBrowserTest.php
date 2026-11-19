@@ -132,21 +132,45 @@ test('report show page supports disable confirmation tooltip, status border colo
 
     $page = visit(route('reports.show', [$team, $report]))
         ->assertSee('Sistema Teste')
-        ->assertAttribute('[data-test="toggle-hide-data-slider"]', 'aria-checked', 'true');
+        ->assertNotPresent('[data-test="system-block-actions"]')
+        ->assertNotPresent('[data-test="toggle-hide-data-slider"]');
 
-    // Initial state: red bolinha + red border
+    // Initial state: red bolinha + red border + red "Desabilitado" badge in systems combo
     expect($page->attribute("[data-report-system-id='{$system->id}']", 'class'))->toContain('border-red-500/60')
         ->and($page->attribute('[data-test="system-status-indicator"]', 'class'))->toContain('bg-red-500');
 
-    // Enabling via bolinha opens editor directly without confirmation, fixed by default, yellow border
+    $page->click('[data-test="systems-popover-trigger"]')
+        ->assertPresent('[data-test="systems-popover"]')
+        ->assertSeeIn("[data-test='systems-popover-status-{$system->id}']", 'Desabilitado');
+
+    expect($page->attribute("[data-test='systems-popover-status-{$system->id}']", 'data-status'))->toBe('disabled')
+        ->and($page->attribute("[data-test='systems-popover-status-{$system->id}']", 'class'))->toContain('bg-red-500/15');
+
+    $page->click('[data-test="systems-popover-trigger"]')
+        ->assertNotPresent('[data-test="systems-popover"]');
+
+    // Enabling via bolinha opens editor directly without confirmation, fixed by default, yellow border + block actions visible + amber "Em edição" badge in systems combo
     $page->click('[data-test="system-status-indicator"]')
         ->assertPresent('[data-test="save-report"]')
+        ->assertPresent('[data-test="system-block-actions"]')
+        ->assertAttribute('[data-test="toggle-hide-data-slider"]', 'aria-checked', 'true')
         ->assertNotPresent('[data-test="disable-system-confirmation"]')
         ->assertSee('Flutuar')
         ->assertNotPresent('[data-test="floating-editor-header"]');
 
     expect($page->attribute("[data-report-system-id='{$system->id}']", 'class'))->toContain('border-amber-500/60')
         ->and($page->attribute('[data-test="system-status-indicator"]', 'class'))->toContain('bg-amber-500');
+
+    $page->click('[data-test="systems-popover-trigger"]')
+        ->assertPresent('[data-test="systems-popover"]')
+        ->assertPresent('[data-test="systems-popover-editing-count"]')
+        ->assertSeeIn("[data-test='systems-popover-status-{$system->id}']", 'Em edição');
+
+    expect($page->attribute("[data-test='systems-popover-status-{$system->id}']", 'data-status'))->toBe('editing')
+        ->and($page->attribute("[data-test='systems-popover-status-{$system->id}']", 'class'))->toContain('bg-amber-500/15');
+
+    $page->click('[data-test="systems-popover-trigger"]')
+        ->assertNotPresent('[data-test="systems-popover"]');
 
     // Toggle floating ON and back to fixed
     $page->click('[data-test="toggle-floating-editor"]')
@@ -171,10 +195,22 @@ test('report show page supports disable confirmation tooltip, status border colo
         ->type('[data-test="report-editor-content"]', 'Texto rosa')
         ->click('[data-test="apply-text-color"]')
         ->click('[data-test="save-report"]')
-        ->assertSee('Texto rosa');
+        ->assertSee('Texto rosa')
+        ->assertPresent('[data-test="system-block-actions"]');
 
     expect($page->attribute("[data-report-system-id='{$system->id}']", 'class'))->toContain('border-emerald-500/60')
         ->and($page->attribute('[data-test="system-status-indicator"]', 'class'))->toContain('bg-emerald-500');
+
+    $page->click('[data-test="systems-popover-trigger"]')
+        ->assertPresent('[data-test="systems-popover"]')
+        ->assertNotPresent('[data-test="systems-popover-editing-count"]')
+        ->assertSeeIn("[data-test='systems-popover-status-{$system->id}']", 'Habilitado');
+
+    expect($page->attribute("[data-test='systems-popover-status-{$system->id}']", 'data-status'))->toBe('enabled')
+        ->and($page->attribute("[data-test='systems-popover-status-{$system->id}']", 'class'))->toContain('bg-emerald-500/15');
+
+    $page->click('[data-test="systems-popover-trigger"]')
+        ->assertNotPresent('[data-test="systems-popover"]');
 
     // Toggle slider OFF (hide in final user report) -> shows loading spinner while saving and keeps table visible on admin screen
     $page->script(<<<'JS'
@@ -233,9 +269,17 @@ test('report show page supports disable confirmation tooltip, status border colo
         ->assertPresent('[data-test="disable-system-confirmation"]')
         ->click('[data-test="confirm-disable-system"]')
         ->assertNotPresent('[data-test="disable-system-confirmation"]')
+        ->assertNotPresent('[data-test="system-block-actions"]')
         ->assertNoJavaScriptErrors()
         ->assertNoConsoleLogs();
 
     expect($page->attribute("[data-report-system-id='{$system->id}']", 'class'))->toContain('border-red-500/60')
         ->and($page->attribute('[data-test="system-status-indicator"]', 'class'))->toContain('bg-red-500');
+
+    $page->click('[data-test="systems-popover-trigger"]')
+        ->assertPresent('[data-test="systems-popover"]')
+        ->assertSeeIn("[data-test='systems-popover-status-{$system->id}']", 'Desabilitado');
+
+    expect($page->attribute("[data-test='systems-popover-status-{$system->id}']", 'data-status'))->toBe('disabled')
+        ->and($page->attribute("[data-test='systems-popover-status-{$system->id}']", 'class'))->toContain('bg-red-500/15');
 });

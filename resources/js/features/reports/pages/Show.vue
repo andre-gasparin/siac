@@ -444,6 +444,7 @@ function getSystemDates() {
 const systemData = reactive<Record<number, ReportData>>({});
 const loadingSystems = reactive<Record<number, boolean>>({});
 const togglingHideData = reactive<Record<number, boolean>>({});
+const editingSystems = reactive<Record<number, boolean>>({});
 const historyOpen = ref(false);
 const recipientsOpen = ref(false);
 const agentOpen = ref(false);
@@ -755,6 +756,10 @@ function handleEditorSaved(
     router.reload();
 }
 
+function handleSystemEditingChange(systemId: number, editing: boolean): void {
+    editingSystems[systemId] = editing;
+}
+
 onMounted(() =>
     sections.value
         .filter((system) => system.item?.show_data_results)
@@ -771,6 +776,7 @@ onMounted(() =>
             :report="report"
             :current-team="currentTeam"
             :sections="sortedSections"
+            :editing-systems="editingSystems"
             :intended-recipients-count="intendedRecipients.length"
             :active-recipients-count="
                 activeRecipientsCount ??
@@ -817,6 +823,7 @@ onMounted(() =>
             @chart="openChart"
             @resolve-suggestion="resolveSuggestion"
             @editor-saved="(savedItem) => handleEditorSaved(system, savedItem)"
+            @editing-change="handleSystemEditingChange"
         />
     </div>
 

@@ -280,6 +280,44 @@ function formatValue(
               maximumFractionDigits: decimals,
           });
 }
+
+function formatLimits(parameter: ParameterItem): string | null {
+    const hasMin = parameter.alert_1_min != null;
+    const hasMax = parameter.alert_1_max != null;
+
+    if (hasMin && hasMax) {
+        return `${formatValue(parameter.alert_1_min, parameter.decimals)} - ${formatValue(parameter.alert_1_max, parameter.decimals)}`;
+    }
+
+    if (hasMin) {
+        return `>${formatValue(parameter.alert_1_min, parameter.decimals)}`;
+    }
+
+    if (hasMax) {
+        return `<${formatValue(parameter.alert_1_max, parameter.decimals)}`;
+    }
+
+    return null;
+}
+
+function formatLimitsTitle(parameter: ParameterItem): string | undefined {
+    const parts: string[] = [];
+
+    if (parameter.alert_1_min != null) {
+        parts.push(
+            `Mín.: ${formatValue(parameter.alert_1_min, parameter.decimals)}`,
+        );
+    }
+
+    if (parameter.alert_1_max != null) {
+        parts.push(
+            `Máx.: ${formatValue(parameter.alert_1_max, parameter.decimals)}`,
+        );
+    }
+
+    return parts.length ? parts.join(' | ') : undefined;
+}
+
 function isOutside(row: DataRow, parameter: ParameterItem): boolean {
     const value = row.values[parameter.id];
 
@@ -629,7 +667,7 @@ function isOutside(row: DataRow, parameter: ParameterItem): boolean {
                                 ]"
                             >
                                 <div
-                                    class="inline-flex flex-wrap items-center justify-center gap-1"
+                                    class="flex flex-col items-center justify-center gap-1"
                                 >
                                     <span>{{ param.name }}</span>
                                     <ParameterCategoryBadge
@@ -680,7 +718,7 @@ function isOutside(row: DataRow, parameter: ParameterItem): boolean {
                                 {{ param.unit || '—' }}
                             </th>
                         </tr>
-                        <!-- Linha 4: Limites (mínimo / máximo) em pílulas -->
+                        <!-- Linha 4: Limites (mínimo / máximo) em pílula compacta -->
                         <tr>
                             <th
                                 v-for="param in visibleParameters"
@@ -691,38 +729,13 @@ function isOutside(row: DataRow, parameter: ParameterItem): boolean {
                                         .colBg
                                 "
                             >
-                                <div
-                                    v-if="
-                                        param.alert_1_min != null ||
-                                        param.alert_1_max != null
-                                    "
-                                    class="flex flex-wrap items-center justify-center gap-1"
+                                <span
+                                    v-if="formatLimits(param)"
+                                    :title="formatLimitsTitle(param)"
+                                    class="inline-flex items-center justify-center rounded-full bg-emerald-500/15 px-2 py-0.5 text-[10px] leading-tight font-medium text-emerald-800 tabular-nums dark:bg-emerald-500/20 dark:text-emerald-300"
                                 >
-                                    <span
-                                        v-if="param.alert_1_min != null"
-                                        class="inline-flex items-center rounded-full bg-emerald-500/15 px-2 py-0.5 text-[10px] leading-none font-medium text-emerald-800 tabular-nums dark:bg-emerald-500/20 dark:text-emerald-300"
-                                    >
-                                        mín.
-                                        {{
-                                            formatValue(
-                                                param.alert_1_min,
-                                                param.decimals,
-                                            )
-                                        }}
-                                    </span>
-                                    <span
-                                        v-if="param.alert_1_max != null"
-                                        class="inline-flex items-center rounded-full bg-emerald-500/15 px-2 py-0.5 text-[10px] leading-none font-medium text-emerald-800 tabular-nums dark:bg-emerald-500/20 dark:text-emerald-300"
-                                    >
-                                        máx.
-                                        {{
-                                            formatValue(
-                                                param.alert_1_max,
-                                                param.decimals,
-                                            )
-                                        }}
-                                    </span>
-                                </div>
+                                    {{ formatLimits(param) }}
+                                </span>
                                 <span
                                     v-else
                                     class="block text-[10px] text-muted-foreground"

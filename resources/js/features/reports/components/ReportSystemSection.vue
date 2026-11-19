@@ -10,10 +10,14 @@ import {
     X,
 } from '@lucide/vue';
 import { onClickOutside } from '@vueuse/core';
-import { computed, ref } from 'vue';
+import { computed, onUnmounted, ref, watch } from 'vue';
 import ReportCommentContent from '@/features/reports/components/ReportCommentContent.vue';
 import ReportDataTable from '@/features/reports/components/ReportDataTable.vue';
 import ReportEditorLauncher from '@/features/reports/components/ReportEditorLauncher.vue';
+import {
+    hasSavedReportComment,
+    resolveReportSystemStatus,
+} from '@/features/reports/systemStatus';
 import type { ReportPhrase, ReportSystem } from '@/features/reports/types';
 import type { ChartSeries } from '@/shared/components/charts/EChartRenderer.vue';
 import type { Team } from '@/shared/types';
@@ -100,22 +104,26 @@ const emit = defineEmits<{
     chart: [system: SystemSection, parameterId: number, type: 'line' | 'bar'];
     resolveSuggestion: [suggestionId: number, decision: 'accept' | 'reject'];
     editorSaved: [item?: ReportPhrase | null];
+    editingChange: [systemId: number, editing: boolean];
 }>();
 
-const isSaved = computed(() => {
-    return Boolean(
-        props.system.item?.show_data_results &&
-        props.system.item?.comment &&
-        (props.system.item.comment.replace(/<[^>]+>/g, '').trim().length > 0 ||
-            props.system.item.comment.includes('data-report-chart')),
-    );
-});
+const isSaved = computed(() => hasSavedReportComment(props.system.item));
 
 const isBlockOpen = ref(isSaved.value);
 const isEditing = ref(false);
 const isTableOpen = ref(false);
 const confirmDisableOpen = ref(false);
 const bolinhaContainerRef = ref<HTMLElement | null>(null);
+
+watch(isEditing, (editing) => {
+    emit('editingChange', props.system.id, editing);
+});
+
+onUnmounted(() => {
+    if (isEditing.value) {
+        emit('editingChange', props.system.id, false);
+    }
+});
 
 onClickOutside(bolinhaContainerRef, () => {
     confirmDisableOpen.value = false;
@@ -127,32 +135,16 @@ const isDataHidden = computed(
 );
 const isTableVisibleInFinalReport = computed(() => !isDataHidden.value);
 
-const systemStatus = computed<'emerald' | 'amber' | 'red'>(() => {
-    // Se estiver desativado: vermelho
-    if (!props.system.item?.show_data_results) {
-        return 'red';
-    }
-
-    // Se estiver em modo de edição (precisa salvar): amarelo
-    if (isEditing.value) {
-        return 'amber';
-    }
-
-    // Se possui conteúdo salvo e não está editando: verde
-    if (isSaved.value) {
-        return 'emerald';
-    }
-
-    // Ativo porém sem comentário e não está editando: vermelho
-    return 'red';
-});
+const systemStatus = computed(() =>
+    resolveReportSystemStatus(props.system.item, isEditing.value),
+);
 
 const statusColor = computed(() => {
-    if (systemStatus.value === 'emerald') {
+    if (systemStatus.value === 'enabled') {
         return 'bg-emerald-500';
     }
 
-    if (systemStatus.value === 'amber') {
+    if (systemStatus.value === 'editing') {
         return 'bg-amber-500';
     }
 
@@ -160,11 +152,11 @@ const statusColor = computed(() => {
 });
 
 const blockOutlineClass = computed(() => {
-    if (systemStatus.value === 'emerald') {
+    if (systemStatus.value === 'enabled') {
         return 'border-emerald-500/60 shadow-sm ring-1 ring-emerald-500/25';
     }
 
-    if (systemStatus.value === 'amber') {
+    if (systemStatus.value === 'editing') {
         return 'border-amber-500/60 shadow-sm ring-1 ring-amber-500/25';
     }
 
@@ -351,7 +343,11 @@ function handleUngroupChild(child: { id: number; name: string }): void {
                     {{ combinedTitle }}
                 </h2>
             </div>
-            <div class="flex items-center gap-2">
+            <div
+                v-if="systemStatus !== 'disabled'"
+                data-test="system-block-actions"
+                class="flex items-center gap-2"
+            >
                 <div
                     class="flex items-center gap-2 rounded-lg border border-border bg-background px-2.5 py-1 shadow-2xs transition-opacity"
                     :class="isTogglingHideData ? 'opacity-80' : ''"

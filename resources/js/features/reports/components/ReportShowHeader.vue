@@ -11,6 +11,8 @@ import {
     X,
 } from '@lucide/vue';
 import { computed, onMounted, onUnmounted, ref } from 'vue';
+import { resolveReportSystemStatus } from '@/features/reports/systemStatus';
+import type { ReportSystemStatus } from '@/features/reports/systemStatus';
 import type { Team } from '@/shared/types';
 
 interface SystemSectionItem {
@@ -18,6 +20,7 @@ interface SystemSectionItem {
     name: string;
     item: {
         show_data_results: boolean;
+        comment?: string | null;
         parent_monitored_system_id?: number | null;
     } | null;
 }
@@ -32,6 +35,7 @@ const props = defineProps<{
     };
     currentTeam: Team;
     sections: SystemSectionItem[];
+    editingSystems?: Record<number, boolean>;
     intendedRecipientsCount?: number;
     activeRecipientsCount?: number;
     pendingDate: string;
@@ -61,13 +65,73 @@ const emit = defineEmits<{
 const systemsPopoverOpen = ref(false);
 const systemsPopoverRef = ref<HTMLElement | null>(null);
 
-const totalSystems = computed(() => props.sections.length);
+const STATUS_META: Record<
+    ReportSystemStatus,
+    { label: string; badgeClass: string; dotClass: string }
+> = {
+    enabled: {
+        label: 'Habilitado',
+        badgeClass:
+            'bg-emerald-500/15 font-semibold text-emerald-600 dark:text-emerald-400',
+        dotClass: 'bg-emerald-500',
+    },
+    editing: {
+        label: 'Em edição',
+        badgeClass:
+            'bg-amber-500/15 font-semibold text-amber-600 dark:text-amber-400',
+        dotClass: 'bg-amber-500',
+    },
+    disabled: {
+        label: 'Desabilitado',
+        badgeClass:
+            'bg-red-500/15 font-semibold text-red-600 dark:text-red-400',
+        dotClass: 'bg-red-500',
+    },
+};
+
+function getSystemStatus(system: SystemSectionItem): ReportSystemStatus {
+    return resolveReportSystemStatus(
+        system.item,
+        Boolean(props.editingSystems?.[system.id]),
+    );
+}
+
+const sectionsWithStatus = computed(() =>
+    props.sections.map((system) => {
+        const status = getSystemStatus(system);
+
+        return {
+            ...system,
+            status,
+            statusMeta: STATUS_META[status],
+        };
+    }),
+);
+
+const totalSystems = computed(() => sectionsWithStatus.value.length);
 const enabledSystems = computed(
-    () => props.sections.filter((s) => s.item?.show_data_results).length,
+    () => sectionsWithStatus.value.filter((s) => s.status === 'enabled').length,
+);
+const editingSystemsCount = computed(
+    () => sectionsWithStatus.value.filter((s) => s.status === 'editing').length,
+);
+const disabledSystems = computed(
+    () =>
+        sectionsWithStatus.value.filter((s) => s.status === 'disabled').length,
 );
 const percentage = computed(() =>
     totalSystems.value > 0
         ? Math.round((enabledSystems.value / totalSystems.value) * 100)
+        : 0,
+);
+const editingPercentage = computed(() =>
+    totalSystems.value > 0
+        ? Math.min(
+              100 - percentage.value,
+              Math.round(
+                  (editingSystemsCount.value / totalSystems.value) * 100,
+              ),
+          )
         : 0,
 );
 
@@ -278,6 +342,7 @@ function formatDateBr(value: string | null): string {
             <div ref="systemsPopoverRef" class="relative">
                 <button
                     type="button"
+                    data-test="systems-popover-trigger"
                     class="group relative inline-flex h-9 items-center gap-2 overflow-hidden rounded-lg border bg-card px-3 text-xs font-medium text-foreground shadow-2xs transition hover:bg-muted/60"
                     :class="systemsPopoverOpen ? 'ring-2 ring-primary/40' : ''"
                     title="Ver sistemas monitorados"
@@ -295,14 +360,27 @@ function formatDateBr(value: string | null): string {
                     <span class="text-[11px] text-muted-foreground"
                         >({{ percentage }}%)</span
                     >
+                    <span
+                        v-if="editingSystemsCount > 0"
+                        data-test="systems-popover-editing-count"
+                        class="inline-flex items-center gap-1 rounded-full bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-semibold text-amber-600 dark:text-amber-400"
+                    >
+                        <span class="size-1.5 rounded-full bg-amber-500" />
+                        {{ editingSystemsCount }}
+                    </span>
 
                     <!-- Mini barra de progresso na base do botão -->
                     <span
-                        class="absolute bottom-0 left-0 h-1 w-full bg-muted/80"
+                        class="absolute bottom-0 left-0 flex h-1 w-full bg-muted/80"
                     >
                         <span
                             class="block h-full bg-emerald-500 transition-all duration-300"
                             :style="{ width: `${percentage}%` }"
+                        />
+                        <span
+                            v-if="editingPercentage > 0"
+                            class="block h-full bg-amber-500 transition-all duration-300"
+                            :style="{ width: `${editingPercentage}%` }"
                         />
                     </span>
                 </button>
@@ -310,12 +388,13 @@ function formatDateBr(value: string | null): string {
                 <!-- Popover Dropdown de Sistemas -->
                 <div
                     v-if="systemsPopoverOpen"
+                    data-test="systems-popover"
                     class="absolute top-full left-0 z-50 mt-2 w-72 rounded-xl border border-border bg-popover p-3 text-popover-foreground shadow-xl ring-1 ring-border/50 sm:w-80"
                 >
                     <div
-                        class="flex items-center justify-between border-b border-border/50 pb-2"
+                        class="flex items-start justify-between gap-2 border-b border-border/50 pb-2"
                     >
-                        <div>
+                        <div class="min-w-0">
                             <h3 class="text-xs font-semibold text-foreground">
                                 Sistemas Monitorados
                             </h3>
@@ -325,6 +404,38 @@ function formatDateBr(value: string | null): string {
                                     percentage
                                 }}%)
                             </p>
+                            <div
+                                class="mt-1.5 flex flex-wrap items-center gap-x-2.5 gap-y-1 text-[10px]"
+                            >
+                                <span
+                                    class="inline-flex items-center gap-1 font-medium text-emerald-600 dark:text-emerald-400"
+                                >
+                                    <span
+                                        class="size-1.5 rounded-full bg-emerald-500"
+                                    />
+                                    {{ enabledSystems }} habilitado{{
+                                        enabledSystems === 1 ? '' : 's'
+                                    }}
+                                </span>
+                                <span
+                                    class="inline-flex items-center gap-1 font-medium text-amber-600 dark:text-amber-400"
+                                >
+                                    <span
+                                        class="size-1.5 rounded-full bg-amber-500"
+                                    />
+                                    {{ editingSystemsCount }} em edição
+                                </span>
+                                <span
+                                    class="inline-flex items-center gap-1 font-medium text-red-600 dark:text-red-400"
+                                >
+                                    <span
+                                        class="size-1.5 rounded-full bg-red-500"
+                                    />
+                                    {{ disabledSystems }} desabilitado{{
+                                        disabledSystems === 1 ? '' : 's'
+                                    }}
+                                </span>
+                            </div>
                         </div>
                         <button
                             type="button"
@@ -338,9 +449,10 @@ function formatDateBr(value: string | null): string {
 
                     <div class="mt-2 max-h-60 space-y-1 overflow-y-auto pr-1">
                         <button
-                            v-for="system in sections"
+                            v-for="system in sectionsWithStatus"
                             :key="system.id"
                             type="button"
+                            :data-test="`systems-popover-item-${system.id}`"
                             class="group flex w-full items-center justify-between gap-2 rounded-lg px-2.5 py-1.5 text-left text-xs transition hover:bg-muted/70"
                             @click="scrollToSystem(system.id)"
                         >
@@ -350,22 +462,16 @@ function formatDateBr(value: string | null): string {
                                 {{ system.name }}
                             </span>
                             <span
-                                v-if="system.item?.show_data_results"
-                                class="inline-flex shrink-0 items-center gap-1 rounded-full bg-emerald-500/15 px-2 py-0.5 text-[10px] font-semibold text-emerald-600 dark:text-emerald-400"
+                                :data-test="`systems-popover-status-${system.id}`"
+                                :data-status="system.status"
+                                class="inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-[10px]"
+                                :class="system.statusMeta.badgeClass"
                             >
                                 <span
-                                    class="size-1.5 rounded-full bg-emerald-500"
+                                    class="size-1.5 rounded-full"
+                                    :class="system.statusMeta.dotClass"
                                 />
-                                Habilitado
-                            </span>
-                            <span
-                                v-else
-                                class="inline-flex shrink-0 items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium text-muted-foreground"
-                            >
-                                <span
-                                    class="size-1.5 rounded-full bg-muted-foreground/50"
-                                />
-                                Desabilitado
+                                {{ system.statusMeta.label }}
                             </span>
                         </button>
                     </div>
