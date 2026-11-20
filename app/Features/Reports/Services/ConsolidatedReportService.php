@@ -906,13 +906,8 @@ class ConsolidatedReportService
                 $resolvedMax = null;
 
                 if ($showLimits) {
-                    if ($hasShowLimits || $hasCustomLimits) {
-                        $resolvedMin = is_numeric($rawMin) ? (float) $rawMin : null;
-                        $resolvedMax = is_numeric($rawMax) ? (float) $rawMax : null;
-                    } else {
-                        $resolvedMin = $parameter->alert_1_min !== null ? (float) $parameter->alert_1_min : null;
-                        $resolvedMax = $parameter->alert_1_max !== null ? (float) $parameter->alert_1_max : null;
-                    }
+                    $resolvedMin = $parameter->alert_1_min !== null ? (float) $parameter->alert_1_min : null;
+                    $resolvedMax = $parameter->alert_1_max !== null ? (float) $parameter->alert_1_max : null;
                 }
 
                 return [

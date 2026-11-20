@@ -104,6 +104,7 @@ onMounted(load);
             v-if="series.length"
             :series="series"
             :height="node.attrs.height"
+            :axes="node.attrs.axes"
         />
         <p
             v-else-if="!isLoading"

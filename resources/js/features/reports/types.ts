@@ -1,4 +1,7 @@
-import type { ChartSeries } from '@/shared/components/charts/EChartRenderer.vue';
+import type {
+    ChartAxesConfig,
+    ChartSeries,
+} from '@/shared/components/charts/EChartRenderer.vue';
 
 export interface ReportSystem {
     id: number;
@@ -53,6 +56,16 @@ export interface ReportContext {
     phrases: ReportPhrase[];
 }
 
+export interface ReportChartAxisConfig {
+    min: number | null;
+    max: number | null;
+}
+
+export interface ReportChartAxesConfig {
+    left?: ReportChartAxisConfig;
+    right?: ReportChartAxisConfig;
+}
+
 export interface ReportChartSeriesConfig {
     parameter_id: number;
     label: string;
@@ -60,8 +73,8 @@ export interface ReportChartSeriesConfig {
     color: string;
     stroke_width: number;
     axis_position: 'left' | 'right';
-    min_val: number | null;
-    max_val: number | null;
+    min_val?: number | null;
+    max_val?: number | null;
     show_limits?: boolean;
     show_points: boolean;
     show_values: boolean;
@@ -74,6 +87,7 @@ export interface ReportChartConfig {
     startDate: string;
     endDate: string;
     teamSlug: string;
+    axes?: ChartAxesConfig | null;
     series: ReportChartSeriesConfig[];
 }
 
@@ -100,5 +114,6 @@ export interface ChartFavoriteTemplate {
     name: string;
     is_favorite: boolean;
     options?: { height?: number } | null;
+    axes?: ReportChartAxesConfig | null;
     series: ChartFavoriteSeries[];
 }

@@ -310,6 +310,7 @@ watch(
                     v-if="getChartSeries(segment.chartId).length"
                     :series="getChartSeries(segment.chartId)"
                     :height="segment.height"
+                    :axes="segment.config?.axes"
                 />
                 <p
                     v-else-if="!loadingCharts[segment.chartId]"

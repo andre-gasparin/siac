@@ -18,6 +18,8 @@ import {
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import type {
     ChartFavoriteTemplate,
+    ReportChartAxesConfig,
+    ReportChartAxisConfig,
     ReportChartConfig,
     ReportChartSeriesConfig,
     ReportParameter,
@@ -35,9 +37,6 @@ import type { ChartSeries } from '@/shared/components/charts/EChartRenderer.vue'
 
 interface EditableSeries extends ReportChartSeriesConfig {
     system_name: string;
-    parameter_min?: number | null;
-    parameter_max?: number | null;
-    has_explicit_show_limits?: boolean;
 }
 
 const props = defineProps<{
@@ -63,6 +62,13 @@ const searchContainer = ref<HTMLElement | null>(null);
 const favoritesContainer = ref<HTMLElement | null>(null);
 const searchResults = ref<ReportParameter[]>([]);
 const series = ref<EditableSeries[]>([]);
+const axes = ref<{
+    left: ReportChartAxisConfig;
+    right: ReportChartAxisConfig;
+}>({
+    left: { min: null, max: null },
+    right: { min: null, max: null },
+});
 const previewSeries = ref<ChartSeries[]>([]);
 const isSearching = ref(false);
 const isPreviewing = ref(false);
@@ -170,12 +176,45 @@ async function confirmDeleteSelectedFavorite() {
     }, 3000);
 }
 
+const activeAxes = computed(() => {
+    const positions: Array<'left' | 'right'> = ['left', 'right'];
+
+    return positions
+        .map((position) => {
+            const items = series.value.filter(
+                (item) => (item.axis_position ?? 'left') === position,
+            );
+
+            if (items.length === 0) {
+                return null;
+            }
+
+            const config = axes.value[position];
+            const min = normalizeNullableNumber(config.min);
+            const max = normalizeNullableNumber(config.max);
+
+            return {
+                position,
+                label: position === 'left' ? 'Eixo esquerdo' : 'Eixo direito',
+                seriesLabels: items.map((item) => item.label).join(', '),
+                config,
+                hasInvalidRange: min !== null && max !== null && min >= max,
+            };
+        })
+        .filter((axis): axis is NonNullable<typeof axis> => axis !== null);
+});
+
+const hasInvalidAxisRange = computed(() =>
+    activeAxes.value.some((axis) => axis.hasInvalidRange),
+);
+
 const canInsert = computed(
     () =>
         series.value.length > 0 &&
         startDate.value !== '' &&
         endDate.value !== '' &&
-        startDate.value <= endDate.value,
+        startDate.value <= endDate.value &&
+        !hasInvalidAxisRange.value,
 );
 
 function csrfToken(): string {
@@ -247,6 +286,16 @@ function loadFavoriteTemplate(template: ChartFavoriteTemplate) {
     isFavorite.value = true;
     title.value = template.name;
     height.value = template.options?.height ?? 320;
+    axes.value = {
+        left: {
+            min: normalizeNullableNumber(template.axes?.left?.min),
+            max: normalizeNullableNumber(template.axes?.left?.max),
+        },
+        right: {
+            min: normalizeNullableNumber(template.axes?.right?.min),
+            max: normalizeNullableNumber(template.axes?.right?.max),
+        },
+    };
     const resolvedColors = resolveSeriesColors(template.series);
 
     series.value = template.series.map((s, index) => ({
@@ -257,19 +306,20 @@ function loadFavoriteTemplate(template: ChartFavoriteTemplate) {
         color: resolvedColors[index],
         stroke_width: s.stroke_width ?? 2,
         axis_position: s.axis_position || 'left',
-        min_val: normalizeNullableNumber(s.min_val),
-        max_val: normalizeNullableNumber(s.max_val),
-        parameter_min: normalizeNullableNumber(s.parameter_min ?? s.min_val),
-        parameter_max: normalizeNullableNumber(s.parameter_max ?? s.max_val),
+        min_val: null,
+        max_val: null,
         show_limits: s.show_limits ?? index === 0,
-        has_explicit_show_limits: true,
         show_points: s.show_points ?? true,
         show_values: s.show_values ?? false,
     }));
 }
 
 async function saveFavoriteTemplate(asNew = false) {
-    if (series.value.length === 0 || !title.value.trim()) {
+    if (
+        series.value.length === 0 ||
+        !title.value.trim() ||
+        hasInvalidAxisRange.value
+    ) {
         return;
     }
 
@@ -280,6 +330,7 @@ async function saveFavoriteTemplate(asNew = false) {
         name: title.value.trim(),
         is_favorite: true,
         options: { height: height.value },
+        axes: serializeAxes(),
         series: series.value.map(serializeSeries),
     };
 
@@ -365,6 +416,24 @@ function reset() {
         height.value = props.initialChart.height;
         startDate.value = props.initialChart.startDate;
         endDate.value = props.initialChart.endDate;
+        axes.value = {
+            left: {
+                min: normalizeNullableNumber(
+                    props.initialChart.axes?.left?.min,
+                ),
+                max: normalizeNullableNumber(
+                    props.initialChart.axes?.left?.max,
+                ),
+            },
+            right: {
+                min: normalizeNullableNumber(
+                    props.initialChart.axes?.right?.min,
+                ),
+                max: normalizeNullableNumber(
+                    props.initialChart.axes?.right?.max,
+                ),
+            },
+        };
         suppressSearchOpen = true;
         searchQuery.value = '';
         searchOpen.value = false;
@@ -378,12 +447,11 @@ function reset() {
             return {
                 ...item,
                 color: resolvedColors[index],
-                min_val: minVal,
-                max_val: maxVal,
+                min_val: null,
+                max_val: null,
                 show_limits: hasExplicitShowLimits
                     ? item.show_limits
                     : hasCustomLimits || index === 0,
-                has_explicit_show_limits: hasExplicitShowLimits,
                 system_name: 'Parâmetro do gráfico',
             };
         });
@@ -401,6 +469,10 @@ function reset() {
     height.value = 320;
     startDate.value = start.toISOString().slice(0, 10);
     endDate.value = end;
+    axes.value = {
+        left: { min: null, max: null },
+        right: { min: null, max: null },
+    };
     suppressSearchOpen = true;
     searchQuery.value = '';
     searchOpen.value = false;
@@ -429,21 +501,6 @@ async function searchParameters() {
 
             if (parameter) {
                 item.system_name = parameter.system_name ?? 'Sistema';
-                item.parameter_min = normalizeNullableNumber(
-                    parameter.alert_1_min,
-                );
-                item.parameter_max = normalizeNullableNumber(
-                    parameter.alert_1_max,
-                );
-
-                if (
-                    !item.has_explicit_show_limits &&
-                    item.min_val === null &&
-                    item.max_val === null
-                ) {
-                    item.min_val = item.parameter_min;
-                    item.max_val = item.parameter_max;
-                }
             }
         });
     } finally {
@@ -460,8 +517,6 @@ function addParameter(parameter: ReportParameter) {
     }
 
     const index = series.value.length;
-    const paramMin = normalizeNullableNumber(parameter.alert_1_min);
-    const paramMax = normalizeNullableNumber(parameter.alert_1_max);
     const nextColor =
         palette.find((c) => !series.value.some((s) => s.color === c)) ??
         palette[index % palette.length];
@@ -474,12 +529,9 @@ function addParameter(parameter: ReportParameter) {
         color: nextColor,
         stroke_width: 2,
         axis_position: index === 1 ? 'right' : 'left',
-        min_val: paramMin,
-        max_val: paramMax,
-        parameter_min: paramMin,
-        parameter_max: paramMax,
+        min_val: null,
+        max_val: null,
         show_limits: index === 0,
-        has_explicit_show_limits: true,
         show_points: true,
         show_values: false,
     });
@@ -506,26 +558,38 @@ function removeSeries(index: number) {
 
 function toggleSeriesLimits(item: EditableSeries, checked: boolean) {
     item.show_limits = checked;
-    item.has_explicit_show_limits = true;
-
-    if (checked && item.min_val === null && item.max_val === null) {
-        item.min_val = item.parameter_min ?? null;
-        item.max_val = item.parameter_max ?? null;
-    }
 }
 
-function updateSeriesLimit(
-    item: EditableSeries,
-    field: 'min_val' | 'max_val',
+function updateAxisBound(
+    position: 'left' | 'right',
+    field: 'min' | 'max',
     rawValue: string,
 ) {
-    const normalized = normalizeNullableNumber(rawValue);
-    item[field] = normalized;
-    item.has_explicit_show_limits = true;
+    axes.value[position][field] = normalizeNullableNumber(rawValue);
+}
 
-    if (normalized !== null) {
-        item.show_limits = true;
-    }
+function serializeAxes(): ReportChartAxesConfig {
+    const hasLeft = series.value.some(
+        (item) => (item.axis_position ?? 'left') === 'left',
+    );
+    const hasRight = series.value.some(
+        (item) => item.axis_position === 'right',
+    );
+
+    return {
+        left: {
+            min: hasLeft ? normalizeNullableNumber(axes.value.left.min) : null,
+            max: hasLeft ? normalizeNullableNumber(axes.value.left.max) : null,
+        },
+        right: {
+            min: hasRight
+                ? normalizeNullableNumber(axes.value.right.min)
+                : null,
+            max: hasRight
+                ? normalizeNullableNumber(axes.value.right.max)
+                : null,
+        },
+    };
 }
 
 function serializeSeries(item: EditableSeries): ReportChartSeriesConfig {
@@ -536,8 +600,8 @@ function serializeSeries(item: EditableSeries): ReportChartSeriesConfig {
         color: item.color,
         stroke_width: item.stroke_width,
         axis_position: item.axis_position,
-        min_val: normalizeNullableNumber(item.min_val),
-        max_val: normalizeNullableNumber(item.max_val),
+        min_val: null,
+        max_val: null,
         show_limits: Boolean(item.show_limits),
         show_points: item.show_points,
         show_values: item.show_values,
@@ -599,6 +663,7 @@ function insertChart() {
         startDate: startDate.value,
         endDate: endDate.value,
         teamSlug: props.teamSlug,
+        axes: serializeAxes(),
         series: series.value.map(serializeSeries),
     });
 }
@@ -1174,7 +1239,8 @@ onBeforeUnmount(() => {
                                 :disabled="
                                     isSavingFavorite ||
                                     series.length === 0 ||
-                                    !title.trim()
+                                    !title.trim() ||
+                                    hasInvalidAxisRange
                                 "
                                 @click="
                                     selectedFavoriteId
@@ -1215,7 +1281,8 @@ onBeforeUnmount(() => {
                                 :disabled="
                                     isSavingFavorite ||
                                     series.length === 0 ||
-                                    !title.trim()
+                                    !title.trim() ||
+                                    hasInvalidAxisRange
                                 "
                                 @click="saveFavoriteTemplate(true)"
                             >
@@ -1245,6 +1312,7 @@ onBeforeUnmount(() => {
                             class="w-full self-start"
                             :series="previewSeries"
                             :height="height"
+                            :axes="axes"
                         />
                         <div
                             v-else
@@ -1262,6 +1330,106 @@ onBeforeUnmount(() => {
                             <p v-if="previewError" class="mt-2 text-red-600">
                                 {{ previewError }}
                             </p>
+                        </div>
+                    </div>
+
+                    <div
+                        v-if="activeAxes.length"
+                        data-test="chart-axes-editor"
+                        class="grid gap-2.5"
+                    >
+                        <div
+                            class="flex flex-wrap items-center justify-between gap-2"
+                        >
+                            <span
+                                class="text-xs font-semibold tracking-wide text-muted-foreground uppercase"
+                            >
+                                Escala dos eixos
+                            </span>
+                            <span class="text-[11px] text-muted-foreground">
+                                Mínimo e máximo do gráfico (vazio = automático)
+                            </span>
+                        </div>
+
+                        <div
+                            class="grid gap-2.5"
+                            :class="
+                                activeAxes.length > 1
+                                    ? 'sm:grid-cols-2'
+                                    : 'grid-cols-1'
+                            "
+                        >
+                            <div
+                                v-for="axis in activeAxes"
+                                :key="axis.position"
+                                :data-test="`chart-axis-${axis.position}`"
+                                class="rounded-xl border bg-card p-3 shadow-2xs"
+                            >
+                                <div class="mb-2 min-w-0">
+                                    <p
+                                        class="text-xs font-semibold text-foreground"
+                                    >
+                                        {{ axis.label }}
+                                    </p>
+                                    <p
+                                        class="truncate text-[11px] text-muted-foreground"
+                                    >
+                                        {{ axis.seriesLabels }}
+                                    </p>
+                                </div>
+                                <div class="grid grid-cols-2 gap-2 text-xs">
+                                    <label
+                                        class="grid gap-1 text-[11px] text-muted-foreground"
+                                    >
+                                        Mínimo
+                                        <input
+                                            :value="axis.config.min ?? ''"
+                                            type="number"
+                                            step="any"
+                                            placeholder="Automático"
+                                            :data-test="`axis-${axis.position}-min`"
+                                            class="h-8 rounded-lg border bg-background px-2 text-xs text-foreground"
+                                            @input="
+                                                updateAxisBound(
+                                                    axis.position,
+                                                    'min',
+                                                    (
+                                                        $event.target as HTMLInputElement
+                                                    ).value,
+                                                )
+                                            "
+                                        />
+                                    </label>
+                                    <label
+                                        class="grid gap-1 text-[11px] text-muted-foreground"
+                                    >
+                                        Máximo
+                                        <input
+                                            :value="axis.config.max ?? ''"
+                                            type="number"
+                                            step="any"
+                                            placeholder="Automático"
+                                            :data-test="`axis-${axis.position}-max`"
+                                            class="h-8 rounded-lg border bg-background px-2 text-xs text-foreground"
+                                            @input="
+                                                updateAxisBound(
+                                                    axis.position,
+                                                    'max',
+                                                    (
+                                                        $event.target as HTMLInputElement
+                                                    ).value,
+                                                )
+                                            "
+                                        />
+                                    </label>
+                                </div>
+                                <p
+                                    v-if="axis.hasInvalidRange"
+                                    class="mt-1.5 text-[11px] font-medium text-red-600"
+                                >
+                                    O mínimo deve ser menor que o máximo.
+                                </p>
+                            </div>
                         </div>
                     </div>
 
@@ -1369,9 +1537,7 @@ onBeforeUnmount(() => {
                                     </div>
                                 </div>
 
-                                <div
-                                    class="grid grid-cols-2 gap-2 text-xs sm:grid-cols-4"
-                                >
+                                <div class="grid grid-cols-2 gap-2 text-xs">
                                     <label
                                         class="grid gap-1 text-[11px] text-muted-foreground"
                                     >
@@ -1402,50 +1568,6 @@ onBeforeUnmount(() => {
                                                 Eixo direito
                                             </option>
                                         </select>
-                                    </label>
-                                    <label
-                                        class="grid gap-1 text-[11px] text-muted-foreground"
-                                    >
-                                        Mínimo
-                                        <input
-                                            :value="item.min_val ?? ''"
-                                            type="number"
-                                            step="any"
-                                            placeholder="Nenhum"
-                                            data-test="series-min-val"
-                                            class="h-8 rounded-lg border bg-background px-2 text-xs text-foreground"
-                                            @input="
-                                                updateSeriesLimit(
-                                                    item,
-                                                    'min_val',
-                                                    (
-                                                        $event.target as HTMLInputElement
-                                                    ).value,
-                                                )
-                                            "
-                                        />
-                                    </label>
-                                    <label
-                                        class="grid gap-1 text-[11px] text-muted-foreground"
-                                    >
-                                        Máximo
-                                        <input
-                                            :value="item.max_val ?? ''"
-                                            type="number"
-                                            step="any"
-                                            placeholder="Nenhum"
-                                            data-test="series-max-val"
-                                            class="h-8 rounded-lg border bg-background px-2 text-xs text-foreground"
-                                            @input="
-                                                updateSeriesLimit(
-                                                    item,
-                                                    'max_val',
-                                                    (
-                                                        $event.target as HTMLInputElement
-                                                    ).value,
-                                                )
-                                            "
-                                        />
                                     </label>
                                 </div>
 

@@ -124,6 +124,10 @@ test('user can store a new favorite chart template', function () {
         'name' => 'Novo Gráfico Favorito',
         'is_favorite' => true,
         'options' => ['height' => 320],
+        'axes' => [
+            'left' => ['min' => 5.0, 'max' => 10.0],
+            'right' => ['min' => 0.0, 'max' => 60.0],
+        ],
         'series' => [
             [
                 'parameter_id' => $this->parameter1->id,
@@ -132,8 +136,8 @@ test('user can store a new favorite chart template', function () {
                 'color' => '#2563EB',
                 'stroke_width' => 2,
                 'axis_position' => 'left',
-                'min_val' => 6.5,
-                'max_val' => 8.5,
+                'min_val' => 1.0,
+                'max_val' => 2.0,
                 'show_limits' => true,
                 'show_points' => true,
                 'show_values' => false,
@@ -160,9 +164,14 @@ test('user can store a new favorite chart template', function () {
     $response->assertCreated()
         ->assertJsonPath('name', 'Novo Gráfico Favorito')
         ->assertJsonPath('is_favorite', true)
+        ->assertJsonPath('axes.left.min', 5)
+        ->assertJsonPath('axes.left.max', 10)
+        ->assertJsonPath('axes.right.min', 0)
+        ->assertJsonPath('axes.right.max', 60)
         ->assertJsonCount(2, 'series')
         ->assertJsonPath('series.0.show_limits', true)
         ->assertJsonPath('series.0.min_val', 6.5)
+        ->assertJsonPath('series.0.max_val', 8.5)
         ->assertJsonPath('series.1.show_limits', false)
         ->assertJsonPath('series.1.min_val', 10);
 
@@ -170,6 +179,10 @@ test('user can store a new favorite chart template', function () {
         'team_id' => $this->team->id,
         'name' => 'Novo Gráfico Favorito',
         'is_favorite' => true,
+        'y1_min' => 5.0,
+        'y1_max' => 10.0,
+        'y2_min' => 0.0,
+        'y2_max' => 60.0,
     ]);
 
     $this->assertDatabaseCount('chart_series', 2);
@@ -198,6 +211,10 @@ test('user can update an existing favorite chart template', function () {
         'name' => 'Gráfico Atualizado',
         'is_favorite' => true,
         'options' => ['height' => 400],
+        'axes' => [
+            'left' => ['min' => 2.5, 'max' => 80.5],
+            'right' => ['min' => null, 'max' => null],
+        ],
         'series' => [
             [
                 'parameter_id' => $this->parameter2->id,
@@ -218,12 +235,19 @@ test('user can update an existing favorite chart template', function () {
 
     $response->assertOk()
         ->assertJsonPath('name', 'Gráfico Atualizado')
+        ->assertJsonPath('axes.left.min', 2.5)
+        ->assertJsonPath('axes.left.max', 80.5)
+        ->assertJsonPath('axes.right.min', null)
         ->assertJsonCount(1, 'series')
         ->assertJsonPath('series.0.label', 'Vazão Atualizada');
 
     $this->assertDatabaseHas('chart_templates', [
         'id' => $template->id,
         'name' => 'Gráfico Atualizado',
+        'y1_min' => 2.5,
+        'y1_max' => 80.5,
+        'y2_min' => null,
+        'y2_max' => null,
     ]);
 });
 

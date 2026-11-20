@@ -46,6 +46,10 @@ class ChartTemplateController extends Controller
                 'name' => $validated['name'],
                 'is_favorite' => $validated['is_favorite'] ?? true,
                 'options' => $validated['options'] ?? null,
+                'y1_min' => $validated['axes']['left']['min'] ?? null,
+                'y1_max' => $validated['axes']['left']['max'] ?? null,
+                'y2_min' => $validated['axes']['right']['min'] ?? null,
+                'y2_max' => $validated['axes']['right']['max'] ?? null,
             ]);
 
             $this->syncSeries($template, $current_team, $validated['series']);
@@ -74,6 +78,10 @@ class ChartTemplateController extends Controller
                 'name' => $validated['name'],
                 'is_favorite' => $validated['is_favorite'] ?? $chart_template->is_favorite,
                 'options' => $validated['options'] ?? $chart_template->options,
+                'y1_min' => array_key_exists('axes', $validated) ? ($validated['axes']['left']['min'] ?? null) : $chart_template->y1_min,
+                'y1_max' => array_key_exists('axes', $validated) ? ($validated['axes']['left']['max'] ?? null) : $chart_template->y1_max,
+                'y2_min' => array_key_exists('axes', $validated) ? ($validated['axes']['right']['min'] ?? null) : $chart_template->y2_min,
+                'y2_max' => array_key_exists('axes', $validated) ? ($validated['axes']['right']['max'] ?? null) : $chart_template->y2_max,
             ]);
 
             $chart_template->series()->delete();
@@ -142,8 +150,6 @@ class ChartTemplateController extends Controller
                     'show_limits' => isset($item['show_limits'])
                         ? (bool) $item['show_limits']
                         : ($index === 0),
-                    'min_val' => $item['min_val'] ?? null,
-                    'max_val' => $item['max_val'] ?? null,
                 ],
             ]);
         }
@@ -166,6 +172,16 @@ class ChartTemplateController extends Controller
             'name' => $template->name,
             'is_favorite' => (bool) $template->is_favorite,
             'options' => $template->options,
+            'axes' => [
+                'left' => [
+                    'min' => $template->y1_min !== null ? (float) $template->y1_min : null,
+                    'max' => $template->y1_max !== null ? (float) $template->y1_max : null,
+                ],
+                'right' => [
+                    'min' => $template->y2_min !== null ? (float) $template->y2_min : null,
+                    'max' => $template->y2_max !== null ? (float) $template->y2_max : null,
+                ],
+            ],
             'series' => $seriesList->map(function (ChartSeries $seriesItem, int $index) use ($resolvedColors): array {
                 $options = $seriesItem->options ?? [];
                 $hasShowLimits = array_key_exists('show_limits', $options) && $options['show_limits'] !== null;
@@ -175,12 +191,6 @@ class ChartTemplateController extends Controller
                     : ($hasCustomLimits || $index === 0);
                 $parameterMin = $seriesItem->parameter->alert_1_min;
                 $parameterMax = $seriesItem->parameter->alert_1_max;
-                $minVal = $hasShowLimits
-                    ? ($options['min_val'] ?? null)
-                    : ($options['min_val'] ?? $parameterMin);
-                $maxVal = $hasShowLimits
-                    ? ($options['max_val'] ?? null)
-                    : ($options['max_val'] ?? $parameterMax);
 
                 return [
                     'id' => $seriesItem->id,
@@ -191,8 +201,8 @@ class ChartTemplateController extends Controller
                     'color' => $resolvedColors[$index],
                     'stroke_width' => $options['stroke_width'] ?? 2,
                     'axis_position' => $seriesItem->axis === 2 ? 'right' : 'left',
-                    'min_val' => $minVal !== null ? (float) $minVal : null,
-                    'max_val' => $maxVal !== null ? (float) $maxVal : null,
+                    'min_val' => $parameterMin !== null ? (float) $parameterMin : null,
+                    'max_val' => $parameterMax !== null ? (float) $parameterMax : null,
                     'parameter_min' => $parameterMin !== null ? (float) $parameterMin : null,
                     'parameter_max' => $parameterMax !== null ? (float) $parameterMax : null,
                     'show_limits' => $showLimits,

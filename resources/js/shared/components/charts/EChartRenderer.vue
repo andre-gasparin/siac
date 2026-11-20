@@ -2,6 +2,16 @@
 import * as echarts from 'echarts';
 import { onBeforeUnmount, onMounted, ref, watch } from 'vue';
 
+export interface ChartAxisConfig {
+    min?: number | null;
+    max?: number | null;
+}
+
+export interface ChartAxesConfig {
+    left?: ChartAxisConfig | null;
+    right?: ChartAxisConfig | null;
+}
+
 export interface ChartSeries {
     parameter_id: number;
     label: string;
@@ -22,8 +32,9 @@ const props = withDefaults(
     defineProps<{
         series: ChartSeries[];
         height?: number;
+        axes?: ChartAxesConfig | null;
     }>(),
-    { height: 300 },
+    { height: 300, axes: null },
 );
 
 const chartElement = ref<HTMLDivElement | null>(null);
@@ -84,10 +95,20 @@ function toFiniteNumber(value: unknown): number | null {
     return Number.isFinite(numeric) ? numeric : null;
 }
 
-function computeAxisBounds(axisSeries: ChartSeries[]): {
+function computeAxisBounds(
+    axisSeries: ChartSeries[],
+    axisConfig?: ChartAxisConfig | null,
+): {
     min: number | undefined;
     max: number | undefined;
 } {
+    const explicitMin = toFiniteNumber(axisConfig?.min);
+    const explicitMax = toFiniteNumber(axisConfig?.max);
+    const hasInvalidRange =
+        explicitMin !== null &&
+        explicitMax !== null &&
+        explicitMin >= explicitMax;
+
     const allValues = axisSeries.flatMap((s) =>
         s.data.map((d) => d.value).filter((v) => Number.isFinite(v)),
     );
@@ -104,7 +125,9 @@ function computeAxisBounds(axisSeries: ChartSeries[]): {
 
     let computedMin: number | undefined = 0;
 
-    if (hasPh || hasNegative) {
+    if (explicitMin !== null && !hasInvalidRange) {
+        computedMin = explicitMin;
+    } else if (hasPh || hasNegative) {
         const candidates = [...allValues, ...minLimits];
 
         if (candidates.length > 0) {
@@ -126,19 +149,31 @@ function computeAxisBounds(axisSeries: ChartSeries[]): {
     }
 
     let computedMax: number | undefined = undefined;
-    const maxCandidates = [...allValues, ...maxLimits, ...minLimits];
 
-    if (
-        maxCandidates.length > 0 &&
-        (maxLimits.length > 0 || minLimits.length > 0)
-    ) {
-        const highest = Math.max(...maxCandidates);
-        const lowest = computedMin ?? Math.min(...allValues, ...minLimits, 0);
-        const rawRange = Math.abs(highest - lowest);
-        const span =
-            rawRange > 0 ? rawRange : Math.max(Math.abs(highest) * 0.2, 0.01);
-        const precision = span < 0.5 ? 4 : 2;
-        computedMax = Number((highest + span * 0.12).toFixed(precision));
+    if (explicitMax !== null && !hasInvalidRange) {
+        computedMax = explicitMax;
+    } else {
+        const maxCandidates = [...allValues, ...maxLimits, ...minLimits];
+
+        if (
+            maxCandidates.length > 0 &&
+            (maxLimits.length > 0 || minLimits.length > 0)
+        ) {
+            const highest = Math.max(...maxCandidates);
+            const lowest =
+                computedMin ?? Math.min(...allValues, ...minLimits, 0);
+            const rawRange = Math.abs(highest - lowest);
+            const span =
+                rawRange > 0
+                    ? rawRange
+                    : Math.max(Math.abs(highest) * 0.2, 0.01);
+            const precision = span < 0.5 ? 4 : 2;
+            const autoMax = Number((highest + span * 0.12).toFixed(precision));
+            computedMax =
+                computedMin !== undefined && autoMax <= computedMin
+                    ? undefined
+                    : autoMax;
+        }
     }
 
     return { min: computedMin, max: computedMax };
@@ -150,12 +185,13 @@ function renderChart() {
     }
 
     chart ??= echarts.init(chartElement.value);
-    const axes = new Map<string, number>();
+    const axes = new Map<'left' | 'right', number>();
     const yAxis: echarts.YAXisComponentOption[] = [];
-    const seriesByAxis = new Map<string, ChartSeries[]>();
+    const seriesByAxis = new Map<'left' | 'right', ChartSeries[]>();
 
     for (const s of props.series) {
-        const key = s.axis_position ?? 'left';
+        const key: 'left' | 'right' =
+            s.axis_position === 'right' ? 'right' : 'left';
         const group = seriesByAxis.get(key) ?? [];
         group.push(s);
         seriesByAxis.set(key, group);
@@ -169,14 +205,15 @@ function renderChart() {
     const hasMultipleLimitSeries = seriesWithLimitsCount > 1;
 
     const renderedSeries = props.series.map((series) => {
-        const key = series.axis_position ?? 'left';
+        const key: 'left' | 'right' =
+            series.axis_position === 'right' ? 'right' : 'left';
         let axisIndex = axes.get(key);
 
         if (axisIndex === undefined) {
             axisIndex = yAxis.length;
             axes.set(key, axisIndex);
             const group = seriesByAxis.get(key) ?? [series];
-            const bounds = computeAxisBounds(group);
+            const bounds = computeAxisBounds(group, props.axes?.[key]);
 
             yAxis.push({
                 type: 'value',
@@ -349,7 +386,7 @@ function renderChart() {
     );
 }
 
-watch(() => props.series, renderChart, { deep: true });
+watch(() => [props.series, props.axes], renderChart, { deep: true });
 
 onMounted(() => {
     renderChart();

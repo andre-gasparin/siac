@@ -77,6 +77,7 @@ export const ReportChart = Node.create({
             startDate: { default: '' },
             endDate: { default: '' },
             teamSlug: { default: '' },
+            axes: { default: null },
             series: { default: [] },
         };
     },

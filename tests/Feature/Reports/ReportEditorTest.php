@@ -621,7 +621,8 @@ test('chart data resolves parameter limits with first series enabled by default 
         ->assertJsonPath('series.1.min_val', null)
         ->assertJsonPath('series.1.max_val', null);
 
-    // Explicit show_limits: user hides 1st parameter limits and enables 2nd parameter limits
+    // Explicit show_limits: user hides 1st parameter limits and enables 2nd parameter limits.
+    // Even if custom min_val/max_val are present in payload, fixed panel alert_1 limits are always used.
     $this->actingAs($this->admin)
         ->postJson(route('reports.charts.data', $this->team), [
             'start_date' => '2026-07-22',
@@ -645,8 +646,8 @@ test('chart data resolves parameter limits with first series enabled by default 
                     'color' => '#E11D48',
                     'stroke_width' => 2,
                     'axis_position' => 'right',
-                    'min_val' => 0.5,
-                    'max_val' => 2.0,
+                    'min_val' => 99.0,
+                    'max_val' => 199.0,
                     'show_limits' => true,
                 ],
             ],
@@ -658,4 +659,62 @@ test('chart data resolves parameter limits with first series enabled by default 
         ->assertJsonPath('series.1.show_limits', true)
         ->assertJsonPath('series.1.min_val', 0.5)
         ->assertJsonPath('series.1.max_val', 2);
+});
+
+test('report chart saves and preserves per-axis min and max configuration', function () {
+    $chartAttrs = [
+        'id' => 'chart-axes-1',
+        'title' => 'Gráfico com Eixos Customizados',
+        'height' => 320,
+        'startDate' => '2026-07-22',
+        'endDate' => '2026-07-28',
+        'teamSlug' => $this->team->slug,
+        'axes' => [
+            'left' => ['min' => 0, 'max' => 14],
+            'right' => ['min' => 0.1, 'max' => 3.5],
+        ],
+        'series' => [
+            [
+                'parameter_id' => $this->parameter->id,
+                'label' => 'pH',
+                'chart_type' => 'line',
+                'color' => '#2563EB',
+                'stroke_width' => 2,
+                'axis_position' => 'left',
+                'min_val' => null,
+                'max_val' => null,
+                'show_limits' => true,
+                'show_points' => true,
+                'show_values' => false,
+            ],
+        ],
+    ];
+
+    $document = [
+        'type' => 'doc',
+        'content' => [
+            [
+                'type' => 'reportChart',
+                'attrs' => $chartAttrs,
+            ],
+        ],
+    ];
+
+    $encodedConfig = htmlspecialchars((string) json_encode($chartAttrs), ENT_QUOTES, 'UTF-8');
+    $html = '<div data-report-chart="chart-axes-1" data-chart-id="chart-axes-1" data-chart-config="'.$encodedConfig.'">Gráfico: Gráfico com Eixos Customizados</div>';
+
+    $this->actingAs($this->admin)
+        ->putJson(route('reports.editor.update', $this->team), [
+            'date_reference' => '2026-07-28',
+            'system_id' => $this->system->id,
+            'document' => $document,
+            'html' => $html,
+            'hide_data' => false,
+            'is_stopped' => false,
+        ])
+        ->assertOk()
+        ->assertJsonPath('item.document.content.0.attrs.axes.left.min', 0)
+        ->assertJsonPath('item.document.content.0.attrs.axes.left.max', 14)
+        ->assertJsonPath('item.document.content.0.attrs.axes.right.min', 0.1)
+        ->assertJsonPath('item.document.content.0.attrs.axes.right.max', 3.5);
 });
