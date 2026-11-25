@@ -4,6 +4,7 @@ export type Team = {
     id: number;
     name: string;
     slug: string;
+    logoUrl?: string | null;
     isActive?: boolean;
     isPersonal: boolean;
     requireDataEntryResponsible?: boolean;

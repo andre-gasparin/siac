@@ -1,12 +1,17 @@
 <?php
 
+use App\Jobs\SendReportRecipientEmail;
 use App\Models\MonitoredSystem;
 use App\Models\Parameter;
 use App\Models\ParameterValue;
 use App\Models\Report;
+use App\Models\ReportComment;
 use App\Models\ReportItem;
+use App\Models\ReportRecipient;
 use App\Models\Team;
 use App\Models\User;
+use Illuminate\Support\Facades\Queue;
+use Illuminate\Support\Str;
 
 beforeEach(function () {
     $this->admin = User::factory()->create(['is_admin' => true]);
@@ -187,4 +192,89 @@ test('user can fetch parameter chart data on user chart endpoint', function () {
         ->assertOk()
         ->assertJsonPath('series.0.chart_type', 'line')
         ->assertJsonPath('series.0.data.0.value', 2.5);
+});
+
+test('user and public viewers see is_own on comments and can notify recipients of their own interactions', function () {
+    Queue::fake();
+
+    $report = Report::query()->create([
+        'team_id' => $this->team->id,
+        'created_by' => $this->admin->id,
+        'title' => 'Relatório 03/08/2026',
+        'date_reference' => '2026-08-03',
+        'status' => 'completed',
+        'finished_at' => now(),
+    ]);
+
+    $item = ReportItem::query()->create([
+        'team_id' => $this->team->id,
+        'report_id' => $report->id,
+        'monitored_system_id' => $this->system->id,
+        'date_reference' => '2026-08-03',
+        'show_data_results' => true,
+        'comment' => '<p>Consideração</p>',
+    ]);
+
+    $token = Str::random(32);
+    $recipient = ReportRecipient::query()->create([
+        'team_id' => $this->team->id,
+        'report_id' => $report->id,
+        'user_id' => $this->member->id,
+        'name' => $this->member->name,
+        'email' => $this->member->email,
+        'access_token' => $token,
+        'token_hash' => hash('sha256', $token),
+    ]);
+
+    $userComment = ReportComment::query()->create([
+        'team_id' => $this->team->id,
+        'report_id' => $report->id,
+        'report_item_id' => $item->id,
+        'user_id' => $this->member->id,
+        'body' => 'Comentário do membro.',
+    ]);
+
+    $publicComment = ReportComment::query()->create([
+        'team_id' => $this->team->id,
+        'report_id' => $report->id,
+        'report_item_id' => $item->id,
+        'report_recipient_id' => $recipient->id,
+        'body' => 'Comentário via link público.',
+    ]);
+
+    // Authenticated user view
+    $this->actingAs($this->member)
+        ->get(route('reports.user.show', [$this->team, $report]))
+        ->assertOk()
+        ->assertInertia(fn ($page) => $page
+            ->component('Reports/UserShow')
+            ->where('systems.0.item.comments.0.id', $userComment->id)
+            ->where('systems.0.item.comments.0.is_own', true)
+            ->where('systems.0.item.comments.1.id', $publicComment->id)
+            ->where('systems.0.item.comments.1.is_own', false));
+
+    $this->actingAs($this->member)
+        ->post(route('reports.user.interactions.notify', [$this->team, $report]), [
+            'comment_ids' => [$userComment->id],
+        ])
+        ->assertRedirect();
+
+    expect($userComment->refresh()->notified_at)->not->toBeNull();
+
+    // Public recipient view
+    $this->get(route('reports.public.show', $token))
+        ->assertOk()
+        ->assertInertia(fn ($page) => $page
+            ->component('Reports/Public')
+            ->where('systems.0.item.comments.0.is_own', false)
+            ->where('systems.0.item.comments.1.id', $publicComment->id)
+            ->where('systems.0.item.comments.1.is_own', true));
+
+    $this->post(route('reports.public.interactions.notify', $token), [
+        'comment_ids' => [$publicComment->id],
+    ])->assertRedirect();
+
+    expect($publicComment->refresh()->notified_at)->not->toBeNull();
+
+    Queue::assertPushed(SendReportRecipientEmail::class, 2);
 });

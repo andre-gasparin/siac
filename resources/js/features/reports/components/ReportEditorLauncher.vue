@@ -60,6 +60,7 @@ const props = withDefaults(
         autoOpen?: boolean;
         hideData?: boolean;
         systemName?: string;
+        reloadTrigger?: number;
     }>(),
     {
         buttonLabel: 'Criar relatório',
@@ -67,6 +68,7 @@ const props = withDefaults(
         autoOpen: false,
         hideData: undefined,
         systemName: undefined,
+        reloadTrigger: 0,
     },
 );
 
@@ -75,6 +77,7 @@ const emit = defineEmits<{
     saved: [item: ReportPhrase | null];
     cancel: [];
     dateChange: [date: string];
+    dirtyChange: [dirty: boolean];
 }>();
 
 const isOpen = ref(false);
@@ -698,6 +701,19 @@ function beforeUnload(event: BeforeUnloadEvent) {
     event.preventDefault();
 }
 
+watch(isDirty, (dirty) => {
+    emit('dirtyChange', dirty);
+});
+
+watch(
+    () => props.reloadTrigger,
+    () => {
+        if (isOpen.value && chosenSystemId.value) {
+            void loadContext(true);
+        }
+    },
+);
+
 watch(
     () => props.defaultDate,
     (date) => {
@@ -731,6 +747,10 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
     window.removeEventListener('beforeunload', beforeUnload);
+
+    if (isDirty.value) {
+        emit('dirtyChange', false);
+    }
 });
 </script>
 

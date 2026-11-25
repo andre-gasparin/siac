@@ -4,10 +4,13 @@ use App\Features\Teams\Http\Controllers\CurrentTeamController;
 use App\Features\Teams\Http\Controllers\TeamController;
 use App\Features\Teams\Http\Controllers\TeamIndexController;
 use App\Features\Teams\Http\Controllers\TeamInvitationController;
+use App\Features\Teams\Http\Controllers\TeamLogoController;
 use App\Features\Teams\Http\Controllers\TeamMemberController;
 use App\Features\Teams\Http\Controllers\TeamSystemController;
 use App\Http\Middleware\EnsureTeamMembership;
 use Illuminate\Support\Facades\Route;
+
+Route::get('unidades/{team}/logo', TeamLogoController::class)->name('teams.logo');
 
 Route::middleware(['auth'])->group(function (): void {
     Route::get('invitations/{invitation}/accept', [TeamInvitationController::class, 'accept'])

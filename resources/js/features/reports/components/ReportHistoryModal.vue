@@ -12,6 +12,8 @@ import {
     X,
 } from '@lucide/vue';
 
+import { computed, ref } from 'vue';
+
 interface ActivityItem {
     id: number;
     action: string;
@@ -20,7 +22,7 @@ interface ActivityItem {
     created_at: string;
 }
 
-defineProps<{
+const props = defineProps<{
     show: boolean;
     activities: ActivityItem[];
 }>();
@@ -28,6 +30,31 @@ defineProps<{
 const emit = defineEmits<{
     close: [];
 }>();
+
+type ActivityFilter = 'all' | 'evaluation' | 'structure' | 'report';
+const categoryFilter = ref<ActivityFilter>('all');
+
+function resolveCategory(action: string): Exclude<ActivityFilter, 'all'> {
+    if (action.startsWith('consideration') || action.startsWith('suggestion')) {
+        return 'evaluation';
+    }
+
+    if (action.startsWith('system.')) {
+        return 'structure';
+    }
+
+    return 'report';
+}
+
+const filteredActivities = computed(() => {
+    if (categoryFilter.value === 'all') {
+        return props.activities;
+    }
+
+    return props.activities.filter(
+        (activity) => resolveCategory(activity.action) === categoryFilter.value,
+    );
+});
 
 function formatDate(value: string | null): string {
     if (!value) {
@@ -198,13 +225,32 @@ function getActionIcon(action: string) {
                 </button>
             </header>
 
+            <!-- Filtro por categoria -->
+            <div class="mb-3 flex flex-wrap items-center justify-between gap-2">
+                <select
+                    v-model="categoryFilter"
+                    aria-label="Filtrar eventos"
+                    class="h-8 rounded-lg border border-input bg-background px-2.5 text-xs text-foreground"
+                >
+                    <option value="all">Todos os eventos</option>
+                    <option value="evaluation">Avaliações</option>
+                    <option value="structure">
+                        Organização e configurações
+                    </option>
+                    <option value="report">Relatório e emissão</option>
+                </select>
+                <span class="text-[11px] text-muted-foreground">
+                    {{ filteredActivities.length }} registro(s)
+                </span>
+            </div>
+
             <!-- Lista de Atividades -->
             <div
-                v-if="activities.length > 0"
+                v-if="filteredActivities.length > 0"
                 class="flex-1 space-y-1 divide-y divide-border/50 overflow-y-auto pr-1"
             >
                 <div
-                    v-for="activity in activities"
+                    v-for="activity in filteredActivities"
                     :key="activity.id"
                     class="-mx-1 flex items-start gap-3 rounded-lg px-1 py-2.5 transition hover:bg-muted/30"
                 >

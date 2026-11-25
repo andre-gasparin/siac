@@ -61,15 +61,26 @@ class DataTableDataBuilder
         $lookback = (int) ($filters['ewma_lookback'] ?? 20);
         $history = $outsideLimits || $allValues ? $this->historyService->history($parameters, $startDate, $lookback) : [];
 
-        $commentTimestamps = ParameterValuesComment::query()
+        $rawComments = ParameterValuesComment::query()
             ->where('team_id', $team->id)
             ->whereIn('monitored_system_id', $systemIds)
             ->whereBetween('measured_at', [$startDate, $endDate])
             ->where('comment', '!=', '')
-            ->pluck('measured_at')
-            ->map(fn (CarbonInterface $at): string => $at->format('Y-m-d H:i'))
-            ->flip()
-            ->all();
+            ->with(['monitoredSystem:id,name', 'creator:id,name'])
+            ->orderBy('monitored_system_id')
+            ->get();
+
+        $commentsByTimestamp = [];
+        foreach ($rawComments as $commentRecord) {
+            $timeKey = $commentRecord->measured_at->format('Y-m-d H:i');
+            $commentsByTimestamp[$timeKey][] = [
+                'system_id' => $commentRecord->monitored_system_id,
+                'system_name' => $commentRecord->monitoredSystem?->name ?? 'Sistema',
+                'comment' => $commentRecord->comment,
+                'author' => $commentRecord->creator?->name,
+                'created_at' => $commentRecord->created_at?->toIso8601String(),
+            ];
+        }
 
         $revisionTimestamps = ParameterValueRevision::query()
             ->where('team_id', $team->id)
@@ -91,7 +102,7 @@ class DataTableDataBuilder
             $outsideLimits,
             $allValues,
             $lookback,
-            $commentTimestamps,
+            $commentsByTimestamp,
             $revisionTimestamps,
         );
 
@@ -152,7 +163,7 @@ class DataTableDataBuilder
      * @param  Collection<int, Parameter>  $parameters
      * @param  Collection<int, ParameterValue>  $values
      * @param  array<int, list<float>>  $history
-     * @param  array<string, int>  $commentTimestamps
+     * @param  array<string, list<array{system_id: int, system_name: string, comment: string, author: string|null, created_at: string|null}>>  $commentsByTimestamp
      * @param  array<string, int>  $revisionTimestamps
      * @return array{0: list<array<string, mixed>>, 1: array<int, array{numeric: float|null, formatted: string}>}
      */
@@ -163,7 +174,7 @@ class DataTableDataBuilder
         bool $outsideLimits,
         bool $allValues,
         int $lookback,
-        array $commentTimestamps = [],
+        array $commentsByTimestamp = [],
         array $revisionTimestamps = [],
     ): array {
         $parameterIds = $parameters->pluck('id')->all();
@@ -180,7 +191,8 @@ class DataTableDataBuilder
                 'time' => $value->measured_at->format('H:i'),
                 'values' => [],
                 'ewma' => [],
-                'has_comments' => isset($commentTimestamps[$timeKey]),
+                'has_comments' => isset($commentsByTimestamp[$timeKey]),
+                'comments' => $commentsByTimestamp[$timeKey] ?? [],
                 'has_modifications' => isset($revisionTimestamps[$timeKey]),
             ];
 

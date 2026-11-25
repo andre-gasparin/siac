@@ -221,12 +221,45 @@ class ConsolidatedReportService
     public function view(Team $team, Report $report): array
     {
         $this->ensureRecipientsInitialized($team, $report);
+        $report->loadMissing(['creator:id,name', 'finisher:id,name']);
 
         $defaultHideData = $this->defaultHideDataBySystem(
             $team,
             $report->date_reference?->format('Y-m-d'),
             $report->id,
         );
+
+        $systems = MonitoredSystem::query()
+            ->whereBelongsTo($team)
+            ->where('is_active', true)
+            ->orderBy('sort_order')
+            ->orderBy('name')
+            ->get(['id', 'name', 'sort_order']);
+
+        $dataCountsBySystem = $systems
+            ->mapWithKeys(fn (MonitoredSystem $system): array => [$system->id => 0])
+            ->all();
+
+        if ($report->date_reference) {
+            $startOfDay = $report->date_reference->copy()->startOfDay();
+            $endOfDay = $report->date_reference->copy()->endOfDay();
+
+            $counts = ParameterValue::query()
+                ->join('parameters', 'parameters.id', '=', 'parameter_values.parameter_id')
+                ->where('parameter_values.team_id', $team->id)
+                ->where('parameters.team_id', $team->id)
+                ->where('parameters.is_active', true)
+                ->whereBetween('parameter_values.measured_at', [$startOfDay, $endOfDay])
+                ->whereNotNull('parameter_values.value')
+                ->selectRaw('parameters.monitored_system_id as system_id, count(*) as aggregate')
+                ->groupBy('parameters.monitored_system_id')
+                ->pluck('aggregate', 'system_id')
+                ->all();
+
+            foreach ($counts as $systemId => $count) {
+                $dataCountsBySystem[(int) $systemId] = (int) $count;
+            }
+        }
 
         $items = ReportItem::query()
             ->whereBelongsTo($report)
@@ -238,18 +271,13 @@ class ConsolidatedReportService
             ->get()
             ->keyBy('monitored_system_id');
 
-        $systems = MonitoredSystem::query()
-            ->whereBelongsTo($team)
-            ->where('is_active', true)
-            ->orderBy('sort_order')
-            ->orderBy('name')
-            ->get(['id', 'name', 'sort_order']);
-
         $recipients = $report->recipients()->orderBy('name')->get();
         $recipientsByUser = $recipients->whereNotNull('user_id')->keyBy('user_id');
 
         return [
             'report' => $this->serializeReport($report),
+            'issuerName' => $report->finisher?->name ?? $report->creator?->name ?? auth()->user()?->name,
+            'dataCountsBySystem' => $dataCountsBySystem,
             'systems' => $systems->map(function (MonitoredSystem $system) use ($items, $team, $defaultHideData): array {
                 /** @var ReportItem|null $item */
                 $item = $items->get($system->id);
@@ -278,19 +306,9 @@ class ConsolidatedReportService
                         'send_count' => $hasRecipient ? $recipient->send_count : 0,
                     ];
                 })->all(),
-            'recipients' => $recipients->map(fn ($recipient): array => [
-                'id' => $recipient->id,
-                'user_id' => $recipient->user_id,
-                'name' => $recipient->name,
-                'email' => $recipient->email,
-                'access_token' => $recipient->access_token,
-                'public_url' => route('reports.public.show', ['token' => $recipient->access_token]),
-                'revoked_at' => $recipient->revoked_at?->toIso8601String(),
-                'last_accessed_at' => $recipient->last_accessed_at?->toIso8601String(),
-                'last_sent_at' => $recipient->last_sent_at?->toIso8601String(),
-                'send_count' => $recipient->send_count,
-            ])->all(),
+            'recipients' => $recipients->map(fn (ReportRecipient $recipient): array => $this->serializeRecipient($recipient))->all(),
             'activeRecipientsCount' => $recipients->whereNull('revoked_at')->count(),
+            'deliveryHistory' => $this->serializeDeliveryHistory($report),
             'activities' => $report->activities()
                 ->with(['user:id,name', 'recipient:id,name,email'])
                 ->latest('id')
@@ -425,6 +443,10 @@ class ConsolidatedReportService
         ?int $parentSystemId,
         bool $clearComment = false,
     ): ReportItem {
+        if ($parentSystemId !== null && $parentSystemId === $systemId) {
+            throw ValidationException::withMessages(['parent_system_id' => 'Um sistema não pode ser agrupado consigo mesmo.']);
+        }
+
         $system = MonitoredSystem::query()
             ->whereBelongsTo($team)
             ->whereKey($systemId)
@@ -454,6 +476,17 @@ class ConsolidatedReportService
                     'hide_data' => $this->defaultHideDataForSystem($team, $reportDate, $parentSystem->id, $report->id),
                 ]);
 
+            if ($parentItem->parent_report_item_id !== null) {
+                $rootParent = ReportItem::query()
+                    ->whereBelongsTo($report)
+                    ->whereKey($parentItem->parent_report_item_id)
+                    ->first();
+
+                if ($rootParent) {
+                    $parentItem = $rootParent;
+                }
+            }
+
             if (! $parentItem->show_data_results) {
                 $parentItem->update(['show_data_results' => true]);
             }
@@ -478,15 +511,98 @@ class ConsolidatedReportService
                     'hide_data' => $this->defaultHideDataForSystem($team, $reportDate, $system->id, $report->id),
                     'comment' => null,
                 ]);
-            } else {
+            }
+
+            if ($parentItem !== null) {
+                $lockedParent = ReportItem::query()
+                    ->whereBelongsTo($report)
+                    ->whereKey($parentItem->id)
+                    ->lockForUpdate()
+                    ->firstOrFail();
+
+                $movedChildIds = ReportItem::query()
+                    ->whereBelongsTo($report)
+                    ->where('parent_report_item_id', $item->id)
+                    ->lockForUpdate()
+                    ->pluck('id')
+                    ->all();
+
+                if ($movedChildIds !== []) {
+                    ReportItem::query()
+                        ->whereIn('id', $movedChildIds)
+                        ->update(['parent_report_item_id' => $lockedParent->id]);
+                }
+
                 $updates = [
-                    'parent_report_item_id' => $parentItem?->id,
+                    'parent_report_item_id' => $lockedParent->id,
                     'show_data_results' => true,
                 ];
+
                 if ($clearComment) {
                     $updates['comment'] = null;
+                    $item->update($updates);
+                } else {
+                    $item->update($updates);
+                    $this->mergeGroupContentOnAttach($report, $lockedParent, $item, $user);
                 }
-                $item->update($updates);
+            } else {
+                $previousParentId = $item->parent_report_item_id;
+
+                if ($previousParentId !== null) {
+                    $previousParent = ReportItem::query()
+                        ->whereBelongsTo($report)
+                        ->whereKey($previousParentId)
+                        ->lockForUpdate()
+                        ->first();
+
+                    $updates = [
+                        'parent_report_item_id' => null,
+                        'show_data_results' => true,
+                    ];
+
+                    if ($previousParent && $this->hasMeaningfulItemContent($previousParent) && ! $this->hasMeaningfulItemContent($item)) {
+                        $metadata = $item->metadata ?? [];
+                        $metadata['editor'] = $previousParent->metadata['editor'] ?? null;
+                        $updates['comment'] = $previousParent->comment;
+                        $updates['metadata'] = $metadata;
+                    }
+
+                    $item->update($updates);
+                } else {
+                    $children = ReportItem::query()
+                        ->whereBelongsTo($report)
+                        ->where('parent_report_item_id', $item->id)
+                        ->orderBy('sort_order')
+                        ->orderBy('id')
+                        ->lockForUpdate()
+                        ->get();
+
+                    if ($children->isNotEmpty()) {
+                        /** @var ReportItem $newParent */
+                        $newParent = $children->shift();
+                        $newParentUpdates = [
+                            'parent_report_item_id' => null,
+                            'show_data_results' => true,
+                        ];
+
+                        if ($this->hasMeaningfulItemContent($item) && ! $this->hasMeaningfulItemContent($newParent)) {
+                            $metadata = $newParent->metadata ?? [];
+                            $metadata['editor'] = $item->metadata['editor'] ?? null;
+                            $newParentUpdates['comment'] = $item->comment;
+                            $newParentUpdates['metadata'] = $metadata;
+                        }
+
+                        $newParent->update($newParentUpdates);
+
+                        if ($children->isNotEmpty()) {
+                            ReportItem::query()
+                                ->whereIn('id', $children->pluck('id')->all())
+                                ->update(['parent_report_item_id' => $newParent->id]);
+                        }
+                    }
+
+                    $item->update(['show_data_results' => true]);
+                }
             }
 
             $this->revision($item, $user, 'grouping');
@@ -503,6 +619,88 @@ class ConsolidatedReportService
 
             return $item->refresh();
         });
+    }
+
+    private function hasMeaningfulItemContent(ReportItem $item): bool
+    {
+        $comment = (string) ($item->comment ?? '');
+        $plain = trim(html_entity_decode(strip_tags($comment), ENT_QUOTES | ENT_HTML5, 'UTF-8'));
+
+        return $plain !== ''
+            || str_contains($comment, 'data-report-chart')
+            || str_contains($comment, '<img');
+    }
+
+    private function mergeGroupContentOnAttach(
+        Report $report,
+        ReportItem $parent,
+        ReportItem $child,
+        User $user,
+    ): void {
+        $parentHasContent = $this->hasMeaningfulItemContent($parent);
+        $childHasContent = $this->hasMeaningfulItemContent($child);
+
+        if (! $parentHasContent && ! $childHasContent) {
+            return;
+        }
+
+        $mergedComment = $parent->comment;
+        $mergedDocument = $parent->metadata['editor']['document'] ?? null;
+        $parentChanged = false;
+
+        if ($parentHasContent && $childHasContent) {
+            $mergedComment = (string) $parent->comment.(string) $child->comment;
+            $parentDoc = $parent->metadata['editor']['document'] ?? null;
+            $childDoc = $child->metadata['editor']['document'] ?? null;
+
+            if (
+                is_array($parentDoc)
+                && is_array($childDoc)
+                && ($parentDoc['type'] ?? null) === 'doc'
+                && ($childDoc['type'] ?? null) === 'doc'
+            ) {
+                $mergedDocument = [
+                    'type' => 'doc',
+                    'content' => array_values(array_merge(
+                        is_array($parentDoc['content'] ?? null) ? $parentDoc['content'] : [],
+                        is_array($childDoc['content'] ?? null) ? $childDoc['content'] : [],
+                    )),
+                ];
+            } else {
+                $mergedDocument = null;
+            }
+
+            $parentChanged = true;
+        } elseif (! $parentHasContent && $childHasContent) {
+            $mergedComment = $child->comment;
+            $mergedDocument = $child->metadata['editor']['document'] ?? null;
+            $parentChanged = true;
+        }
+
+        if ($parentChanged) {
+            $parentMetadata = $parent->metadata ?? [];
+            $parentMetadata['editor'] = ['schema_version' => 1, 'document' => $mergedDocument];
+            $parent->update([
+                'comment' => $mergedComment,
+                'metadata' => $parentMetadata,
+            ]);
+            $this->revision($parent, $user, 'grouping');
+        }
+
+        $groupMembers = ReportItem::query()
+            ->whereBelongsTo($report)
+            ->where('parent_report_item_id', $parent->id)
+            ->lockForUpdate()
+            ->get();
+
+        foreach ($groupMembers as $member) {
+            $memberMetadata = $member->metadata ?? [];
+            $memberMetadata['editor'] = ['schema_version' => 1, 'document' => $mergedDocument];
+            $member->update([
+                'comment' => $mergedComment,
+                'metadata' => $memberMetadata,
+            ]);
+        }
     }
 
     public function revision(ReportItem $item, ?User $user, string $source = 'manual'): ReportItemRevision
@@ -1032,19 +1230,9 @@ class ConsolidatedReportService
         );
 
         $recipients = $report->recipients()->orderBy('name')->get();
-        $view['recipients'] = $recipients->map(fn ($recipient): array => [
-            'id' => $recipient->id,
-            'user_id' => $recipient->user_id,
-            'name' => $recipient->name,
-            'email' => $recipient->email,
-            'access_token' => $recipient->access_token,
-            'public_url' => route('reports.public.show', ['token' => $recipient->access_token]),
-            'revoked_at' => $recipient->revoked_at?->toIso8601String(),
-            'last_accessed_at' => $recipient->last_accessed_at?->toIso8601String(),
-            'last_sent_at' => $recipient->last_sent_at?->toIso8601String(),
-            'send_count' => $recipient->send_count,
-        ])->all();
+        $view['recipients'] = $recipients->map(fn (ReportRecipient $recipient): array => $this->serializeRecipient($recipient))->all();
         $view['activeRecipientsCount'] = $recipients->whereNull('revoked_at')->count();
+        $view['deliveryHistory'] = $this->serializeDeliveryHistory($report);
 
         return $view;
     }
@@ -1109,6 +1297,8 @@ class ConsolidatedReportService
             ];
         }
 
+        $report->loadMissing(['creator:id,name', 'finisher:id,name']);
+
         return [
             'report' => [
                 'id' => $report->id,
@@ -1116,13 +1306,17 @@ class ConsolidatedReportService
                 'status' => $report->status,
                 'date_reference' => $report->date_reference?->format('Y-m-d'),
                 'team_name' => $team->name,
+                'team_logo_url' => $team->logoUrl(),
                 'finished_at' => $report->finished_at?->toIso8601String(),
+                'emailed_at' => $report->emailed_at?->toIso8601String(),
+                'email_count' => $report->email_count,
+                'issuer_name' => $report->finisher?->name ?? $report->creator?->name ?? $currentUser?->name,
             ],
             'isPreview' => $isPreview,
             'recipient' => $recipientInfo,
             'recipients' => $recipients,
             'dataBySystem' => $dataBySystem,
-            'systems' => $items->map(function (ReportItem $item) use ($team): array {
+            'systems' => $items->map(function (ReportItem $item) use ($team, $currentRecipient, $currentUser): array {
                 $combinedTitle = $this->formatCombinedSystemTitle(
                     $item->monitoredSystem?->name ?? 'Sistema',
                     $item->childReportItems,
@@ -1147,6 +1341,10 @@ class ConsolidatedReportService
                                 : ($comment->report_recipient_id ? $comment->recipient->name : 'Destinatário'),
                             'body' => $comment->body,
                             'is_consucal' => $comment->user_id !== null && (bool) $comment->user?->is_admin,
+                            'is_own' => $currentRecipient !== null
+                                ? $comment->report_recipient_id === $currentRecipient->id
+                                : ($currentUser !== null && $comment->user_id === $currentUser->id),
+                            'notified_at' => $comment->notified_at?->toIso8601String(),
                             'created_at' => $comment->created_at?->toIso8601String(),
                         ])->all(),
                     ],
@@ -1182,10 +1380,92 @@ class ConsolidatedReportService
         return implode(', ', $names).' e '.$last;
     }
 
-    public function recordPublicAccess(ReportRecipient $recipient): void
+    public function recordPublicAccess(ReportRecipient $recipient, ?string $ip = null, ?string $userAgent = null): void
     {
-        $recipient->update(['last_accessed_at' => now()]);
-        $this->record($recipient->report, 'public.accessed', recipient: $recipient);
+        $now = now();
+        $attributes = [
+            'last_accessed_at' => $now,
+            'last_accessed_ip' => $ip,
+            'access_count' => $recipient->access_count + 1,
+        ];
+
+        if ($recipient->first_accessed_at === null) {
+            $attributes['first_accessed_at'] = $now;
+            $attributes['first_accessed_ip'] = $ip;
+        }
+
+        $recipient->update($attributes);
+
+        $metadata = array_filter([
+            'ip' => $ip,
+            'user_agent' => $userAgent !== null ? mb_substr($userAgent, 0, 255) : null,
+            'email' => $recipient->email,
+        ], fn (mixed $value): bool => $value !== null && $value !== '');
+
+        $this->record($recipient->report, 'public.accessed', recipient: $recipient, metadata: $metadata);
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function serializeRecipient(ReportRecipient $recipient): array
+    {
+        return [
+            'id' => $recipient->id,
+            'user_id' => $recipient->user_id,
+            'name' => $recipient->name,
+            'email' => $recipient->email,
+            'access_token' => $recipient->access_token,
+            'public_url' => route('reports.public.show', ['token' => $recipient->access_token]),
+            'revoked_at' => $recipient->revoked_at?->toIso8601String(),
+            'first_accessed_at' => $recipient->first_accessed_at?->toIso8601String(),
+            'first_accessed_ip' => $recipient->first_accessed_ip,
+            'last_accessed_at' => $recipient->last_accessed_at?->toIso8601String(),
+            'last_accessed_ip' => $recipient->last_accessed_ip,
+            'access_count' => $recipient->access_count,
+            'last_sent_at' => $recipient->last_sent_at?->toIso8601String(),
+            'last_failed_at' => $recipient->last_failed_at?->toIso8601String(),
+            'send_count' => $recipient->send_count,
+        ];
+    }
+
+    /**
+     * @return list<array<string, mixed>>
+     */
+    private function serializeDeliveryHistory(Report $report): array
+    {
+        return $report->activities()
+            ->whereIn('action', ['delivery.queued', 'delivery.sent', 'delivery.failed'])
+            ->with(['user:id,name', 'recipient:id,name,email'])
+            ->latest('id')
+            ->limit(100)
+            ->get()
+            ->map(function (ReportActivity $activity): array {
+                $metadata = is_array($activity->metadata) ? $activity->metadata : [];
+                $status = match ($activity->action) {
+                    'delivery.sent' => 'sent',
+                    'delivery.failed' => 'failed',
+                    default => 'queued',
+                };
+
+                return [
+                    'id' => $activity->id,
+                    'action' => $activity->action,
+                    'status' => $status,
+                    'delivery_type' => is_string($metadata['delivery_type'] ?? null)
+                        ? $metadata['delivery_type']
+                        : (! empty($metadata['individual']) ? 'resend_individual' : 'initial'),
+                    'recipient_name' => $activity->recipient?->name ?? (is_string($metadata['recipient_name'] ?? null) ? $metadata['recipient_name'] : null),
+                    'recipient_email' => $activity->recipient?->email ?? (is_string($metadata['email'] ?? null) ? $metadata['email'] : null),
+                    'recipient_count' => isset($metadata['recipient_count']) ? (int) $metadata['recipient_count'] : null,
+                    'actor' => $activity->user?->name ?? 'Sistema',
+                    'error' => is_string($metadata['error'] ?? null) ? $metadata['error'] : null,
+                    'batch' => is_string($metadata['batch'] ?? null) ? $metadata['batch'] : null,
+                    'created_at' => $activity->created_at?->toIso8601String(),
+                ];
+            })
+            ->values()
+            ->all();
     }
 
     public function addPublicComment(ReportRecipient $recipient, int $itemId, string $body): ReportComment

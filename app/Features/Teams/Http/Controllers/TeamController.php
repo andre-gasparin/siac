@@ -16,6 +16,7 @@ use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
+use Illuminate\Support\Facades\Storage;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -39,6 +40,7 @@ class TeamController extends Controller
                 'id' => $team->id,
                 'name' => $team->name,
                 'slug' => $team->slug,
+                'logoUrl' => $team->logoUrl(),
                 'isActive' => (bool) $team->is_active,
                 'isPersonal' => $team->is_personal,
                 'requireDataEntryResponsible' => (bool) $team->require_data_entry_responsible,
@@ -85,7 +87,14 @@ class TeamController extends Controller
     {
         Gate::authorize('update', $team);
 
-        $team = DB::transaction(function () use ($request, $team): Team {
+        $oldLogoPath = null;
+        $newLogoPath = null;
+
+        if ($request->hasFile('logo')) {
+            $newLogoPath = $request->file('logo')?->store("team-logos/{$team->id}", 'public') ?: null;
+        }
+
+        $team = DB::transaction(function () use ($request, $team, $newLogoPath, &$oldLogoPath): Team {
             $lockedTeam = Team::whereKey($team->id)->lockForUpdate()->firstOrFail();
             $data = ['name' => $request->validated('name')];
             if ($request->has('is_active')) {
@@ -94,10 +103,21 @@ class TeamController extends Controller
             if ($request->has('require_data_entry_responsible')) {
                 $data['require_data_entry_responsible'] = $request->boolean('require_data_entry_responsible');
             }
+            if ($newLogoPath !== null) {
+                $oldLogoPath = $lockedTeam->logo_path;
+                $data['logo_path'] = $newLogoPath;
+            } elseif ($request->boolean('remove_logo')) {
+                $oldLogoPath = $lockedTeam->logo_path;
+                $data['logo_path'] = null;
+            }
             $lockedTeam->update($data);
 
             return $lockedTeam;
         });
+
+        if ($oldLogoPath !== null && $oldLogoPath !== $newLogoPath && Storage::disk('public')->exists($oldLogoPath)) {
+            Storage::disk('public')->delete($oldLogoPath);
+        }
 
         Inertia::flash('toast', ['type' => 'success', 'message' => __('Team updated.')]);
 

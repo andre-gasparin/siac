@@ -4,6 +4,7 @@ namespace App\Features\Reports\Services;
 
 use App\Jobs\SendReportRecipientEmail;
 use App\Models\Report;
+use App\Models\ReportComment;
 use App\Models\ReportRecipient;
 use App\Models\Team;
 use App\Models\User;
@@ -59,7 +60,7 @@ class ReportDeliveryService
             });
 
             if ($shouldSend) {
-                $this->dispatch($report, $recipientIds, $batch, $user);
+                $this->dispatch($report, $recipientIds, $batch, $user, deliveryType: 'initial');
             }
 
             return $report->refresh();
@@ -74,7 +75,7 @@ class ReportDeliveryService
 
         $batch = (string) Str::uuid();
         $recipients = DB::transaction(fn () => $this->syncRecipients($team, $report));
-        $this->dispatch($report, $this->recipientIds($recipients), $batch, $user);
+        $this->dispatch($report, $this->recipientIds($recipients), $batch, $user, deliveryType: 'resend_all');
 
         return $report->refresh();
     }
@@ -111,7 +112,7 @@ class ReportDeliveryService
             }
 
             $recipient->update([
-                'user_id' => $matchedUser?->id ?? $recipient->user_id,
+                'user_id' => $matchedUser->id ?? $recipient->user_id,
                 'name' => $name,
                 'revoked_at' => null,
             ]);
@@ -153,10 +154,12 @@ class ReportDeliveryService
             'batch' => $batch,
             'recipient_count' => 1,
             'individual' => true,
+            'delivery_type' => 'resend_individual',
             'email' => $recipient->email,
+            'recipient_name' => $recipient->name,
         ]);
 
-        SendReportRecipientEmail::dispatch($recipient->id, $batch)->afterCommit();
+        SendReportRecipientEmail::dispatch($recipient->id, $batch, [], 'resend_individual')->afterCommit();
     }
 
     public function revoke(Team $team, Report $report, ReportRecipient $recipient, User $user): void
@@ -214,17 +217,107 @@ class ReportDeliveryService
     }
 
     /**
-     * @param  list<int>  $recipientIds
+     * @param  list<int>  $commentIds
      */
-    private function dispatch(Report $report, array $recipientIds, string $batch, User $user): void
-    {
+    public function notifyInteractions(
+        Team $team,
+        Report $report,
+        array $commentIds,
+        ?User $user = null,
+        ?ReportRecipient $recipient = null,
+    ): int {
+        abort_unless($report->team_id === $team->id, 404);
+
+        if ($report->status !== 'completed') {
+            throw ValidationException::withMessages(['report' => 'Finalize o relatório antes de reenviá-lo por e-mail.']);
+        }
+
+        $uniqueIds = array_values(array_unique(array_map('intval', $commentIds)));
+        if ($uniqueIds === []) {
+            throw ValidationException::withMessages(['comment_ids' => 'Selecione ao menos uma interação pendente de notificação.']);
+        }
+
+        $commentsQuery = ReportComment::query()
+            ->whereBelongsTo($report)
+            ->whereIn('id', $uniqueIds)
+            ->whereNull('notified_at')
+            ->with(['reportItem.monitoredSystem:id,name', 'user:id,name', 'recipient:id,name']);
+
+        if ($recipient !== null) {
+            $commentsQuery->where('report_recipient_id', $recipient->id);
+        } elseif ($user !== null) {
+            $commentsQuery->where('user_id', $user->id);
+        } else {
+            abort(403);
+        }
+
+        $comments = $commentsQuery->oldest()->get();
+        if ($comments->isEmpty()) {
+            throw ValidationException::withMessages(['comment_ids' => 'Nenhuma interação pendente válida foi encontrada.']);
+        }
+
+        $recipients = DB::transaction(fn () => $this->syncRecipients($team, $report));
+        if ($recipients->isEmpty()) {
+            throw ValidationException::withMessages(['recipients' => 'Adicione ao menos um destinatário para receber o relatório.']);
+        }
+
+        $batch = (string) Str::uuid();
+        /** @var list<array{system: string, author: string, body: string}> $interactions */
+        $interactions = $comments->map(fn (ReportComment $comment): array => [
+            'system' => $comment->reportItem->monitoredSystem->name ?? 'Sistema',
+            'author' => $comment->user_id
+                ? ($comment->user->name ?? 'Usuário')
+                : ($comment->recipient->name ?? 'Destinatário'),
+            'body' => mb_substr(trim($comment->body), 0, 300),
+        ])->values()->all();
+
+        $commentIdList = $comments->pluck('id')->map(fn (mixed $id): int => (int) $id)->values()->all();
+
+        DB::transaction(function () use ($report, $commentIdList, $user, $recipient, $batch, $recipients): void {
+            ReportComment::query()
+                ->whereBelongsTo($report)
+                ->whereIn('id', $commentIdList)
+                ->whereNull('notified_at')
+                ->update(['notified_at' => now()]);
+
+            $this->reports->record(
+                $report,
+                'interactions.notified',
+                $user,
+                recipient: $recipient,
+                metadata: [
+                    'batch' => $batch,
+                    'comment_ids' => $commentIdList,
+                    'recipient_count' => $recipients->count(),
+                ],
+            );
+        });
+
+        $this->dispatch($report, $this->recipientIds($recipients), $batch, $user, $interactions, 'interactions');
+
+        return count($commentIdList);
+    }
+
+    /**
+     * @param  list<int>  $recipientIds
+     * @param  list<array{system: string, author: string, body: string}>  $interactions
+     */
+    private function dispatch(
+        Report $report,
+        array $recipientIds,
+        string $batch,
+        ?User $user,
+        array $interactions = [],
+        string $deliveryType = 'initial',
+    ): void {
         $this->reports->record($report, 'delivery.queued', $user, metadata: [
             'batch' => $batch,
             'recipient_count' => count($recipientIds),
+            'delivery_type' => $deliveryType,
         ]);
 
         foreach ($recipientIds as $recipientId) {
-            SendReportRecipientEmail::dispatch($recipientId, $batch)->afterCommit();
+            SendReportRecipientEmail::dispatch($recipientId, $batch, $interactions, $deliveryType)->afterCommit();
         }
     }
 }

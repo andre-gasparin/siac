@@ -3,6 +3,7 @@
 namespace App\Features\Reports\Http\Controllers;
 
 use App\Features\Reports\Services\ConsolidatedReportService;
+use App\Features\Reports\Services\ReportDeliveryService;
 use App\Http\Controllers\Controller;
 use App\Models\Report;
 use App\Models\Team;
@@ -26,7 +27,7 @@ class ConsolidatedReportController extends Controller
             'reports' => Inertia::scroll(fn () => $reports->paginate($current_team, $filters)),
             'filters' => $filters,
             'statusCounts' => $reports->statusCounts($current_team),
-            'currentTeam' => $current_team,
+            'currentTeam' => $request->user()->toUserTeam($current_team),
         ]);
     }
 
@@ -53,7 +54,7 @@ class ConsolidatedReportController extends Controller
 
         return Inertia::render('Reports/Show', [
             ...$reports->view($current_team, $report),
-            'currentTeam' => $current_team,
+            'currentTeam' => $request->user()->toUserTeam($current_team),
         ]);
     }
 
@@ -68,7 +69,7 @@ class ConsolidatedReportController extends Controller
 
         return Inertia::render('Reports/Preview', [
             ...$reports->previewView($current_team, $report, $request->user()),
-            'currentTeam' => $current_team,
+            'currentTeam' => $request->user()->toUserTeam($current_team),
         ]);
     }
 
@@ -95,5 +96,30 @@ class ConsolidatedReportController extends Controller
         );
 
         return back()->with('success', 'Comentário publicado.');
+    }
+
+    public function previewNotifyInteractions(
+        Request $request,
+        Team $current_team,
+        Report $report,
+        ConsolidatedReportService $reports,
+        ReportDeliveryService $delivery,
+    ): RedirectResponse {
+        abort_unless((bool) $request->user()?->is_admin, 403);
+        $report = $reports->scopedReport($current_team, $report->id);
+
+        $validated = $request->validate([
+            'comment_ids' => ['required', 'array', 'min:1'],
+            'comment_ids.*' => ['required', 'integer'],
+        ]);
+
+        $count = $delivery->notifyInteractions(
+            team: $current_team,
+            report: $report,
+            commentIds: array_values(array_map('intval', $validated['comment_ids'])),
+            user: $request->user(),
+        );
+
+        return back()->with('success', "Reenvio do relatório enfileirado com {$count} interação(ões).");
     }
 }

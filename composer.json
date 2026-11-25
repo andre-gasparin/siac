@@ -57,7 +57,7 @@
         ],
         "dev": [
             "Composer\\Config::disableProcessTimeout",
-            "npx concurrently -c \"#93c5fd,#c4b5fd,#86efac,#fdba74,#f472b6\" \"php artisan serve\" \"php artisan queue:listen --tries=1\" \"php -d max_execution_time=0 -d memory_limit=-1 artisan spreadsheet-imports:process-queue --watch\" \"npm run dev\" \"php artisan reverb:start\" --names='server,queue,import,vite,reverb'"
+            "npx concurrently -c \"#93c5fd,#c4b5fd,#86efac,#fdba74,#f472b6\" \"php artisan serve\" \"php artisan queue:listen --tries=3\" \"php -d max_execution_time=0 -d memory_limit=-1 artisan spreadsheet-imports:process-queue --watch\" \"npm run dev\" \"php artisan reverb:start\" --names='server,queue,import,vite,reverb'"
         ],
         "lint": [
             "pint --parallel"

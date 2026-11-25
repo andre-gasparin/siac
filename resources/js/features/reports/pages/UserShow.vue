@@ -2,6 +2,7 @@
 import { Head, setLayoutProps } from '@inertiajs/vue3';
 import ClientReportContent from '@/features/reports/components/ClientReportContent.vue';
 import { store as storeUserComment } from '@/routes/reports/user/comments';
+import { notify as notifyUserInteractions } from '@/routes/reports/user/interactions';
 import { chart as userChart } from '@/routes/reports/user/systems';
 import type { ChartSeries } from '@/shared/components/charts/EChartRenderer.vue';
 import type { Team } from '@/shared/types';
@@ -11,7 +12,9 @@ interface ReportComment {
     author: string;
     body: string;
     is_consucal: boolean;
+    is_own?: boolean;
     created_at: string;
+    notified_at?: string | null;
 }
 
 interface ReportItem {
@@ -70,6 +73,7 @@ const props = defineProps<{
         status: string;
         date_reference: string;
         team_name: string;
+        team_logo_url?: string | null;
         finished_at: string | null;
     };
     systems: SystemSection[];
@@ -124,6 +128,12 @@ function getChartUrl(
         :current-team="currentTeam"
         :is-preview="false"
         :comment-submit-url-generator="getCommentSubmitUrl"
+        :notify-interactions-url="
+            notifyUserInteractions.url({
+                current_team: currentTeam.slug,
+                report: report.id,
+            })
+        "
         :chart-url-generator="getChartUrl"
     />
 </template>

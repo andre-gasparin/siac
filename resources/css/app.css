@@ -151,6 +151,190 @@
     --sidebar: hsl(240 5.9% 10%);
 }
 
+/* Escopo isolado de cores do protótipo HTML para Elaboração e Visualização de Relatórios.
+   Mantém intactos :root, .dark, AppSidebar, AppSidebarHeader e o restante do sIAc3. */
+.report-elaboration-theme {
+    --background: #edf1f5;
+    --foreground: #253744;
+    --card: #ffffff;
+    --card-foreground: #253744;
+    --popover: #ffffff;
+    --popover-foreground: #253744;
+    --primary: #24658e;
+    --primary-foreground: #ffffff;
+    --secondary: #f4f7f9;
+    --secondary-foreground: #253744;
+    --muted: #f4f7f9;
+    --muted-foreground: #637486;
+    --accent: #edf3f8;
+    --accent-foreground: #253744;
+    --border: #d9e0e6;
+    --input: #d9e0e6;
+    --ring: #24658e;
+
+    --report-hover: #edf3f8;
+    --report-soft-blue: #eaf1f7;
+    --report-soft-blue-border: #a9c6dc;
+    --report-blue-dark: #23465d;
+    --report-rule: #e5ebf0;
+    --report-mean: #eef2f5;
+    --report-limit-bg: #def1e8;
+    --report-limit-ink: #1e745a;
+    --report-ref-row: #edf4fd;
+    --report-ref-pin: #e1edf9;
+    --report-ref-ink: #245c86;
+    --report-admin-bg: #f1eee8;
+    --report-admin-card: #f2eee7;
+    --report-admin-border: #d7cfc2;
+    --report-admin-card-border: #d9cbb8;
+    --report-admin-ink: #63523e;
+    --report-admin-muted: #786d5e;
+    --report-admin-accent: #8b7556;
+    --report-history-bg: #fffaf0;
+    --report-history-border: #dec77b;
+    --report-history-head: #f7e7a7;
+    --report-history-head-hover: #f3dc88;
+    --report-history-ink: #5d490f;
+    --report-history-count: #846719;
+}
+
+.dark .report-elaboration-theme {
+    --background: #17191c;
+    --foreground: #e2ebf0;
+    --card: #222a31;
+    --card-foreground: #e2ebf0;
+    --popover: #222a31;
+    --popover-foreground: #e2ebf0;
+    --primary: #8fc8f2;
+    --primary-foreground: #101f2b;
+    --secondary: #2b353e;
+    --secondary-foreground: #e2ebf0;
+    --muted: #2b353e;
+    --muted-foreground: #a9bbc6;
+    --accent: #33383e;
+    --accent-foreground: #e2ebf0;
+    --border: #43515c;
+    --input: #43515c;
+    --ring: #8fc8f2;
+
+    --report-hover: #33383e;
+    --report-soft-blue: #263a49;
+    --report-soft-blue-border: #57768e;
+    --report-blue-dark: #d6e9fa;
+    --report-rule: #383d42;
+    --report-mean: #2c3237;
+    --report-limit-bg: #21463d;
+    --report-limit-ink: #a5e4c6;
+    --report-ref-row: #223b51;
+    --report-ref-pin: #2b4a62;
+    --report-ref-ink: #b8dcff;
+    --report-admin-bg: #373329;
+    --report-admin-card: #373329;
+    --report-admin-border: #675945;
+    --report-admin-card-border: #675945;
+    --report-admin-ink: #e4cda5;
+    --report-admin-muted: #d1c4b0;
+    --report-admin-accent: #bda27c;
+    --report-history-bg: #3b3424;
+    --report-history-border: #80672d;
+    --report-history-head: #68532b;
+    --report-history-head-hover: #836a32;
+    --report-history-ink: #fff0c5;
+    --report-history-count: #f7e2a3;
+}
+
+.report-view-theme {
+    --background: #edf1f5;
+    --foreground: #25313b;
+    --card: #ffffff;
+    --card-foreground: #25313b;
+    --popover: #ffffff;
+    --popover-foreground: #25313b;
+    --primary: #22638e;
+    --primary-foreground: #ffffff;
+    --secondary: #f4f7fa;
+    --secondary-foreground: #25313b;
+    --muted: #f4f7fa;
+    --muted-foreground: #526b7d;
+    --accent: #edf3f8;
+    --accent-foreground: #25313b;
+    --border: #d4dde5;
+    --input: #d4dde5;
+    --ring: #22638e;
+
+    --report-hover: #edf3f8;
+    --report-soft-blue: #dce8f2;
+    --report-soft-blue-border: #c4d5e4;
+    --report-blue-dark: #23465d;
+    --report-rule: #e5ebf0;
+    --report-mean: #eef2f5;
+    --report-limit-bg: #def1e8;
+    --report-limit-ink: #1e745a;
+    --report-admin-bg: #f1eee8;
+    --report-admin-border: #d7cfc2;
+    --report-admin-ink: #5d5141;
+    --report-admin-accent: #8b7556;
+    --report-admin-btn: #715637;
+    --report-admin-btn-hover: #5b4329;
+    --report-admin-btn-ink: #ffffff;
+    --report-group-bg: #e9ecef;
+    --report-group-border: #cbd1d7;
+    --report-group-ink: #4d5862;
+    --report-interaction-bg: #f5f7f8;
+    --report-interaction-hover: #ebf0f3;
+    --report-interaction-border: #dfe5e9;
+    --report-interaction-ink: #536677;
+    --report-interaction-icon: #e6ecef;
+    --report-interaction-count: #788c9b;
+    --report-interaction-count-ink: #ffffff;
+}
+
+.dark .report-view-theme {
+    --background: #17191c;
+    --foreground: #e7eaed;
+    --card: #23262a;
+    --card-foreground: #e7eaed;
+    --popover: #23262a;
+    --popover-foreground: #e7eaed;
+    --primary: #8fc8f2;
+    --primary-foreground: #101f2b;
+    --secondary: #292d31;
+    --secondary-foreground: #e7eaed;
+    --muted: #292d31;
+    --muted-foreground: #aeb5bc;
+    --accent: #33383e;
+    --accent-foreground: #e7eaed;
+    --border: #43484d;
+    --input: #43484d;
+    --ring: #8fc8f2;
+
+    --report-hover: #33383e;
+    --report-soft-blue: #2b3c4c;
+    --report-soft-blue-border: #475c70;
+    --report-blue-dark: #d6e9fa;
+    --report-rule: #383d42;
+    --report-mean: #2c3237;
+    --report-limit-bg: #21463d;
+    --report-limit-ink: #a5e4c6;
+    --report-admin-bg: #302c27;
+    --report-admin-border: #51483e;
+    --report-admin-ink: #e0d3be;
+    --report-admin-accent: #bda27c;
+    --report-admin-btn: #b69a71;
+    --report-admin-btn-hover: #ccb08a;
+    --report-admin-btn-ink: #241c13;
+    --report-group-bg: #32363b;
+    --report-group-border: #4a5158;
+    --report-group-ink: #c8cdd3;
+    --report-interaction-bg: #222d38;
+    --report-interaction-hover: #2d3b48;
+    --report-interaction-border: #40505d;
+    --report-interaction-ink: #bdccd9;
+    --report-interaction-icon: #354552;
+    --report-interaction-count: #a1b5c5;
+    --report-interaction-count-ink: #16212b;
+}
+
 @layer base {
     * {
         @apply border-border outline-ring/50;

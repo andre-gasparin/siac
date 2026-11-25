@@ -6,7 +6,9 @@ use App\Models\Parameter;
 use App\Models\ParameterValue;
 use App\Models\Team;
 use App\Models\User;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Storage;
 use Inertia\Testing\AssertableInertia as Assert;
 
 afterEach(function () {
@@ -592,4 +594,68 @@ test('admin can access dashboard of any active team without explicit membership'
         ->get("/{$team->slug}/dashboard");
 
     $response->assertOk();
+});
+
+test('team owner can upload, replace, serve publicly, and remove team logo', function () {
+    Storage::fake('public');
+
+    $user = User::factory()->create();
+    $team = Team::factory()->create(['name' => 'Innova Triunfo']);
+    $team->members()->attach($user, ['role' => TeamRole::Owner->value]);
+
+    $firstLogo = UploadedFile::fake()->image('logo-innova.png', 200, 80);
+
+    $this->actingAs($user)
+        ->patch(route('teams.update', $team), [
+            'name' => $team->name,
+            'logo' => $firstLogo,
+        ])
+        ->assertRedirect();
+
+    $team->refresh();
+    $firstPath = $team->logo_path;
+
+    expect($firstPath)->not->toBeNull();
+    Storage::disk('public')->assertExists($firstPath);
+
+    // Public route serves the uploaded logo without authentication
+    $this->get(route('teams.logo', $team))
+        ->assertOk();
+
+    // Replacing removes the old file
+    $secondLogo = UploadedFile::fake()->image('logo-innova-v2.png', 220, 90);
+
+    $this->actingAs($user)
+        ->patch(route('teams.update', $team), [
+            'name' => $team->name,
+            'logo' => $secondLogo,
+        ])
+        ->assertRedirect();
+
+    $team->refresh();
+    $secondPath = $team->logo_path;
+
+    expect($secondPath)->not->toBeNull()->not->toBe($firstPath);
+    Storage::disk('public')->assertMissing($firstPath);
+    Storage::disk('public')->assertExists($secondPath);
+
+    // Removing clears logo_path and deletes stored file
+    $this->actingAs($user)
+        ->patch(route('teams.update', $team), [
+            'name' => $team->name,
+            'remove_logo' => true,
+        ])
+        ->assertRedirect();
+
+    $team->refresh();
+
+    expect($team->logo_path)->toBeNull();
+    Storage::disk('public')->assertMissing($secondPath);
+});
+
+test('team logo endpoint returns 404 when team has no logo', function () {
+    $team = Team::factory()->create(['logo_path' => null]);
+
+    $this->get(route('teams.logo', $team))
+        ->assertNotFound();
 });

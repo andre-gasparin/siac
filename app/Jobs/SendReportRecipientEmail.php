@@ -25,7 +25,15 @@ class SendReportRecipientEmail implements ShouldBeUnique, ShouldQueue
     /** @var list<int> */
     public array $backoff = [1, 5, 10];
 
-    public function __construct(public int $recipientId, public string $batch) {}
+    /**
+     * @param  list<array{system: string, author: string, body: string}>  $interactions
+     */
+    public function __construct(
+        public int $recipientId,
+        public string $batch,
+        public array $interactions = [],
+        public string $deliveryType = 'initial',
+    ) {}
 
     public function uniqueId(): string
     {
@@ -34,14 +42,14 @@ class SendReportRecipientEmail implements ShouldBeUnique, ShouldQueue
 
     public function handle(): void
     {
-        $recipient = ReportRecipient::query()->with(['report.team'])->findOrFail($this->recipientId);
+        $recipient = ReportRecipient::query()->with(['report.team', 'report.finisher:id,name', 'report.creator:id,name'])->findOrFail($this->recipientId);
 
         if ($recipient->revoked_at || ($recipient->user_id && ! $recipient->report->team->members()->whereKey($recipient->user_id)->exists())) {
             return;
         }
 
         Notification::route('mail', [$recipient->email => $recipient->name])
-            ->notifyNow(new ReportAccessNotification($recipient));
+            ->notifyNow(new ReportAccessNotification($recipient, $this->interactions));
 
         DB::transaction(function () use ($recipient): void {
             $recipient->refresh()->update([
@@ -56,7 +64,12 @@ class SendReportRecipientEmail implements ShouldBeUnique, ShouldQueue
                 'report_id' => $recipient->report_id,
                 'report_recipient_id' => $recipient->id,
                 'action' => 'delivery.sent',
-                'metadata' => ['batch' => $this->batch, 'email' => $recipient->email],
+                'metadata' => [
+                    'batch' => $this->batch,
+                    'email' => $recipient->email,
+                    'recipient_name' => $recipient->name,
+                    'delivery_type' => $this->deliveryType,
+                ],
             ]);
         });
     }
@@ -75,7 +88,13 @@ class SendReportRecipientEmail implements ShouldBeUnique, ShouldQueue
             'report_id' => $recipient->report_id,
             'report_recipient_id' => $recipient->id,
             'action' => 'delivery.failed',
-            'metadata' => ['batch' => $this->batch, 'error' => $exception?->getMessage()],
+            'metadata' => [
+                'batch' => $this->batch,
+                'email' => $recipient->email,
+                'recipient_name' => $recipient->name,
+                'delivery_type' => $this->deliveryType,
+                'error' => $exception?->getMessage(),
+            ],
         ]);
     }
 }

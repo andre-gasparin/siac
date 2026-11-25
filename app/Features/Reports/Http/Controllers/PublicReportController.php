@@ -17,7 +17,7 @@ class PublicReportController extends Controller
     ): Response {
         $recipient = $reports->recipient($token);
         $view = $reports->publicView($recipient);
-        $reports->recordPublicAccess($recipient);
+        $reports->recordPublicAccess($recipient, $request->ip(), $request->userAgent());
 
         $response = Inertia::render('Reports/Public', $view)->toResponse($request);
         $response->headers->set('X-Robots-Tag', 'noindex, nofollow');

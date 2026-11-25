@@ -1,10 +1,12 @@
 <?php
 
+use App\Features\Reports\Notifications\ReportAccessNotification;
 use App\Infrastructure\AI\GeminiService;
 use App\Jobs\SendReportRecipientEmail;
 use App\Models\MonitoredSystem;
 use App\Models\Parameter;
 use App\Models\ParameterValue;
+use App\Models\ParameterValuesComment;
 use App\Models\Report;
 use App\Models\ReportActivity;
 use App\Models\ReportComment;
@@ -14,6 +16,7 @@ use App\Models\ReportRecipient;
 use App\Models\ReportSuggestion;
 use App\Models\Team;
 use App\Models\User;
+use Illuminate\Support\Facades\Notification;
 use Illuminate\Support\Facades\Queue;
 
 beforeEach(function () {
@@ -890,4 +893,403 @@ test('hide_data omits table data in client preview and user report views while k
             ->where('systems.0.item.hide_data', true)
             ->where('systems.0.item.comment', '<p>Consideração mantida</p>')
             ->missing('dataBySystem.'.$this->system->id));
+});
+
+test('report show provides dataCountsBySystem and system data includes timestamp observations', function () {
+    $report = createConsolidatedReport($this);
+
+    ParameterValue::query()->create([
+        'team_id' => $this->team->id,
+        'monitored_system_id' => $this->system->id,
+        'parameter_id' => $this->parameter->id,
+        'measured_at' => '2026-08-04 08:00:00',
+        'measured_date' => '2026-08-04',
+        'value' => 4.2,
+        'source_type' => 'manual',
+    ]);
+
+    ParameterValuesComment::query()->create([
+        'team_id' => $this->team->id,
+        'monitored_system_id' => $this->system->id,
+        'measured_at' => '2026-08-04 08:00:00',
+        'measured_date' => '2026-08-04',
+        'comment' => 'Troca de filtro realizada às 08h.',
+        'created_by' => $this->admin->id,
+    ]);
+
+    $this->actingAs($this->admin)
+        ->get(route('reports.show', [$this->team, $report]))
+        ->assertOk()
+        ->assertInertia(fn ($page) => $page
+            ->component('Reports/Show')
+            ->where('issuerName', $this->admin->name)
+            ->where('dataCountsBySystem.'.$this->system->id, 1)
+            ->where('dataCountsBySystem.'.$this->otherSystem->id, 0));
+
+    $this->actingAs($this->admin)
+        ->getJson(route('reports.systems.data', [
+            $this->team,
+            $report,
+            $this->system,
+            'start_date' => '2026-08-04',
+            'end_date' => '2026-08-04',
+        ]))
+        ->assertOk()
+        ->assertJsonPath('rows.0.has_comments', true)
+        ->assertJsonPath('rows.0.comments.0.comment', 'Troca de filtro realizada às 08h.')
+        ->assertJsonPath('rows.0.comments.0.system_name', 'Água bruta');
+});
+
+test('grouping brings target system into source, merges saved considerations, reparents nested children, and ungrouping preserves comments', function () {
+    $report = createConsolidatedReport($this);
+
+    $thirdSystem = MonitoredSystem::query()->create([
+        'team_id' => $this->team->id,
+        'name' => 'Água clarificada',
+        'sort_order' => 3,
+        'is_active' => true,
+    ]);
+    $fourthSystem = MonitoredSystem::query()->create([
+        'team_id' => $this->team->id,
+        'name' => 'Filtros',
+        'sort_order' => 4,
+        'is_active' => true,
+    ]);
+
+    $parentItem = ReportItem::query()->create([
+        'team_id' => $this->team->id,
+        'report_id' => $report->id,
+        'monitored_system_id' => $this->system->id,
+        'date_reference' => '2026-08-04',
+        'show_data_results' => true,
+        'comment' => '<p>Consideração A</p>',
+        'metadata' => ['editor' => ['schema_version' => 1, 'document' => [
+            'type' => 'doc',
+            'content' => [['type' => 'paragraph', 'content' => [['type' => 'text', 'text' => 'Consideração A']]]],
+        ]]],
+    ]);
+
+    $otherItem = ReportItem::query()->create([
+        'team_id' => $this->team->id,
+        'report_id' => $report->id,
+        'monitored_system_id' => $this->otherSystem->id,
+        'date_reference' => '2026-08-04',
+        'show_data_results' => true,
+        'comment' => '<p>Consideração B</p>',
+        'metadata' => ['editor' => ['schema_version' => 1, 'document' => [
+            'type' => 'doc',
+            'content' => [['type' => 'paragraph', 'content' => [['type' => 'text', 'text' => 'Consideração B']]]],
+        ]]],
+    ]);
+
+    $thirdItem = ReportItem::query()->create([
+        'team_id' => $this->team->id,
+        'report_id' => $report->id,
+        'monitored_system_id' => $thirdSystem->id,
+        'date_reference' => '2026-08-04',
+        'show_data_results' => true,
+        'comment' => '<p>Consideração C</p>',
+    ]);
+
+    $fourthItem = ReportItem::query()->create([
+        'team_id' => $this->team->id,
+        'report_id' => $report->id,
+        'monitored_system_id' => $fourthSystem->id,
+        'parent_report_item_id' => $thirdItem->id,
+        'date_reference' => '2026-08-04',
+        'show_data_results' => true,
+        'comment' => '<p>Consideração C</p>',
+    ]);
+
+    // Bring otherSystem into $this->system preserving considerations
+    $this->actingAs($this->admin)
+        ->putJson(route('reports.systems.update', [$this->team, $report]), [
+            'system_id' => $this->otherSystem->id,
+            'parent_system_id' => $this->system->id,
+            'clear_comment' => false,
+        ])->assertOk();
+
+    expect($parentItem->refresh()->comment)->toBe('<p>Consideração A</p><p>Consideração B</p>')
+        ->and($parentItem->metadata['editor']['document']['content'])->toHaveCount(2)
+        ->and($otherItem->refresh()->parent_report_item_id)->toBe($parentItem->id)
+        ->and($otherItem->comment)->toBe('<p>Consideração A</p><p>Consideração B</p>');
+
+    // Bring thirdSystem (which already has fourthSystem grouped under it) into $this->system
+    $this->actingAs($this->admin)
+        ->putJson(route('reports.systems.update', [$this->team, $report]), [
+            'system_id' => $thirdSystem->id,
+            'parent_system_id' => $this->system->id,
+            'clear_comment' => false,
+        ])->assertOk();
+
+    expect($thirdItem->refresh()->parent_report_item_id)->toBe($parentItem->id)
+        ->and($fourthItem->refresh()->parent_report_item_id)->toBe($parentItem->id)
+        ->and($parentItem->refresh()->comment)->toBe('<p>Consideração A</p><p>Consideração B</p><p>Consideração C</p>');
+
+    // Removing the current parent promotes the first remaining child and keeps saved considerations
+    $this->actingAs($this->admin)
+        ->putJson(route('reports.systems.update', [$this->team, $report]), [
+            'system_id' => $this->system->id,
+            'parent_system_id' => null,
+        ])->assertOk();
+
+    expect($parentItem->refresh()->parent_report_item_id)->toBeNull()
+        ->and($otherItem->refresh()->parent_report_item_id)->toBeNull()
+        ->and($thirdItem->refresh()->parent_report_item_id)->toBe($otherItem->id)
+        ->and($fourthItem->refresh()->parent_report_item_id)->toBe($otherItem->id)
+        ->and($parentItem->comment)->toContain('Consideração A')
+        ->and($otherItem->comment)->toContain('Consideração A');
+});
+
+test('preview exposes is_own and notified_at on comments and can notify recipients about selected interactions', function () {
+    Queue::fake();
+
+    $report = createConsolidatedReport($this);
+    $report->update([
+        'status' => 'completed',
+        'finished_at' => now(),
+    ]);
+
+    $item = ReportItem::query()->create([
+        'team_id' => $this->team->id,
+        'report_id' => $report->id,
+        'monitored_system_id' => $this->system->id,
+        'date_reference' => '2026-08-04',
+        'show_data_results' => true,
+        'comment' => '<p>Texto</p>',
+    ]);
+
+    ReportRecipient::query()->create([
+        'team_id' => $this->team->id,
+        'report_id' => $report->id,
+        'name' => 'Cliente Teste',
+        'email' => 'cliente@example.com',
+        'access_token' => 'preview-notify-token',
+        'token_hash' => hash('sha256', 'preview-notify-token'),
+    ]);
+
+    $ownComment = ReportComment::query()->create([
+        'team_id' => $this->team->id,
+        'report_id' => $report->id,
+        'report_item_id' => $item->id,
+        'user_id' => $this->admin->id,
+        'body' => 'Ajuste confirmado pela equipe Consucal.',
+    ]);
+
+    $otherComment = ReportComment::query()->create([
+        'team_id' => $this->team->id,
+        'report_id' => $report->id,
+        'report_item_id' => $item->id,
+        'user_id' => $this->member->id,
+        'body' => 'Dúvida do cliente.',
+    ]);
+
+    $this->actingAs($this->admin)
+        ->get(route('reports.preview', [$this->team, $report]))
+        ->assertOk()
+        ->assertInertia(fn ($page) => $page
+            ->component('Reports/Preview')
+            ->where('systems.0.item.comments.0.id', $ownComment->id)
+            ->where('systems.0.item.comments.0.is_own', true)
+            ->where('systems.0.item.comments.0.notified_at', null)
+            ->where('systems.0.item.comments.1.id', $otherComment->id)
+            ->where('systems.0.item.comments.1.is_own', false));
+
+    // Cannot notify another author's comment
+    $this->actingAs($this->admin)
+        ->post(route('reports.preview.interactions.notify', [$this->team, $report]), [
+            'comment_ids' => [$otherComment->id],
+        ])
+        ->assertSessionHasErrors('comment_ids');
+
+    // Can notify own interaction on completed report
+    $this->actingAs($this->admin)
+        ->post(route('reports.preview.interactions.notify', [$this->team, $report]), [
+            'comment_ids' => [$ownComment->id],
+        ])
+        ->assertRedirect();
+
+    expect($ownComment->refresh()->notified_at)->not->toBeNull();
+
+    Queue::assertPushed(SendReportRecipientEmail::class, function (SendReportRecipientEmail $job) {
+        return count($job->interactions) === 1
+            && $job->interactions[0]['system'] === 'Água bruta'
+            && $job->interactions[0]['body'] === 'Ajuste confirmado pela equipe Consucal.';
+    });
+
+    $this->assertDatabaseHas('report_activities', [
+        'report_id' => $report->id,
+        'action' => 'interactions.notified',
+    ]);
+});
+
+test('preview rejects notifying interactions while report is still a draft', function () {
+    Queue::fake();
+
+    $report = createConsolidatedReport($this);
+
+    $item = ReportItem::query()->create([
+        'team_id' => $this->team->id,
+        'report_id' => $report->id,
+        'monitored_system_id' => $this->system->id,
+        'date_reference' => '2026-08-04',
+        'show_data_results' => true,
+        'comment' => '<p>Texto</p>',
+    ]);
+
+    $ownComment = ReportComment::query()->create([
+        'team_id' => $this->team->id,
+        'report_id' => $report->id,
+        'report_item_id' => $item->id,
+        'user_id' => $this->admin->id,
+        'body' => 'Comentário em rascunho.',
+    ]);
+
+    $this->actingAs($this->admin)
+        ->post(route('reports.preview.interactions.notify', [$this->team, $report]), [
+            'comment_ids' => [$ownComment->id],
+        ])
+        ->assertSessionHasErrors('report');
+
+    Queue::assertNothingPushed();
+});
+
+test('public report access tracks first access, IP address, and access count across visits', function () {
+    $report = createConsolidatedReport($this);
+    $report->update(['status' => 'completed', 'finished_at' => now()]);
+
+    ReportItem::query()->create([
+        'team_id' => $this->team->id,
+        'report_id' => $report->id,
+        'monitored_system_id' => $this->system->id,
+        'date_reference' => '2026-08-04',
+        'show_data_results' => true,
+    ]);
+
+    $token = 'tracked-individual-token-abc';
+    $recipient = ReportRecipient::query()->create([
+        'team_id' => $this->team->id,
+        'report_id' => $report->id,
+        'name' => 'Equipe Operacao',
+        'email' => 'operacao@innova.com',
+        'access_token' => $token,
+        'token_hash' => hash('sha256', $token),
+    ]);
+
+    $this->withServerVariables(['REMOTE_ADDR' => '203.0.113.10'])
+        ->get(route('reports.public.show', $token))
+        ->assertOk();
+
+    $recipient->refresh();
+    $firstAccessAt = $recipient->first_accessed_at;
+
+    expect($firstAccessAt)->not->toBeNull()
+        ->and($recipient->first_accessed_ip)->toBe('203.0.113.10')
+        ->and($recipient->last_accessed_ip)->toBe('203.0.113.10')
+        ->and($recipient->access_count)->toBe(1);
+
+    $this->travel(5)->minutes();
+
+    $this->withServerVariables(['REMOTE_ADDR' => '198.51.100.25'])
+        ->get(route('reports.public.show', $token))
+        ->assertOk();
+
+    $recipient->refresh();
+
+    expect($recipient->first_accessed_at?->toIso8601String())->toBe($firstAccessAt?->toIso8601String())
+        ->and($recipient->first_accessed_ip)->toBe('203.0.113.10')
+        ->and($recipient->last_accessed_ip)->toBe('198.51.100.25')
+        ->and($recipient->access_count)->toBe(2);
+});
+
+test('report show and preview expose deliveryHistory with queued and sent events', function () {
+    $report = createConsolidatedReport($this);
+    $report->update(['status' => 'completed', 'finished_at' => now()]);
+
+    $recipient = ReportRecipient::query()->create([
+        'team_id' => $this->team->id,
+        'report_id' => $report->id,
+        'name' => 'Laboratorio Quimico',
+        'email' => 'lab@innova.com',
+        'access_token' => 'history-token-456',
+        'token_hash' => hash('sha256', 'history-token-456'),
+    ]);
+
+    Notification::fake();
+
+    $this->actingAs($this->admin)
+        ->post(route('reports.recipients.resend', [$this->team, $report, $recipient]))
+        ->assertRedirect();
+
+    $this->actingAs($this->admin)
+        ->get(route('reports.show', [$this->team, $report]))
+        ->assertOk()
+        ->assertInertia(fn ($page) => $page
+            ->component('Reports/Show')
+            ->has('deliveryHistory', 2)
+            ->where('deliveryHistory.0.status', 'sent')
+            ->where('deliveryHistory.0.delivery_type', 'resend_individual')
+            ->where('deliveryHistory.0.recipient_email', 'lab@innova.com')
+            ->where('deliveryHistory.1.status', 'queued'));
+
+    $this->actingAs($this->admin)
+        ->get(route('reports.preview', [$this->team, $report]))
+        ->assertOk()
+        ->assertInertia(fn ($page) => $page
+            ->component('Reports/Preview')
+            ->has('deliveryHistory', 2));
+});
+
+test('report access notification renders custom blade email view with individual token link', function () {
+    $report = createConsolidatedReport($this);
+    $report->update(['status' => 'completed', 'finished_at' => now()]);
+
+    $token = 'custom-email-token-789';
+    $recipient = ReportRecipient::query()->create([
+        'team_id' => $this->team->id,
+        'report_id' => $report->id,
+        'name' => 'Engenharia Processos',
+        'email' => 'engenharia@innova.com',
+        'access_token' => $token,
+        'token_hash' => hash('sha256', $token),
+    ]);
+
+    $notification = new ReportAccessNotification($recipient, [
+        [
+            'system' => 'Água bruta',
+            'author' => 'Admin',
+            'body' => 'Ajuste aplicado.',
+        ],
+    ]);
+
+    $mailMessage = $notification->toMail($recipient);
+    $html = view($mailMessage->view, $mailMessage->viewData)->render();
+
+    expect($mailMessage->view)->toBe('emails.reports.access')
+        ->and($html)->toContain('Engenharia Processos')
+        ->and($html)->toContain($this->team->name)
+        ->and($html)->toContain(route('reports.public.show', ['token' => $token]))
+        ->and($html)->toContain('Ajuste aplicado.');
+});
+
+test('report show and preview include currentTeam logoUrl when team has a logo', function () {
+    $this->team->update(['logo_path' => 'team-logos/innova.png']);
+    $expectedLogoUrl = $this->team->fresh()->logoUrl();
+
+    $report = createConsolidatedReport($this);
+
+    $this->actingAs($this->admin)
+        ->get(route('reports.show', [$this->team, $report]))
+        ->assertOk()
+        ->assertInertia(fn ($page) => $page
+            ->component('Reports/Show')
+            ->where('currentTeam.logoUrl', $expectedLogoUrl));
+
+    $this->actingAs($this->admin)
+        ->get(route('reports.preview', [$this->team, $report]))
+        ->assertOk()
+        ->assertInertia(fn ($page) => $page
+            ->component('Reports/Preview')
+            ->where('currentTeam.logoUrl', $expectedLogoUrl)
+            ->where('report.team_logo_url', $expectedLogoUrl));
 });

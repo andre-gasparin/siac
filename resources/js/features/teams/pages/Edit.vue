@@ -1,15 +1,17 @@
 <script setup lang="ts">
-import { Form, Head, router, setLayoutProps } from '@inertiajs/vue3';
+import { Head, router, setLayoutProps, useForm } from '@inertiajs/vue3';
 import {
     ChevronDown,
+    ImagePlus,
     Mail,
     Settings,
     ShieldAlert,
+    Trash2,
     UserPlus,
     Users,
     X,
 } from '@lucide/vue';
-import { computed, ref } from 'vue';
+import { computed, onBeforeUnmount, ref, watch } from 'vue';
 import CancelInvitationModal from '@/features/teams/components/CancelInvitationModal.vue';
 import DeleteTeamModal from '@/features/teams/components/DeleteTeamModal.vue';
 import InviteMemberModal from '@/features/teams/components/InviteMemberModal.vue';
@@ -75,13 +77,102 @@ const { getInitials } = useInitials();
 
 type TabType = 'general' | 'members' | 'danger';
 const activeTab = ref<TabType>('general');
-const isActive = ref(Boolean(props.team.isActive));
-const requireDataEntryResponsible = ref(
-    Boolean(
+
+const form = useForm({
+    name: props.team.name,
+    is_active: Boolean(props.team.isActive),
+    require_data_entry_responsible: Boolean(
         props.team.requireDataEntryResponsible ??
         props.team.require_data_entry_responsible,
     ),
+    logo: null as File | null,
+    remove_logo: false,
+});
+
+const logoInputRef = ref<HTMLInputElement | null>(null);
+const localLogoPreview = ref<string | null>(null);
+
+const displayedLogoUrl = computed(() => {
+    if (localLogoPreview.value) {
+        return localLogoPreview.value;
+    }
+
+    if (form.remove_logo) {
+        return null;
+    }
+
+    return props.team.logoUrl ?? null;
+});
+
+watch(
+    () => props.team,
+    (team) => {
+        form.name = team.name;
+        form.is_active = Boolean(team.isActive);
+        form.require_data_entry_responsible = Boolean(
+            team.requireDataEntryResponsible ??
+            team.require_data_entry_responsible,
+        );
+        form.logo = null;
+        form.remove_logo = false;
+        if (localLogoPreview.value) {
+            URL.revokeObjectURL(localLogoPreview.value);
+            localLogoPreview.value = null;
+        }
+        if (logoInputRef.value) {
+            logoInputRef.value.value = '';
+        }
+    },
 );
+
+onBeforeUnmount(() => {
+    if (localLogoPreview.value) {
+        URL.revokeObjectURL(localLogoPreview.value);
+    }
+});
+
+const handleLogoChange = (event: Event) => {
+    const input = event.target as HTMLInputElement;
+    const file = input.files?.[0] ?? null;
+
+    if (localLogoPreview.value) {
+        URL.revokeObjectURL(localLogoPreview.value);
+        localLogoPreview.value = null;
+    }
+
+    form.logo = file;
+    if (file) {
+        form.remove_logo = false;
+        localLogoPreview.value = URL.createObjectURL(file);
+    }
+};
+
+const handleRemoveLogo = () => {
+    if (localLogoPreview.value) {
+        URL.revokeObjectURL(localLogoPreview.value);
+        localLogoPreview.value = null;
+    }
+    if (logoInputRef.value) {
+        logoInputRef.value.value = '';
+    }
+    form.logo = null;
+    form.remove_logo = true;
+};
+
+const submitTeamForm = () => {
+    form.transform((data) => ({
+        ...data,
+        is_active: data.is_active ? '1' : '0',
+        require_data_entry_responsible: data.require_data_entry_responsible
+            ? '1'
+            : '0',
+        remove_logo: data.remove_logo ? '1' : '0',
+        _method: 'patch',
+    })).post(update.url(props.team.slug), {
+        forceFormData: true,
+        preserveScroll: true,
+    });
+};
 
 const inviteDialogOpen = ref(false);
 const deleteDialogOpen = ref(false);
@@ -126,7 +217,18 @@ const confirmCancelInvitation = (invitation: TeamInvitation) => {
         >
             <div class="flex items-center gap-4">
                 <div
-                    class="flex h-12 w-12 items-center justify-center rounded-xl bg-primary/10 text-lg font-bold text-primary"
+                    v-if="team.logoUrl"
+                    class="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-border bg-white p-1.5 shadow-2xs"
+                >
+                    <img
+                        :src="team.logoUrl"
+                        :alt="`Logo de ${team.name}`"
+                        class="max-h-full max-w-full object-contain"
+                    />
+                </div>
+                <div
+                    v-else
+                    class="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-lg font-bold text-primary"
                 >
                     {{ getInitials(team.name) }}
                 </div>
@@ -210,21 +312,84 @@ const confirmCancelInvitation = (invitation: TeamInvitation) => {
                     description="Atualize o nome e as preferências da sua unidade"
                 />
 
-                <Form
-                    v-bind="update.form(team.slug)"
-                    class="space-y-6"
-                    v-slot="{ errors, processing }"
-                >
+                <form class="space-y-6" @submit.prevent="submitTeamForm">
                     <div class="grid max-w-lg gap-2">
                         <Label for="name">Nome da Unidade</Label>
                         <Input
                             id="name"
+                            v-model="form.name"
                             name="name"
                             data-test="team-name-input"
-                            :default-value="team.name"
                             required
                         />
-                        <InputError :message="errors.name" />
+                        <InputError :message="form.errors.name" />
+                    </div>
+
+                    <!-- Logo da Empresa / Unidade -->
+                    <div class="grid max-w-lg gap-2.5">
+                        <Label for="team_logo">Logo da Empresa</Label>
+                        <div
+                            class="flex flex-wrap items-center gap-4 rounded-xl border border-border/80 bg-muted/20 p-3.5"
+                        >
+                            <div
+                                class="flex h-16 w-28 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-border bg-white p-2 shadow-2xs"
+                            >
+                                <img
+                                    v-if="displayedLogoUrl"
+                                    :src="displayedLogoUrl"
+                                    :alt="`Logo de ${team.name}`"
+                                    data-test="team-logo-preview"
+                                    class="max-h-full max-w-full object-contain"
+                                />
+                                <span
+                                    v-else
+                                    class="text-xs font-medium text-muted-foreground"
+                                >
+                                    Sem logo
+                                </span>
+                            </div>
+
+                            <div class="flex min-w-0 flex-1 flex-col gap-2">
+                                <div class="flex flex-wrap items-center gap-2">
+                                    <label
+                                        for="team_logo"
+                                        class="inline-flex cursor-pointer items-center gap-1.5 rounded-lg border border-border bg-background px-3 py-1.5 text-xs font-medium text-foreground shadow-2xs transition hover:bg-muted"
+                                    >
+                                        <ImagePlus class="size-3.5" />
+                                        <span>{{
+                                            displayedLogoUrl
+                                                ? 'Alterar logo'
+                                                : 'Enviar logo'
+                                        }}</span>
+                                    </label>
+                                    <input
+                                        id="team_logo"
+                                        ref="logoInputRef"
+                                        type="file"
+                                        name="logo"
+                                        accept="image/png,image/jpeg,image/webp"
+                                        data-test="team-logo-input"
+                                        class="sr-only"
+                                        @change="handleLogoChange"
+                                    />
+                                    <button
+                                        v-if="displayedLogoUrl"
+                                        type="button"
+                                        data-test="team-logo-remove-button"
+                                        class="inline-flex items-center gap-1 rounded-lg border border-border bg-background px-2.5 py-1.5 text-xs font-medium text-muted-foreground transition hover:border-destructive/40 hover:bg-destructive/10 hover:text-destructive"
+                                        @click="handleRemoveLogo"
+                                    >
+                                        <Trash2 class="size-3.5" />
+                                        <span>Remover</span>
+                                    </button>
+                                </div>
+                                <p class="text-[11px] text-muted-foreground">
+                                    PNG, JPG ou WEBP (máx. 2 MB). Exibida no
+                                    cabeçalho dos relatórios da unidade.
+                                </p>
+                            </div>
+                        </div>
+                        <InputError :message="form.errors.logo" />
                     </div>
 
                     <div class="flex items-center gap-3">
@@ -232,30 +397,27 @@ const confirmCancelInvitation = (invitation: TeamInvitation) => {
                             id="is_active_toggle"
                             type="button"
                             role="switch"
-                            :aria-checked="isActive"
+                            :aria-checked="form.is_active"
                             data-test="team-is-active-toggle"
                             class="relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:ring-2 focus:ring-ring focus:ring-offset-2 focus:outline-none"
-                            :class="isActive ? 'bg-primary' : 'bg-muted'"
-                            @click="isActive = !isActive"
+                            :class="form.is_active ? 'bg-primary' : 'bg-muted'"
+                            @click="form.is_active = !form.is_active"
                         >
                             <span
                                 aria-hidden="true"
                                 class="pointer-events-none inline-block h-4 w-4 transform rounded-full bg-background shadow-lg ring-0 transition duration-200 ease-in-out"
                                 :class="
-                                    isActive ? 'translate-x-4' : 'translate-x-0'
+                                    form.is_active
+                                        ? 'translate-x-4'
+                                        : 'translate-x-0'
                                 "
                             />
                         </button>
-                        <input
-                            type="hidden"
-                            name="is_active"
-                            :value="isActive ? '1' : '0'"
-                        />
                         <Label
                             for="is_active_toggle"
                             class="cursor-pointer text-sm font-medium"
                         >
-                            Empresa {{ isActive ? 'ativa' : 'inativa' }}
+                            Empresa {{ form.is_active ? 'ativa' : 'inativa' }}
                         </Label>
                     </div>
 
@@ -264,34 +426,29 @@ const confirmCancelInvitation = (invitation: TeamInvitation) => {
                             id="require_responsible_toggle"
                             type="button"
                             role="switch"
-                            :aria-checked="requireDataEntryResponsible"
+                            :aria-checked="form.require_data_entry_responsible"
                             data-test="team-require-responsible-toggle"
                             class="relative mt-0.5 inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:ring-2 focus:ring-ring focus:ring-offset-2 focus:outline-none"
                             :class="
-                                requireDataEntryResponsible
+                                form.require_data_entry_responsible
                                     ? 'bg-primary'
                                     : 'bg-muted'
                             "
                             @click="
-                                requireDataEntryResponsible =
-                                    !requireDataEntryResponsible
+                                form.require_data_entry_responsible =
+                                    !form.require_data_entry_responsible
                             "
                         >
                             <span
                                 aria-hidden="true"
                                 class="pointer-events-none inline-block h-4 w-4 transform rounded-full bg-background shadow-lg ring-0 transition duration-200 ease-in-out"
                                 :class="
-                                    requireDataEntryResponsible
+                                    form.require_data_entry_responsible
                                         ? 'translate-x-4'
                                         : 'translate-x-0'
                                 "
                             />
                         </button>
-                        <input
-                            type="hidden"
-                            name="require_data_entry_responsible"
-                            :value="requireDataEntryResponsible ? '1' : '0'"
-                        />
                         <div class="flex flex-col gap-0.5">
                             <Label
                                 for="require_responsible_toggle"
@@ -310,12 +467,12 @@ const confirmCancelInvitation = (invitation: TeamInvitation) => {
                         <Button
                             type="submit"
                             data-test="team-save-button"
-                            :disabled="processing"
+                            :disabled="form.processing"
                         >
                             Salvar Alterações
                         </Button>
                     </div>
-                </Form>
+                </form>
             </div>
 
             <div

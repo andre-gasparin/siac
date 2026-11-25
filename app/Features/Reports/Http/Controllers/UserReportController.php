@@ -3,6 +3,7 @@
 namespace App\Features\Reports\Http\Controllers;
 
 use App\Features\Reports\Services\ConsolidatedReportService;
+use App\Features\Reports\Services\ReportDeliveryService;
 use App\Http\Controllers\Controller;
 use App\Models\MonitoredSystem;
 use App\Models\Report;
@@ -68,6 +69,30 @@ class UserReportController extends Controller
         );
 
         return back();
+    }
+
+    public function notifyInteractions(
+        Request $request,
+        Team $current_team,
+        Report $report,
+        ReportDeliveryService $delivery,
+    ): RedirectResponse {
+        abort_unless($report->team_id === $current_team->id, 404);
+        abort_unless($report->status === 'completed', 404);
+
+        $validated = $request->validate([
+            'comment_ids' => ['required', 'array', 'min:1'],
+            'comment_ids.*' => ['required', 'integer'],
+        ]);
+
+        $count = $delivery->notifyInteractions(
+            team: $current_team,
+            report: $report,
+            commentIds: array_values(array_map('intval', $validated['comment_ids'])),
+            user: $request->user(),
+        );
+
+        return back()->with('success', "Reenvio do relatório enfileirado com {$count} interação(ões).");
     }
 
     public function chart(

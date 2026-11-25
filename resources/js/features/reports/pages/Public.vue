@@ -3,6 +3,7 @@ import { Head } from '@inertiajs/vue3';
 import ClientReportContent from '@/features/reports/components/ClientReportContent.vue';
 import { show as publicChart } from '@/routes/reports/public/charts';
 import { store as storePublicComment } from '@/routes/reports/public/comments';
+import { notify as notifyPublicInteractions } from '@/routes/reports/public/interactions';
 import type { ChartSeries } from '@/shared/components/charts/EChartRenderer.vue';
 
 interface ReportComment {
@@ -10,7 +11,9 @@ interface ReportComment {
     author: string;
     body: string;
     is_consucal: boolean;
+    is_own?: boolean;
     created_at: string;
+    notified_at?: string | null;
 }
 
 interface ReportItem {
@@ -68,6 +71,7 @@ defineProps<{
         status: string;
         date_reference: string;
         team_name: string;
+        team_logo_url?: string | null;
         finished_at?: string | null;
     };
     recipient?: RecipientInfo | null;
@@ -100,9 +104,7 @@ function getChartUrl(
         <meta name="referrer" content="no-referrer" />
     </Head>
 
-    <main
-        class="min-h-screen bg-slate-100 text-slate-950 dark:bg-neutral-950 dark:text-white"
-    >
+    <main class="report-view-theme min-h-screen bg-background text-foreground">
         <ClientReportContent
             :report="report"
             :systems="systems"
@@ -111,6 +113,7 @@ function getChartUrl(
             :recipient="recipient"
             :is-preview="false"
             :comment-submit-url-generator="getCommentSubmitUrl"
+            :notify-interactions-url="notifyPublicInteractions.url(token)"
             :chart-url-generator="getChartUrl"
         />
     </main>

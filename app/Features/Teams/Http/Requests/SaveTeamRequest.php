@@ -19,6 +19,8 @@ class SaveTeamRequest extends FormRequest
             'name' => ['required', 'string', 'max:255', new TeamName],
             'is_active' => ['sometimes', 'boolean'],
             'require_data_entry_responsible' => ['sometimes', 'boolean'],
+            'logo' => ['nullable', 'image', 'mimes:png,jpg,jpeg,webp', 'max:2048'],
+            'remove_logo' => ['sometimes', 'boolean'],
         ];
     }
 }

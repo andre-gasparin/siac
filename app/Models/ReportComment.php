@@ -15,13 +15,24 @@ use Illuminate\Support\Carbon;
  * @property int|null $user_id
  * @property int|null $report_recipient_id
  * @property string $body
+ * @property Carbon|null $notified_at
  * @property Carbon|null $created_at
  * @property-read User|null $user
  * @property-read ReportRecipient|null $recipient
  */
-#[Fillable(['team_id', 'report_id', 'report_item_id', 'user_id', 'report_recipient_id', 'body'])]
+#[Fillable(['team_id', 'report_id', 'report_item_id', 'user_id', 'report_recipient_id', 'body', 'notified_at'])]
 class ReportComment extends Model
 {
+    /**
+     * @return array<string, string>
+     */
+    protected function casts(): array
+    {
+        return [
+            'notified_at' => 'datetime',
+        ];
+    }
+
     /** @return BelongsTo<Team, $this> */
     public function team(): BelongsTo
     {

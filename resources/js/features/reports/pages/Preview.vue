@@ -3,6 +3,11 @@ import { Head } from '@inertiajs/vue3';
 import { ref } from 'vue';
 import ClientReportContent from '@/features/reports/components/ClientReportContent.vue';
 import ReportRecipientsModal from '@/features/reports/components/ReportRecipientsModal.vue';
+import type {
+    DeliveryHistoryEntry,
+    ReportRecipientItem,
+} from '@/features/reports/components/ReportRecipientsModal.vue';
+import { notify as notifyPreviewInteractions } from '@/routes/reports/preview/interactions';
 import type { ChartSeries } from '@/shared/components/charts/EChartRenderer.vue';
 import type { Team } from '@/shared/types';
 
@@ -11,7 +16,9 @@ interface ReportComment {
     author: string;
     body: string;
     is_consucal: boolean;
+    is_own?: boolean;
     created_at: string;
+    notified_at?: string | null;
 }
 
 interface ReportItem {
@@ -75,11 +82,13 @@ const props = defineProps<{
         status: string;
         date_reference: string;
         team_name: string;
+        team_logo_url?: string | null;
         finished_at?: string | null;
     };
     systems: SystemSection[];
     dataBySystem: Record<number, ReportData>;
-    recipients?: RecipientInfo[];
+    recipients?: ReportRecipientItem[];
+    deliveryHistory?: DeliveryHistoryEntry[];
     recipient?: RecipientInfo | null;
     activeRecipientsCount?: number;
     currentTeam: Team;
@@ -103,8 +112,8 @@ function getChartUrl(
 <template>
     <Head :title="`Pré-visualização: ${report.title}`" />
 
-    <main
-        class="min-h-screen bg-slate-100 text-slate-950 dark:bg-neutral-950 dark:text-white"
+    <div
+        class="report-view-theme min-h-full w-full min-w-0 flex-1 bg-background text-foreground"
     >
         <ClientReportContent
             :report="report"
@@ -116,17 +125,25 @@ function getChartUrl(
             :current-team="currentTeam"
             :is-preview="true"
             :comment-submit-url-generator="getCommentSubmitUrl"
+            :notify-interactions-url="
+                notifyPreviewInteractions.url({
+                    current_team: currentTeam.slug,
+                    report: report.id,
+                })
+            "
             :chart-url-generator="getChartUrl"
             @open-recipients="recipientsOpen = true"
         />
 
         <ReportRecipientsModal
             :show="recipientsOpen"
-            :recipients="(recipients as any[]) || []"
+            :recipients="recipients ?? []"
+            :delivery-history="deliveryHistory"
             :team-slug="currentTeam.slug"
             :report-id="report.id"
             :report-status="report.status"
+            :report-date-reference="report.date_reference"
             @close="recipientsOpen = false"
         />
-    </main>
+    </div>
 </template>

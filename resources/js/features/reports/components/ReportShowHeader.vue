@@ -1,534 +1,287 @@
 <script setup lang="ts">
+import { usePage } from '@inertiajs/vue3';
+import { Check, Clock, ShieldCheck, X } from '@lucide/vue';
+import { computed } from 'vue';
 import {
-    Calendar,
-    Check,
-    ExternalLink,
-    History,
-    Layers,
-    Mail,
-    RefreshCw,
-    ShieldCheck,
-    X,
-} from '@lucide/vue';
-import { computed, onMounted, onUnmounted, ref } from 'vue';
-import { resolveReportSystemStatus } from '@/features/reports/systemStatus';
-import type { ReportSystemStatus } from '@/features/reports/systemStatus';
+    formatDateBr,
+    formatDateTimeBr,
+} from '@/features/reports/reportMetrics';
 import type { Team } from '@/shared/types';
 
-interface SystemSectionItem {
-    id: number;
-    name: string;
-    item: {
-        show_data_results: boolean;
-        comment?: string | null;
-        parent_monitored_system_id?: number | null;
-    } | null;
-}
-
-const props = defineProps<{
-    report: {
-        id: number;
-        title: string;
-        status: string;
-        date_reference: string;
-        email_count: number;
-    };
-    currentTeam: Team;
-    sections: SystemSectionItem[];
-    editingSystems?: Record<number, boolean>;
-    intendedRecipientsCount?: number;
-    activeRecipientsCount?: number;
-    pendingDate: string;
-    tableStartDate?: string;
-    tableEndDate?: string;
-    datePrompt: {
-        open: boolean;
-        date: string;
-        exists: boolean;
-        targetReportId?: number;
-    } | null;
-}>();
+const props = withDefaults(
+    defineProps<{
+        report: {
+            id: number;
+            title: string;
+            status: string;
+            date_reference: string;
+            finished_at?: string | null;
+        };
+        currentTeam: Team;
+        intendedRecipientsCount?: number;
+        activeRecipientsCount?: number;
+        issuerName?: string | null;
+        pendingDate: string;
+        datePrompt: {
+            open: boolean;
+            date: string;
+            exists: boolean;
+            targetReportId?: number;
+        } | null;
+    }>(),
+    {
+        intendedRecipientsCount: 0,
+        activeRecipientsCount: undefined,
+        issuerName: null,
+    },
+);
 
 const emit = defineEmits<{
     dateChange: [event: Event];
-    'update:tableStartDate': [value: string];
-    'update:tableEndDate': [value: string];
-    tablePeriodChange: [dates: { start_date: string; end_date: string }];
     cancelDatePrompt: [];
     confirmDatePrompt: [];
-    openHistory: [];
     openRecipients: [];
-    sendAgain: [];
-    finish: [];
 }>();
 
-const systemsPopoverOpen = ref(false);
-const systemsPopoverRef = ref<HTMLElement | null>(null);
-
-const STATUS_META: Record<
-    ReportSystemStatus,
-    { label: string; badgeClass: string; dotClass: string }
-> = {
-    enabled: {
-        label: 'Habilitado',
-        badgeClass:
-            'bg-emerald-500/15 font-semibold text-emerald-600 dark:text-emerald-400',
-        dotClass: 'bg-emerald-500',
-    },
-    editing: {
-        label: 'Em edição',
-        badgeClass:
-            'bg-amber-500/15 font-semibold text-amber-600 dark:text-amber-400',
-        dotClass: 'bg-amber-500',
-    },
-    disabled: {
-        label: 'Desabilitado',
-        badgeClass:
-            'bg-red-500/15 font-semibold text-red-600 dark:text-red-400',
-        dotClass: 'bg-red-500',
-    },
-};
-
-function getSystemStatus(system: SystemSectionItem): ReportSystemStatus {
-    return resolveReportSystemStatus(
-        system.item,
-        Boolean(props.editingSystems?.[system.id]),
-    );
-}
-
-const sectionsWithStatus = computed(() =>
-    props.sections.map((system) => {
-        const status = getSystemStatus(system);
-
-        return {
-            ...system,
-            status,
-            statusMeta: STATUS_META[status],
-        };
-    }),
-);
-
-const totalSystems = computed(() => sectionsWithStatus.value.length);
-const enabledSystems = computed(
-    () => sectionsWithStatus.value.filter((s) => s.status === 'enabled').length,
-);
-const editingSystemsCount = computed(
-    () => sectionsWithStatus.value.filter((s) => s.status === 'editing').length,
-);
-const disabledSystems = computed(
+const page = usePage();
+const resolvedIssuerName = computed(
     () =>
-        sectionsWithStatus.value.filter((s) => s.status === 'disabled').length,
+        props.issuerName ||
+        (page.props.auth as { user?: { name?: string } } | undefined)?.user
+            ?.name ||
+        'Administrador Consucal',
 );
-const percentage = computed(() =>
-    totalSystems.value > 0
-        ? Math.round((enabledSystems.value / totalSystems.value) * 100)
-        : 0,
-);
-const editingPercentage = computed(() =>
-    totalSystems.value > 0
-        ? Math.min(
-              100 - percentage.value,
-              Math.round(
-                  (editingSystemsCount.value / totalSystems.value) * 100,
-              ),
-          )
-        : 0,
-);
-
-function scrollToSystem(systemId: number) {
-    systemsPopoverOpen.value = false;
-    const el = document.querySelector(`[data-report-system-id="${systemId}"]`);
-
-    if (el) {
-        el.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    }
-}
-
-function handleClickOutside(event: MouseEvent) {
-    if (
-        systemsPopoverOpen.value &&
-        systemsPopoverRef.value &&
-        !systemsPopoverRef.value.contains(event.target as Node)
-    ) {
-        systemsPopoverOpen.value = false;
-    }
-}
-
-onMounted(() => {
-    document.addEventListener('click', handleClickOutside);
-});
-
-onUnmounted(() => {
-    document.removeEventListener('click', handleClickOutside);
-});
-
-function formatDateBr(value: string | null): string {
-    if (!value) {
-        return '—';
-    }
-
-    const [year, month, day] = value.split('-');
-
-    if (year && month && day) {
-        return `${day}/${month}/${year}`;
-    }
-
-    return value;
-}
 </script>
 
 <template>
-    <header
-        class="overflow-visible rounded-xl border border-border bg-card p-4 text-card-foreground shadow-sm lg:p-6"
-    >
-        <!-- Topo do Card: Identificação à esquerda e Histórico no canto superior direito -->
-        <div class="flex flex-wrap items-start justify-between gap-4">
-            <div>
-                <div class="flex flex-wrap items-center gap-2">
+    <div class="space-y-2.5">
+        <!-- Faixa Administrativa Discreta -->
+        <div
+            class="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-[var(--report-admin-border)] bg-[var(--report-admin-bg)] px-3.5 py-1.5 text-[11px] text-[var(--report-admin-ink)] shadow-2xs"
+        >
+            <div class="flex flex-wrap items-center gap-2.5">
+                <span
+                    class="inline-flex items-center gap-1.5 text-[10.5px] font-bold tracking-wider text-[var(--report-admin-ink)] uppercase"
+                >
+                    <ShieldCheck class="size-3.5" />
+                    ÁREA ADMINISTRATIVA
+                </span>
+                <span
+                    class="border-l border-[var(--report-admin-border)] pl-2.5 text-[10.5px] text-[var(--report-admin-muted)]"
+                >
+                    Visível somente para administradores
+                </span>
+            </div>
+
+            <span
+                class="text-[10.5px] font-medium text-[var(--report-admin-muted)]"
+            >
+                {{ report.title }}
+            </span>
+        </div>
+
+        <!-- Card Unificado de Identificação + Metadados Administrativos -->
+        <header
+            class="overflow-visible rounded-xl border border-[var(--report-admin-card-border)] bg-[var(--report-admin-card)] text-card-foreground shadow-sm"
+        >
+            <!-- Faixa Institucional Azul -->
+            <div
+                class="flex flex-wrap items-center justify-between gap-3 rounded-t-[11px] bg-gradient-to-r from-[#164a6c] to-[#246d91] px-4 py-3 text-white lg:px-5 dark:from-[#173d57] dark:to-[#205779]"
+            >
+                <div class="min-w-0 flex-1">
                     <h1
-                        class="text-lg font-semibold tracking-tight text-foreground lg:text-xl"
+                        class="text-[15px] font-semibold tracking-tight text-white lg:text-[17px]"
                     >
-                        {{ report.title }}
+                        Elaboração do Relatório de Controle Químico
                     </h1>
-                    <span
-                        class="rounded-full px-2.5 py-1 text-xs font-semibold"
-                        :class="
-                            report.status === 'completed'
-                                ? 'bg-emerald-500/15 text-emerald-600 ring-1 ring-emerald-500/30 dark:text-emerald-400'
-                                : 'bg-amber-500/15 text-amber-600 ring-1 ring-amber-500/30 dark:text-amber-400'
-                        "
+                </div>
+
+                <!-- Seletor de Data de Referência -->
+                <div class="relative">
+                    <label
+                        class="flex items-center gap-2 text-[11.5px] font-semibold whitespace-nowrap text-[#e4f2f9]"
                     >
+                        <span>Alterar data</span>
+                        <input
+                            :value="pendingDate"
+                            type="date"
+                            aria-label="Alterar data do relatório"
+                            class="h-8 rounded-lg border border-[#9fc3d8] bg-white px-2.5 text-xs font-semibold text-[#244157] shadow-xs focus:ring-2 focus:ring-white/60 focus:outline-hidden dark:border-[var(--border)] dark:bg-[var(--card)] dark:text-[var(--foreground)]"
+                            @change="emit('dateChange', $event)"
+                        />
+                    </label>
+
+                    <!-- Date Switch Confirmation Popover -->
+                    <div
+                        v-if="datePrompt?.open"
+                        class="absolute top-full right-0 z-50 mt-2 w-72 rounded-xl border border-border bg-popover p-3.5 text-popover-foreground shadow-xl ring-1 ring-border/50 sm:w-80"
+                    >
+                        <p
+                            class="text-xs leading-relaxed font-medium text-foreground"
+                        >
+                            <template v-if="datePrompt.exists">
+                                Deseja visualizar o relatório de
+                                <strong class="text-primary">{{
+                                    formatDateBr(datePrompt.date)
+                                }}</strong
+                                >?
+                            </template>
+                            <template v-else>
+                                Relatório não encontrado para
+                                <strong
+                                    class="text-amber-600 dark:text-amber-400"
+                                    >{{ formatDateBr(datePrompt.date) }}</strong
+                                >. Deseja criar um?
+                            </template>
+                        </p>
+
+                        <div class="mt-3 flex items-center justify-end gap-1.5">
+                            <button
+                                type="button"
+                                class="inline-flex size-7 items-center justify-center rounded-lg border border-border bg-muted/60 text-muted-foreground transition hover:bg-muted hover:text-foreground"
+                                title="Cancelar"
+                                @click="emit('cancelDatePrompt')"
+                            >
+                                <X class="size-3.5" />
+                            </button>
+                            <button
+                                type="button"
+                                class="inline-flex size-7 items-center justify-center rounded-lg bg-emerald-600 text-white shadow-xs transition hover:bg-emerald-700"
+                                :title="
+                                    datePrompt.exists
+                                        ? 'Visualizar relatório'
+                                        : 'Criar relatório'
+                                "
+                                @click="emit('confirmDatePrompt')"
+                            >
+                                <Check class="size-3.5" />
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Grid Administrativo de 4 Colunas -->
+            <div
+                class="grid grid-cols-1 gap-3 px-4 py-3 sm:grid-cols-2 lg:grid-cols-4 lg:gap-4 lg:px-5"
+            >
+                <div
+                    class="flex items-center gap-3 sm:pr-3 lg:border-r lg:border-[var(--report-admin-card-border)]"
+                >
+                    <div
+                        v-if="currentTeam.logoUrl"
+                        class="flex h-11 w-14 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-border/60 bg-white p-1.5 shadow-2xs"
+                    >
+                        <img
+                            :src="currentTeam.logoUrl"
+                            :alt="`Logo de ${currentTeam.name}`"
+                            class="max-h-full max-w-full object-contain"
+                        />
+                    </div>
+                    <div class="flex min-w-0 flex-col justify-center gap-0.5">
+                        <small
+                            class="text-[9.5px] font-semibold tracking-wider text-[#806e58] uppercase dark:text-[#d5c5ae]"
+                        >
+                            Cliente / Unidade
+                        </small>
+                        <strong
+                            class="truncate text-[12.5px] font-semibold text-foreground"
+                        >
+                            {{ currentTeam.name }}
+                        </strong>
+                        <span class="text-[10.5px] text-muted-foreground">
+                            Referência:
+                            {{ formatDateBr(report.date_reference) }}
+                        </span>
+                    </div>
+                </div>
+
+                <div
+                    class="flex flex-col justify-center gap-0.5 sm:pr-3 lg:border-r lg:border-[var(--report-admin-card-border)]"
+                >
+                    <small
+                        class="text-[9.5px] font-semibold tracking-wider text-[#806e58] uppercase dark:text-[#d5c5ae]"
+                    >
+                        Responsável pela emissão
+                    </small>
+                    <strong class="text-[12.5px] font-semibold text-foreground">
+                        {{ resolvedIssuerName }}
+                    </strong>
+                    <span class="text-[10.5px] text-muted-foreground">
+                        Usuário autenticado
+                    </span>
+                </div>
+
+                <div
+                    class="flex flex-col justify-center gap-0.5 sm:pr-3 lg:border-r lg:border-[var(--report-admin-card-border)]"
+                >
+                    <small
+                        class="text-[9.5px] font-semibold tracking-wider text-[#806e58] uppercase dark:text-[#d5c5ae]"
+                    >
+                        Emissão
+                    </small>
+                    <div class="flex items-center gap-1.5">
+                        <span
+                            class="inline-flex size-4.5 items-center justify-center rounded-full"
+                            :class="
+                                report.status === 'completed'
+                                    ? 'bg-emerald-500/20 text-emerald-700 dark:text-emerald-300'
+                                    : 'bg-amber-500/20 text-amber-700 dark:text-amber-300'
+                            "
+                        >
+                            <Check
+                                v-if="report.status === 'completed'"
+                                class="size-2.5"
+                            />
+                            <Clock v-else class="size-2.5" />
+                        </span>
+                        <strong
+                            class="text-[12.5px] font-semibold"
+                            :class="
+                                report.status === 'completed'
+                                    ? 'text-emerald-700 dark:text-emerald-300'
+                                    : 'text-[#996323] dark:text-[#f2c17c]'
+                            "
+                        >
+                            {{
+                                report.status === 'completed'
+                                    ? 'Emitido'
+                                    : 'Em elaboração'
+                            }}
+                        </strong>
+                    </div>
+                    <span class="text-[10.5px] text-muted-foreground">
                         {{
-                            report.status === 'completed'
-                                ? 'Finalizado'
-                                : 'Rascunho'
+                            report.status === 'completed' && report.finished_at
+                                ? `Emissão em ${formatDateTimeBr(report.finished_at)}`
+                                : 'Emissão pendente'
                         }}
                     </span>
                 </div>
-                <p class="mt-1 text-sm text-muted-foreground">
-                    {{ currentTeam.name }} ·
-                    {{
-                        new Date(
-                            `${report.date_reference}T12:00:00`,
-                        ).toLocaleDateString('pt-BR')
-                    }}
-                </p>
-            </div>
 
-            <!-- Botão de Histórico no canto superior direito -->
-            <button
-                type="button"
-                class="inline-flex h-9 items-center gap-2 rounded-lg border border-border bg-muted/50 px-3 text-xs font-medium text-foreground transition hover:bg-muted"
-                title="Histórico de atividades"
-                aria-label="Histórico de atividades"
-                @click="emit('openHistory')"
-            >
-                <History class="size-4 text-muted-foreground" />
-                <span>Histórico</span>
-            </button>
-        </div>
-
-        <!-- Barra inferior: ferramentas e ações do relatório -->
-        <div
-            class="mt-4 flex flex-wrap items-center gap-2 border-t border-border/50 pt-4"
-        >
-            <!-- Seletor de Data com Tooltip de Confirmação -->
-            <div class="relative">
-                <div
-                    class="flex items-center gap-1.5 rounded-lg border border-border bg-muted/40 px-2.5 py-1.5 text-xs shadow-2xs"
-                >
-                    <Calendar class="size-3.5 text-muted-foreground" />
-                    <span class="font-medium text-muted-foreground">Data:</span>
-                    <input
-                        :value="pendingDate"
-                        type="date"
-                        class="h-6 rounded-md border border-input bg-background px-1.5 text-xs font-semibold text-foreground"
-                        @change="emit('dateChange', $event)"
-                    />
-                </div>
-
-                <!-- Date Switch Tooltip / Confirmation -->
-                <div
-                    v-if="datePrompt?.open"
-                    class="absolute top-full left-0 z-50 mt-2 w-72 rounded-xl border border-border bg-popover p-3.5 text-popover-foreground shadow-xl ring-1 ring-border/50 sm:w-80"
-                >
-                    <p
-                        class="text-xs leading-relaxed font-medium text-foreground"
+                <div class="flex flex-col justify-center gap-0.5">
+                    <small
+                        class="text-[9.5px] font-semibold tracking-wider text-[#806e58] uppercase dark:text-[#d5c5ae]"
                     >
-                        <template v-if="datePrompt.exists">
-                            Deseja visualizar o relatório de
-                            <strong class="text-primary">{{
-                                formatDateBr(datePrompt.date)
-                            }}</strong
-                            >?
-                        </template>
-                        <template v-else>
-                            Relatório não encontrado para
-                            <strong
-                                class="text-amber-600 dark:text-amber-400"
-                                >{{ formatDateBr(datePrompt.date) }}</strong
-                            >. Deseja criar um?
-                        </template>
-                    </p>
-
-                    <div class="mt-3 flex items-center justify-end gap-1.5">
-                        <button
-                            type="button"
-                            class="inline-flex size-7 items-center justify-center rounded-lg border border-border bg-muted/60 text-muted-foreground transition hover:bg-muted hover:text-foreground"
-                            title="Cancelar"
-                            @click="emit('cancelDatePrompt')"
-                        >
-                            <X class="size-3.5" />
-                        </button>
-                        <button
-                            type="button"
-                            class="inline-flex size-7 items-center justify-center rounded-lg bg-emerald-600 text-white shadow-xs transition hover:bg-emerald-700"
-                            :title="
-                                datePrompt.exists
-                                    ? 'Visualizar relatório'
-                                    : 'Criar relatório'
-                            "
-                            @click="emit('confirmDatePrompt')"
-                        >
-                            <Check class="size-3.5" />
-                        </button>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Seletor do Período das Tabelas (Global) -->
-            <div
-                class="flex items-center gap-1.5 rounded-lg border border-border bg-muted/40 px-2.5 py-1.5 text-xs shadow-2xs"
-            >
-                <Calendar class="size-3.5 text-muted-foreground" />
-                <span class="font-medium text-muted-foreground">Tabelas:</span>
-                <input
-                    :value="tableStartDate"
-                    type="date"
-                    class="h-6 rounded-md border border-input bg-background px-1.5 text-xs font-semibold text-foreground"
-                    title="Data inicial das tabelas"
-                    @change="
-                        emit(
-                            'update:tableStartDate',
-                            ($event.target as HTMLInputElement).value,
-                        );
-                        emit('tablePeriodChange', {
-                            start_date: ($event.target as HTMLInputElement)
-                                .value,
-                            end_date: tableEndDate ?? '',
-                        });
-                    "
-                />
-                <span class="text-muted-foreground">até</span>
-                <input
-                    :value="tableEndDate"
-                    type="date"
-                    class="h-6 rounded-md border border-input bg-background px-1.5 text-xs font-semibold text-foreground"
-                    title="Data final das tabelas"
-                    @change="
-                        emit(
-                            'update:tableEndDate',
-                            ($event.target as HTMLInputElement).value,
-                        );
-                        emit('tablePeriodChange', {
-                            start_date: tableStartDate ?? '',
-                            end_date: ($event.target as HTMLInputElement).value,
-                        });
-                    "
-                />
-            </div>
-
-            <!-- Botão de Sistemas Incluídos com Barra de Progresso e Dropdown -->
-            <div ref="systemsPopoverRef" class="relative">
-                <button
-                    type="button"
-                    data-test="systems-popover-trigger"
-                    class="group relative inline-flex h-9 items-center gap-2 overflow-hidden rounded-lg border bg-card px-3 text-xs font-medium text-foreground shadow-2xs transition hover:bg-muted/60"
-                    :class="systemsPopoverOpen ? 'ring-2 ring-primary/40' : ''"
-                    title="Ver sistemas monitorados"
-                    @click="systemsPopoverOpen = !systemsPopoverOpen"
-                >
-                    <Layers
-                        class="size-3.5 text-muted-foreground transition group-hover:text-foreground"
-                    />
-                    <span class="font-medium">Sistemas:</span>
-                    <span
-                        class="font-semibold text-emerald-600 dark:text-emerald-400"
-                    >
-                        {{ enabledSystems }}/{{ totalSystems }}
-                    </span>
-                    <span class="text-[11px] text-muted-foreground"
-                        >({{ percentage }}%)</span
-                    >
-                    <span
-                        v-if="editingSystemsCount > 0"
-                        data-test="systems-popover-editing-count"
-                        class="inline-flex items-center gap-1 rounded-full bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-semibold text-amber-600 dark:text-amber-400"
-                    >
-                        <span class="size-1.5 rounded-full bg-amber-500" />
-                        {{ editingSystemsCount }}
-                    </span>
-
-                    <!-- Mini barra de progresso na base do botão -->
-                    <span
-                        class="absolute bottom-0 left-0 flex h-1 w-full bg-muted/80"
-                    >
-                        <span
-                            class="block h-full bg-emerald-500 transition-all duration-300"
-                            :style="{ width: `${percentage}%` }"
-                        />
-                        <span
-                            v-if="editingPercentage > 0"
-                            class="block h-full bg-amber-500 transition-all duration-300"
-                            :style="{ width: `${editingPercentage}%` }"
-                        />
-                    </span>
-                </button>
-
-                <!-- Popover Dropdown de Sistemas -->
-                <div
-                    v-if="systemsPopoverOpen"
-                    data-test="systems-popover"
-                    class="absolute top-full left-0 z-50 mt-2 w-72 rounded-xl border border-border bg-popover p-3 text-popover-foreground shadow-xl ring-1 ring-border/50 sm:w-80"
-                >
-                    <div
-                        class="flex items-start justify-between gap-2 border-b border-border/50 pb-2"
-                    >
-                        <div class="min-w-0">
-                            <h3 class="text-xs font-semibold text-foreground">
-                                Sistemas Monitorados
-                            </h3>
-                            <p class="text-[11px] text-muted-foreground">
-                                {{ enabledSystems }} de
-                                {{ totalSystems }} habilitados ({{
-                                    percentage
-                                }}%)
-                            </p>
-                            <div
-                                class="mt-1.5 flex flex-wrap items-center gap-x-2.5 gap-y-1 text-[10px]"
-                            >
-                                <span
-                                    class="inline-flex items-center gap-1 font-medium text-emerald-600 dark:text-emerald-400"
-                                >
-                                    <span
-                                        class="size-1.5 rounded-full bg-emerald-500"
-                                    />
-                                    {{ enabledSystems }} habilitado{{
-                                        enabledSystems === 1 ? '' : 's'
-                                    }}
-                                </span>
-                                <span
-                                    class="inline-flex items-center gap-1 font-medium text-amber-600 dark:text-amber-400"
-                                >
-                                    <span
-                                        class="size-1.5 rounded-full bg-amber-500"
-                                    />
-                                    {{ editingSystemsCount }} em edição
-                                </span>
-                                <span
-                                    class="inline-flex items-center gap-1 font-medium text-red-600 dark:text-red-400"
-                                >
-                                    <span
-                                        class="size-1.5 rounded-full bg-red-500"
-                                    />
-                                    {{ disabledSystems }} desabilitado{{
-                                        disabledSystems === 1 ? '' : 's'
-                                    }}
-                                </span>
-                            </div>
-                        </div>
-                        <button
-                            type="button"
-                            class="rounded p-1 text-muted-foreground transition hover:bg-muted hover:text-foreground"
-                            title="Fechar"
-                            @click="systemsPopoverOpen = false"
-                        >
-                            <X class="size-3.5" />
-                        </button>
-                    </div>
-
-                    <div class="mt-2 max-h-60 space-y-1 overflow-y-auto pr-1">
-                        <button
-                            v-for="system in sectionsWithStatus"
-                            :key="system.id"
-                            type="button"
-                            :data-test="`systems-popover-item-${system.id}`"
-                            class="group flex w-full items-center justify-between gap-2 rounded-lg px-2.5 py-1.5 text-left text-xs transition hover:bg-muted/70"
-                            @click="scrollToSystem(system.id)"
-                        >
-                            <span
-                                class="truncate font-medium text-foreground group-hover:text-primary"
-                            >
-                                {{ system.name }}
-                            </span>
-                            <span
-                                :data-test="`systems-popover-status-${system.id}`"
-                                :data-status="system.status"
-                                class="inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-[10px]"
-                                :class="system.statusMeta.badgeClass"
-                            >
-                                <span
-                                    class="size-1.5 rounded-full"
-                                    :class="system.statusMeta.dotClass"
-                                />
-                                {{ system.statusMeta.label }}
-                            </span>
-                        </button>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Visualizar como cliente -->
-            <a
-                :href="`/${currentTeam.slug}/relatorios/${report.id}/preview`"
-                target="_blank"
-                class="inline-flex h-9 items-center gap-2 rounded-lg border border-primary/25 bg-primary/5 px-3 text-xs font-medium text-foreground transition hover:bg-primary/10"
-                title="Visualizar relatório como o cliente visualiza em nova aba"
-            >
-                <ExternalLink class="size-4 text-primary" /> Visualizar como
-                cliente
-            </a>
-
-            <!-- Destinatários -->
-            <button
-                type="button"
-                class="inline-flex h-9 items-center gap-2 rounded-lg border bg-muted/50 px-3 text-xs font-medium text-foreground transition hover:bg-muted"
-                @click="emit('openRecipients')"
-            >
-                <Mail class="size-4 text-muted-foreground" />
-                <span>Destinatários</span>
-                <span
-                    class="inline-flex items-center rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-semibold text-primary"
-                >
-                    {{ activeRecipientsCount ?? intendedRecipientsCount ?? 0 }}
-                    ativo{{
-                        (activeRecipientsCount ??
+                        Destinatários e envio
+                    </small>
+                    <strong class="text-[12.5px] font-semibold text-foreground">
+                        {{
+                            activeRecipientsCount ??
                             intendedRecipientsCount ??
-                            0) === 1
-                            ? ''
-                            : 's'
-                    }}
-                </span>
-            </button>
-
-            <!-- Finalizar relatório / Reenviar -->
-            <button
-                v-if="report.status === 'completed'"
-                type="button"
-                class="inline-flex h-9 items-center gap-2 rounded-lg border bg-primary px-4 text-xs font-medium text-primary-foreground shadow-sm transition hover:bg-primary/90"
-                @click="emit('sendAgain')"
-            >
-                <RefreshCw class="size-4" /> Reenviar
-            </button>
-            <button
-                v-else
-                type="button"
-                data-test="finalize-report"
-                class="inline-flex h-9 items-center gap-2 rounded-lg bg-emerald-600 px-4 text-xs font-medium text-white shadow-sm transition hover:bg-emerald-500"
-                @click="emit('finish')"
-            >
-                <ShieldCheck class="size-4" /> Finalizar relatório
-            </button>
-        </div>
-    </header>
+                            0
+                        }}
+                        destinatário(s) ativo(s)
+                    </strong>
+                    <button
+                        type="button"
+                        class="inline-flex w-fit items-center gap-1 text-left text-[10.5px] font-semibold text-primary hover:underline"
+                        @click="emit('openRecipients')"
+                    >
+                        Consultar / gerenciar
+                    </button>
+                </div>
+            </div>
+        </header>
+    </div>
 </template>

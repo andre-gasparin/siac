@@ -19,7 +19,11 @@ use Illuminate\Support\Carbon;
  * @property string $access_token
  * @property string $token_hash
  * @property Carbon|null $revoked_at
+ * @property Carbon|null $first_accessed_at
+ * @property string|null $first_accessed_ip
  * @property Carbon|null $last_accessed_at
+ * @property string|null $last_accessed_ip
+ * @property int $access_count
  * @property Carbon|null $last_sent_at
  * @property Carbon|null $last_failed_at
  * @property int $send_count
@@ -36,7 +40,11 @@ use Illuminate\Support\Carbon;
     'access_token',
     'token_hash',
     'revoked_at',
+    'first_accessed_at',
+    'first_accessed_ip',
     'last_accessed_at',
+    'last_accessed_ip',
+    'access_count',
     'last_sent_at',
     'last_failed_at',
     'send_count',
@@ -46,6 +54,7 @@ class ReportRecipient extends Model
 {
     protected $attributes = [
         'send_count' => 0,
+        'access_count' => 0,
     ];
 
     /** @return BelongsTo<Team, $this> */
@@ -77,9 +86,11 @@ class ReportRecipient extends Model
         return [
             'access_token' => 'encrypted',
             'revoked_at' => 'datetime',
+            'first_accessed_at' => 'datetime',
             'last_accessed_at' => 'datetime',
             'last_sent_at' => 'datetime',
             'last_failed_at' => 'datetime',
+            'access_count' => 'integer',
             'send_count' => 'integer',
         ];
     }

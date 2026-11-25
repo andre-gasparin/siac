@@ -20,6 +20,7 @@ use Illuminate\Support\Carbon;
  * @property int $id
  * @property string $name
  * @property string $slug
+ * @property string|null $logo_path
  * @property bool $is_active
  * @property bool $is_personal
  * @property bool $require_data_entry_responsible
@@ -38,7 +39,7 @@ use Illuminate\Support\Carbon;
  * @property-read Collection<int, ChartTemplate> $chartTemplates
  * @property-read Collection<int, ChartSeries> $chartSeries
  */
-#[Fillable(['name', 'slug', 'is_active', 'is_personal', 'require_data_entry_responsible'])]
+#[Fillable(['name', 'slug', 'logo_path', 'is_active', 'is_personal', 'require_data_entry_responsible'])]
 #[UsePolicy(TeamPolicy::class)]
 class Team extends Model
 {
@@ -200,6 +201,21 @@ class Team extends Model
             'is_personal' => 'boolean',
             'require_data_entry_responsible' => 'boolean',
         ];
+    }
+
+    /**
+     * Get the public URL for the team's uploaded logo.
+     */
+    public function logoUrl(): ?string
+    {
+        if (! $this->logo_path) {
+            return null;
+        }
+
+        return route('teams.logo', [
+            'team' => $this->slug,
+            'v' => $this->updated_at->timestamp ?? substr(md5($this->logo_path), 0, 8),
+        ]);
     }
 
     /**

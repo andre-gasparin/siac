@@ -117,3 +117,44 @@ export interface ChartFavoriteTemplate {
     axes?: ReportChartAxesConfig | null;
     series: ChartFavoriteSeries[];
 }
+
+export interface RowObservation {
+    system_id: number;
+    system_name: string;
+    comment: string;
+    author?: string | null;
+    created_at?: string | null;
+}
+
+export interface ReportTableParameter {
+    id: number;
+    name: string;
+    code?: string | null;
+    tag?: string | null;
+    category?: string | null;
+    unit?: string | null;
+    decimals: number;
+    alert_1_min: number | null;
+    alert_1_max: number | null;
+    monitored_system_id?: number | null;
+    system_name?: string | null;
+}
+
+export interface ReportTableRow {
+    timestamp: string;
+    time: string;
+    date?: string;
+    values: Record<number, number | null>;
+    has_comments?: boolean;
+    comments?: RowObservation[];
+    has_modifications?: boolean;
+}
+
+export interface ReportTableData {
+    parameters: ReportTableParameter[];
+    rows: ReportTableRow[];
+    averages?: Record<number, { numeric: number | null; formatted: string }>;
+    is_multi_system?: boolean;
+}
+
+export type ParameterCategoryCode = 'ON' | 'LAB' | 'OP' | 'CALC' | 'PORT';

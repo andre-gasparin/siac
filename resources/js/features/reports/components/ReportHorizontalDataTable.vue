@@ -1,89 +1,121 @@
 <script setup lang="ts">
-import { BarChart3, Check, LineChart, Tag } from '@lucide/vue';
+import {
+    BarChart3,
+    Check,
+    LineChart,
+    MessageSquareText,
+    Tag,
+} from '@lucide/vue';
 import { computed, ref } from 'vue';
 import ReportGroupedSystemsFilter from '@/features/reports/components/ReportGroupedSystemsFilter.vue';
-
-interface Parameter {
-    id: number;
-    name: string;
-    code?: string | null;
-    tag?: string | null;
-    unit?: string | null;
-    decimals: number;
-    alert_1_min: number | null;
-    alert_1_max: number | null;
-    monitored_system_id?: number | null;
-    system_name?: string | null;
-}
-
-interface Row {
-    timestamp: string;
-    time: string;
-    date?: string;
-    values: Record<number, number>;
-}
+import ReportRowObservationsModal from '@/features/reports/components/ReportRowObservationsModal.vue';
+import {
+    formatLimitsLabel,
+    formatNumericValue,
+    formatReportHour,
+    getCategoryMeta,
+    hasLimits,
+    isValueOutsideLimits,
+} from '@/features/reports/reportMetrics';
+import type {
+    ParameterCategoryCode,
+    ReportTableParameter,
+    ReportTableRow,
+    RowObservation,
+} from '@/features/reports/types';
 
 interface AverageInfo {
     numeric: number | null;
     formatted: string;
 }
 
-const props = defineProps<{
-    parameters: Parameter[];
-    rows: Row[];
-    averages?: Record<number, AverageInfo>;
-}>();
+const props = withDefaults(
+    defineProps<{
+        parameters: ReportTableParameter[];
+        rows: ReportTableRow[];
+        averages?: Record<number, AverageInfo>;
+        visibleCategories?: Record<ParameterCategoryCode, boolean>;
+        showTags?: boolean;
+        showMean?: boolean;
+        showCharts?: boolean;
+        showSystemColumn?: boolean;
+        tableFontSize?: number;
+        hideGroupedFilter?: boolean;
+    }>(),
+    {
+        averages: undefined,
+        visibleCategories: undefined,
+        showTags: true,
+        showMean: true,
+        showCharts: true,
+        showSystemColumn: false,
+        tableFontSize: 13,
+        hideGroupedFilter: false,
+    },
+);
 
 const emit = defineEmits<{
     chart: [parameterId: number, type: 'line' | 'bar'];
 }>();
 
-const copiedParameterId = ref<number | null>(null);
+const copiedTagKey = ref<string | null>(null);
 const disabledSystemIds = ref<number[]>([]);
 
-const visibleParameters = computed(() => {
-    if (disabledSystemIds.value.length === 0) {
-        return props.parameters;
-    }
-
-    return props.parameters.filter(
-        (parameter) =>
-            !parameter.monitored_system_id ||
-            !disabledSystemIds.value.includes(parameter.monitored_system_id),
-    );
+const obsModal = ref<{
+    open: boolean;
+    dateLabel: string;
+    timeLabel: string;
+    observations: RowObservation[];
+}>({
+    open: false,
+    dateLabel: '',
+    timeLabel: '',
+    observations: [],
 });
 
-function formatValue(
-    value: number | null | undefined,
-    decimals: number,
-): string {
-    if (value === undefined || value === null || Number.isNaN(value)) {
-        return '—';
-    }
+const visibleParameters = computed(() => {
+    return props.parameters.filter((parameter) => {
+        if (
+            disabledSystemIds.value.length > 0 &&
+            parameter.monitored_system_id &&
+            disabledSystemIds.value.includes(parameter.monitored_system_id)
+        ) {
+            return false;
+        }
 
-    return value.toLocaleString('pt-BR', {
-        minimumFractionDigits: decimals,
-        maximumFractionDigits: decimals,
+        if (props.visibleCategories && parameter.category) {
+            const code =
+                parameter.category.toUpperCase() as ParameterCategoryCode;
+
+            if (code in props.visibleCategories) {
+                return props.visibleCategories[code];
+            }
+        }
+
+        return true;
     });
-}
+});
 
-function formatRowTime(row: Row): string {
+function formatRowTime(row: ReportTableRow): string {
     if (row.time) {
-        return row.time;
+        return formatReportHour(row.time);
     }
 
     if (row.timestamp) {
         const d = new Date(row.timestamp);
 
         if (!Number.isNaN(d.getTime())) {
-            return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+            const hh = String(d.getHours()).padStart(2, '0');
+            const mm = String(d.getMinutes()).padStart(2, '0');
+
+            return `${hh}h${mm}`;
         }
     }
 
     return row.timestamp;
 }
 
-function copyTag(parameter: Parameter): void {
+function copyTag(parameter: ReportTableParameter): void {
     const tagToCopy = parameter.tag || parameter.code || '';
 
     if (!tagToCopy) {
@@ -91,34 +123,16 @@ function copyTag(parameter: Parameter): void {
     }
 
     void navigator.clipboard.writeText(tagToCopy);
-    copiedParameterId.value = parameter.id;
+    const key = String(parameter.id);
+    copiedTagKey.value = key;
     setTimeout(() => {
-        if (copiedParameterId.value === parameter.id) {
-            copiedParameterId.value = null;
+        if (copiedTagKey.value === key) {
+            copiedTagKey.value = null;
         }
     }, 1500);
 }
 
-function isOutOfLimits(
-    value: number | null | undefined,
-    parameter: Parameter,
-): boolean {
-    if (value === undefined || value === null || Number.isNaN(value)) {
-        return false;
-    }
-
-    if (parameter.alert_1_min !== null && value < parameter.alert_1_min) {
-        return true;
-    }
-
-    if (parameter.alert_1_max !== null && value > parameter.alert_1_max) {
-        return true;
-    }
-
-    return false;
-}
-
-function getAverageFormatted(parameter: Parameter): string {
+function getAverageFormatted(parameter: ReportTableParameter): string {
     if (props.averages && props.averages[parameter.id]) {
         return props.averages[parameter.id].formatted;
     }
@@ -131,201 +145,291 @@ function getAverageFormatted(parameter: Parameter): string {
         );
 
     if (validValues.length === 0) {
-        return 'SR';
+        return '—';
     }
 
     const sum = validValues.reduce((acc, val) => acc + val, 0);
-    const avg = sum / validValues.length;
 
-    return formatValue(avg, parameter.decimals);
+    return formatNumericValue(sum / validValues.length, parameter.decimals);
 }
+
+function isParameterGroupStart(index: number): boolean {
+    if (!props.showSystemColumn || index === 0) {
+        return false;
+    }
+
+    const currentName = visibleParameters.value[index].name
+        .trim()
+        .toLowerCase();
+    const prevName = visibleParameters.value[index - 1].name
+        .trim()
+        .toLowerCase();
+
+    return currentName !== prevName;
+}
+
+function openObservations(row: ReportTableRow): void {
+    obsModal.value = {
+        open: true,
+        dateLabel: row.date || row.timestamp.slice(0, 10),
+        timeLabel: row.time || formatRowTime(row),
+        observations: row.comments ?? [],
+    };
+}
+
+const totalColumnsCount = computed(
+    () =>
+        1 +
+        (props.showSystemColumn ? 1 : 0) +
+        2 +
+        (props.showCharts ? 1 : 0) +
+        props.rows.length +
+        (props.showMean ? 1 : 0),
+);
 </script>
 
 <template>
     <div class="flex flex-col gap-3">
         <ReportGroupedSystemsFilter
+            v-if="!hideGroupedFilter"
             :parameters="parameters"
             v-model:disabled-system-ids="disabledSystemIds"
             :bordered="true"
         />
 
         <div
-            class="max-h-[550px] w-full overflow-x-auto overflow-y-auto rounded-xl border border-border bg-card shadow-2xs"
+            class="max-h-[560px] w-full overflow-auto rounded-lg border border-border bg-card shadow-2xs"
         >
-            <table class="w-full min-w-max border-collapse text-[11px]">
-                <thead class="sticky top-0 z-20 bg-muted/90 backdrop-blur-sm">
-                    <tr class="border-b font-semibold text-foreground">
-                        <!-- Coluna Fixa do Parâmetro -->
+            <table
+                class="w-full min-w-max border-separate border-spacing-0 tabular-nums"
+                :style="{ fontSize: `${tableFontSize}px` }"
+            >
+                <thead class="sticky top-0 z-20 bg-muted/95 backdrop-blur-sm">
+                    <tr class="text-[11px] font-semibold text-muted-foreground">
                         <th
-                            class="sticky left-0 z-30 max-w-80 min-w-64 border-r bg-muted px-3 py-2 text-left font-semibold text-foreground"
+                            class="sticky left-0 z-30 min-w-52 border-r border-b border-border bg-muted px-3 py-2 text-left text-foreground"
                         >
-                            <span class="text-xs font-semibold">Parâmetro</span>
+                            Parâmetro
                         </th>
 
-                        <!-- Colunas Horizontais de Horários -->
+                        <th
+                            v-if="showSystemColumn"
+                            class="min-w-36 border-r border-b border-border bg-muted px-2.5 py-2 text-left text-foreground"
+                        >
+                            Sistema
+                        </th>
+
+                        <th
+                            class="w-16 border-r border-b border-border px-2 py-2 text-center"
+                        >
+                            Tipo
+                        </th>
+
+                        <th
+                            class="min-w-24 border-r border-b border-border px-2 py-2 text-center"
+                        >
+                            Limites
+                        </th>
+
                         <th
                             v-for="row in rows"
                             :key="row.timestamp"
-                            class="min-w-16 border-r px-2 py-2 text-center text-xs font-semibold whitespace-nowrap text-foreground"
+                            class="min-w-16 border-r border-b border-border px-2 py-2 text-center whitespace-nowrap text-foreground"
                         >
-                            {{ formatRowTime(row) }}
+                            <span
+                                class="inline-flex items-center justify-center gap-1"
+                            >
+                                <span>{{ formatRowTime(row) }}</span>
+                                <button
+                                    v-if="row.has_comments"
+                                    type="button"
+                                    title="Consultar observações deste horário"
+                                    aria-label="Consultar observações deste horário"
+                                    class="inline-flex size-4 items-center justify-center rounded text-primary transition hover:bg-primary/15"
+                                    @click="openObservations(row)"
+                                >
+                                    <MessageSquareText class="size-3" />
+                                </button>
+                            </span>
                         </th>
 
-                        <!-- Coluna de Média -->
                         <th
-                            class="min-w-20 border-l border-border bg-muted/95 px-2.5 py-2 text-center text-xs font-bold text-foreground"
+                            v-if="showMean"
+                            class="min-w-20 border-r border-b border-border bg-muted/95 px-2.5 py-2 text-center font-bold text-foreground"
                         >
                             Média
+                        </th>
+
+                        <th
+                            v-if="showCharts"
+                            class="w-16 border-b border-border px-2 py-2 text-center"
+                        >
+                            Gráfico
                         </th>
                     </tr>
                 </thead>
 
                 <tbody>
                     <tr
-                        v-for="parameter in visibleParameters"
+                        v-for="(parameter, index) in visibleParameters"
                         :key="parameter.id"
-                        class="border-b border-border/40 transition hover:bg-muted/30"
+                        class="transition hover:bg-[var(--report-hover)]"
+                        :class="
+                            isParameterGroupStart(index)
+                                ? '[&>td]:border-t-2 [&>td]:border-t-border'
+                                : ''
+                        "
                     >
-                        <!-- Célula do Parâmetro (Sticky à Esquerda) -->
+                        <!-- Parâmetro + Unidade + TAG -->
                         <td
-                            class="sticky left-0 z-10 max-w-80 min-w-64 border-r bg-card px-3 py-2 text-left"
+                            class="sticky left-0 z-10 min-w-52 border-r border-b border-border/70 bg-card px-3 py-2 text-left"
                         >
+                            <div class="flex items-baseline gap-1.5">
+                                <span
+                                    class="font-semibold text-foreground"
+                                    :title="parameter.name"
+                                >
+                                    {{ parameter.name }}
+                                </span>
+                                <span
+                                    v-if="parameter.unit"
+                                    class="text-[0.85em] font-medium text-muted-foreground"
+                                >
+                                    {{ parameter.unit }}
+                                </span>
+                            </div>
+
                             <div
-                                class="flex items-center justify-between gap-2"
+                                v-if="showTags"
+                                class="mt-0.5 flex items-center gap-1 text-[10.5px] text-muted-foreground"
                             >
-                                <div class="min-w-0 flex-1">
-                                    <div class="flex items-center gap-1.5">
-                                        <strong
-                                            class="truncate text-[12px] font-semibold text-foreground"
-                                            :title="parameter.name"
-                                        >
-                                            {{ parameter.name }}
-                                        </strong>
-                                        <span
-                                            v-if="parameter.unit"
-                                            class="shrink-0 text-[10px] text-muted-foreground"
-                                        >
-                                            ({{ parameter.unit }})
-                                        </span>
-                                    </div>
-
-                                    <div
-                                        class="mt-0.5 flex flex-wrap items-center gap-1.5 text-[10px] text-muted-foreground"
-                                    >
-                                        <span
-                                            v-if="parameter.system_name"
-                                            class="font-medium text-emerald-600 dark:text-emerald-400"
-                                        >
-                                            {{ parameter.system_name }} ·
-                                        </span>
-                                        <span
-                                            v-if="
-                                                parameter.alert_1_min !==
-                                                    null ||
-                                                parameter.alert_1_max !== null
-                                            "
-                                            class="py-0.2 rounded bg-muted/60 px-1"
-                                            :title="`Faixa recomendada: ${parameter.alert_1_min ?? '—'} a ${parameter.alert_1_max ?? '—'}`"
-                                        >
-                                            Faixa:
-                                            {{
-                                                formatValue(
-                                                    parameter.alert_1_min,
-                                                    parameter.decimals,
-                                                )
-                                            }}
-                                            -
-                                            {{
-                                                formatValue(
-                                                    parameter.alert_1_max,
-                                                    parameter.decimals,
-                                                )
-                                            }}
-                                        </span>
-                                    </div>
-                                </div>
-
-                                <!-- Ações (Tag e Gráficos) -->
-                                <div class="flex shrink-0 items-center gap-1">
-                                    <button
-                                        v-if="parameter.tag || parameter.code"
-                                        type="button"
-                                        class="inline-flex size-5 items-center justify-center rounded text-muted-foreground transition hover:bg-muted hover:text-foreground"
-                                        :title="`Tag: ${parameter.tag || parameter.code} (Clique para copiar)`"
-                                        @click="copyTag(parameter)"
-                                    >
-                                        <Check
-                                            v-if="
-                                                copiedParameterId ===
-                                                parameter.id
-                                            "
-                                            class="size-3 text-emerald-500"
-                                        />
-                                        <Tag v-else class="size-3" />
-                                    </button>
-
-                                    <button
-                                        type="button"
-                                        class="inline-flex size-5 items-center justify-center rounded border bg-background text-foreground transition hover:bg-muted"
-                                        title="Gráfico em linha"
-                                        @click="
-                                            emit('chart', parameter.id, 'line')
+                                <span class="font-semibold">TAG:</span>
+                                <span class="truncate">
+                                    {{ parameter.tag || parameter.code || '–' }}
+                                </span>
+                                <button
+                                    v-if="parameter.tag || parameter.code"
+                                    type="button"
+                                    class="inline-flex size-4 shrink-0 items-center justify-center rounded text-primary transition hover:bg-primary/10"
+                                    :title="`Copiar TAG: ${parameter.tag || parameter.code}`"
+                                    @click="copyTag(parameter)"
+                                >
+                                    <Check
+                                        v-if="
+                                            copiedTagKey ===
+                                            String(parameter.id)
                                         "
-                                    >
-                                        <LineChart
-                                            class="size-3 text-blue-600 dark:text-blue-400"
-                                        />
-                                    </button>
-
-                                    <button
-                                        type="button"
-                                        class="inline-flex size-5 items-center justify-center rounded border bg-background text-foreground transition hover:bg-muted"
-                                        title="Gráfico em barras"
-                                        @click="
-                                            emit('chart', parameter.id, 'bar')
-                                        "
-                                    >
-                                        <BarChart3
-                                            class="size-3 text-indigo-600 dark:text-indigo-400"
-                                        />
-                                    </button>
-                                </div>
+                                        class="size-2.5 text-emerald-600"
+                                    />
+                                    <Tag v-else class="size-2.5" />
+                                </button>
                             </div>
                         </td>
 
-                        <!-- Valores dos Horários na Horizontal -->
+                        <!-- Sistema (somente no modo comparativo Por parâmetro) -->
+                        <td
+                            v-if="showSystemColumn"
+                            class="border-r border-b border-border/70 px-2.5 py-2 text-left text-[11px] font-medium whitespace-nowrap text-muted-foreground"
+                        >
+                            {{ parameter.system_name || '—' }}
+                        </td>
+
+                        <!-- Tipo -->
+                        <td
+                            class="border-r border-b border-border/70 px-2 py-2 text-center"
+                        >
+                            <span
+                                v-if="getCategoryMeta(parameter.category)"
+                                class="inline-flex min-w-9 items-center justify-center rounded-full px-1.5 py-0.5 text-[10px] font-bold"
+                                :class="
+                                    getCategoryMeta(parameter.category)
+                                        ?.badgeClass
+                                "
+                            >
+                                {{ getCategoryMeta(parameter.category)?.code }}
+                            </span>
+                            <span v-else class="text-xs text-muted-foreground">
+                                —
+                            </span>
+                        </td>
+
+                        <!-- Limites -->
+                        <td
+                            class="border-r border-b border-border/70 px-2 py-2 text-center"
+                        >
+                            <span
+                                v-if="hasLimits(parameter)"
+                                class="inline-block rounded-full bg-[var(--report-limit-bg)] px-2 py-0.5 text-[10.5px] font-semibold whitespace-nowrap text-[var(--report-limit-ink)]"
+                            >
+                                {{ formatLimitsLabel(parameter) }}
+                            </span>
+                            <span v-else class="text-xs text-muted-foreground">
+                                —
+                            </span>
+                        </td>
+
+                        <!-- Medições dos Horários -->
                         <td
                             v-for="row in rows"
                             :key="`${parameter.id}-${row.timestamp}`"
-                            class="min-w-16 border-r px-2 py-1.5 text-center tabular-nums"
-                            :class="[
-                                isOutOfLimits(
+                            class="min-w-16 border-r border-b border-border/70 px-2 py-2 text-center"
+                            :class="
+                                isValueOutsideLimits(
                                     row.values[parameter.id],
                                     parameter,
                                 )
-                                    ? 'bg-amber-500/10 font-bold text-amber-700 dark:text-amber-400'
-                                    : 'text-foreground',
-                            ]"
+                                    ? 'font-bold text-[#c52c32] dark:text-[#ff8588]'
+                                    : row.values[parameter.id] === undefined ||
+                                        row.values[parameter.id] === null
+                                      ? 'text-muted-foreground'
+                                      : 'text-foreground'
+                            "
                         >
                             {{
-                                formatValue(
+                                formatNumericValue(
                                     row.values[parameter.id],
                                     parameter.decimals,
                                 )
                             }}
                         </td>
 
-                        <!-- Coluna Média -->
+                        <!-- Média -->
                         <td
-                            class="min-w-20 border-l border-border bg-muted/20 px-2.5 py-1.5 text-center font-semibold text-foreground tabular-nums"
+                            v-if="showMean"
+                            class="min-w-20 border-r border-b border-border/70 bg-[var(--report-mean)] px-2.5 py-2 text-center font-semibold text-foreground"
                         >
                             {{ getAverageFormatted(parameter) }}
+                        </td>
+
+                        <!-- Gráficos -->
+                        <td
+                            v-if="showCharts"
+                            class="border-b border-border/70 px-2 py-2 text-center"
+                        >
+                            <div class="flex items-center justify-center gap-1">
+                                <button
+                                    type="button"
+                                    class="inline-flex size-6 items-center justify-center rounded text-muted-foreground transition hover:bg-primary/10 hover:text-primary"
+                                    title="Gráfico de tendência"
+                                    @click="emit('chart', parameter.id, 'line')"
+                                >
+                                    <LineChart class="size-3.5" />
+                                </button>
+                                <button
+                                    type="button"
+                                    class="inline-flex size-6 items-center justify-center rounded text-muted-foreground transition hover:bg-primary/10 hover:text-primary"
+                                    title="Gráfico em colunas"
+                                    @click="emit('chart', parameter.id, 'bar')"
+                                >
+                                    <BarChart3 class="size-3.5" />
+                                </button>
+                            </div>
                         </td>
                     </tr>
 
                     <tr v-if="parameters.length === 0">
                         <td
-                            :colspan="rows.length + 2"
+                            :colspan="totalColumnsCount"
                             class="px-4 py-8 text-center text-xs text-muted-foreground"
                         >
                             Nenhum parâmetro monitorado configurado para este
@@ -335,17 +439,16 @@ function getAverageFormatted(parameter: Parameter): string {
 
                     <tr v-else-if="visibleParameters.length === 0">
                         <td
-                            :colspan="rows.length + 2"
-                            class="px-4 py-12 text-center text-xs text-muted-foreground"
+                            :colspan="totalColumnsCount"
+                            class="px-4 py-10 text-center text-xs text-muted-foreground"
                         >
-                            Nenhum sistema selecionado. Ative ao menos um
-                            sistema no filtro acima para visualizar os dados.
+                            Nenhum parâmetro exibido com os filtros atuais.
                         </td>
                     </tr>
 
                     <tr v-else-if="rows.length === 0">
                         <td
-                            :colspan="rows.length + 2"
+                            :colspan="totalColumnsCount"
                             class="px-4 py-8 text-center text-xs text-muted-foreground"
                         >
                             Nenhuma medição registrada para a data de referência
@@ -355,5 +458,13 @@ function getAverageFormatted(parameter: Parameter): string {
                 </tbody>
             </table>
         </div>
+
+        <ReportRowObservationsModal
+            :open="obsModal.open"
+            :date-label="obsModal.dateLabel"
+            :time-label="obsModal.timeLabel"
+            :observations="obsModal.observations"
+            @close="obsModal.open = false"
+        />
     </div>
 </template>

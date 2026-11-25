@@ -6,6 +6,7 @@ use App\Features\Reports\Http\Controllers\ConsolidatedReportSystemController;
 use App\Features\Reports\Http\Controllers\PublicReportChartController;
 use App\Features\Reports\Http\Controllers\PublicReportCommentController;
 use App\Features\Reports\Http\Controllers\PublicReportController;
+use App\Features\Reports\Http\Controllers\PublicReportInteractionController;
 use App\Features\Reports\Http\Controllers\ReportAssistantController;
 use App\Features\Reports\Http\Controllers\ReportChartController;
 use App\Features\Reports\Http\Controllers\ReportCommentController;
@@ -24,6 +25,9 @@ Route::get('relatorios/acesso/{token}', PublicReportController::class)
 Route::post('relatorios/acesso/{token}/comentarios', PublicReportCommentController::class)
     ->middleware('throttle:reports-public-comments')
     ->name('reports.public.comments.store');
+Route::post('relatorios/acesso/{token}/notificar-interacoes', PublicReportInteractionController::class)
+    ->middleware('throttle:reports-public-comments')
+    ->name('reports.public.interactions.notify');
 Route::get('relatorios/acesso/{token}/sistemas/{system}/grafico', PublicReportChartController::class)
     ->middleware('throttle:reports-public-view')
     ->name('reports.public.charts.show');
@@ -34,6 +38,7 @@ Route::prefix('{current_team}')
         Route::get('meus-relatorios', [UserReportController::class, 'index'])->name('reports.user.index');
         Route::get('meus-relatorios/{report}', [UserReportController::class, 'show'])->name('reports.user.show');
         Route::post('meus-relatorios/{report}/comentarios', [UserReportController::class, 'comment'])->name('reports.user.comments.store');
+        Route::post('meus-relatorios/{report}/notificar-interacoes', [UserReportController::class, 'notifyInteractions'])->name('reports.user.interactions.notify');
         Route::get('meus-relatorios/{report}/sistemas/{system}/grafico', [UserReportController::class, 'chart'])->name('reports.user.systems.chart');
 
         Route::get('relatorios', [ConsolidatedReportController::class, 'index'])->name('reports.index');
@@ -41,6 +46,7 @@ Route::prefix('{current_team}')
         Route::get('relatorios/{report}', [ConsolidatedReportController::class, 'show'])->name('reports.show');
         Route::get('relatorios/{report}/preview', [ConsolidatedReportController::class, 'preview'])->name('reports.preview');
         Route::post('relatorios/{report}/preview/comentarios', [ConsolidatedReportController::class, 'previewComment'])->name('reports.preview.comments.store');
+        Route::post('relatorios/{report}/preview/notificar-interacoes', [ConsolidatedReportController::class, 'previewNotifyInteractions'])->name('reports.preview.interactions.notify');
         Route::put('relatorios/{report}/sistemas', [ConsolidatedReportSystemController::class, 'update'])->name('reports.systems.update');
         Route::get('relatorios/{report}/sistemas/{system}/dados', [ConsolidatedReportSystemController::class, 'data'])->name('reports.systems.data');
         Route::get('relatorios/{report}/sistemas/{system}/grafico', [ConsolidatedReportSystemController::class, 'chart'])->name('reports.systems.chart');

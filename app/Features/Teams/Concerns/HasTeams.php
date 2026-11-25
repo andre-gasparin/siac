@@ -164,6 +164,7 @@ trait HasTeams
                 role: TeamRole::Admin->value,
                 roleLabel: TeamRole::Admin->label(),
                 isCurrent: $this->isCurrentTeam($team),
+                logoUrl: $team->logoUrl(),
             );
         }
 
@@ -175,6 +176,7 @@ trait HasTeams
             role: $role?->value,
             roleLabel: $role?->label(),
             isCurrent: $this->isCurrentTeam($team),
+            logoUrl: $team->logoUrl(),
         );
     }
 
