@@ -31,6 +31,7 @@ import ReportShowHeader from '@/features/reports/components/ReportShowHeader.vue
 import ReportShowToolbar from '@/features/reports/components/ReportShowToolbar.vue';
 import ReportSystemSection from '@/features/reports/components/ReportSystemSection.vue';
 import ReportSystemsSidebarNav from '@/features/reports/components/ReportSystemsSidebarNav.vue';
+import { useReportDeliverySync } from '@/features/reports/composables/useReportDeliverySync';
 import { formatDateBr } from '@/features/reports/reportMetrics';
 import type { ReportPhrase, ReportTableData } from '@/features/reports/types';
 import {
@@ -842,6 +843,25 @@ const resolvedActiveRecipientsCount = computed(
         props.recipients.filter((r) => !r.revoked_at).length,
 );
 
+const queuedRecipientsCount = computed(
+    () =>
+        props.recipients.filter((r) => !r.revoked_at && Boolean(r.is_queued))
+            .length,
+);
+
+useReportDeliverySync({
+    reportId: () => props.report.id,
+    recipients: () => props.recipients,
+    reloadProps: [
+        'report',
+        'recipients',
+        'intendedRecipients',
+        'activeRecipientsCount',
+        'deliveryHistory',
+        'activities',
+    ],
+});
+
 const hasUnsavedEditorChanges = computed(() =>
     Object.values(dirtySystems).some(Boolean),
 );
@@ -1119,6 +1139,7 @@ onUnmounted(() => {
                 :current-team="currentTeam"
                 :intended-recipients-count="intendedRecipients.length"
                 :active-recipients-count="resolvedActiveRecipientsCount"
+                :queued-recipients-count="queuedRecipientsCount"
                 :issuer-name="issuerName"
                 :pending-date="pendingDate"
                 :date-prompt="datePrompt"

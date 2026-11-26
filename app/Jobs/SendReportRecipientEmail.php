@@ -2,6 +2,7 @@
 
 namespace App\Jobs;
 
+use App\Features\Reports\Events\ReportDeliveryUpdatedEvent;
 use App\Features\Reports\Notifications\ReportAccessNotification;
 use App\Models\ReportActivity;
 use App\Models\ReportRecipient;
@@ -72,6 +73,15 @@ class SendReportRecipientEmail implements ShouldBeUnique, ShouldQueue
                 ],
             ]);
         });
+
+        ReportDeliveryUpdatedEvent::dispatchSafely(
+            reportId: $recipient->report_id,
+            recipientId: $recipient->id,
+            status: 'sent',
+            recipientName: $recipient->name,
+            recipientEmail: $recipient->email,
+            deliveryType: $this->deliveryType,
+        );
     }
 
     public function failed(?Throwable $exception): void
@@ -96,5 +106,15 @@ class SendReportRecipientEmail implements ShouldBeUnique, ShouldQueue
                 'error' => $exception?->getMessage(),
             ],
         ]);
+
+        ReportDeliveryUpdatedEvent::dispatchSafely(
+            reportId: $recipient->report_id,
+            recipientId: $recipient->id,
+            status: 'failed',
+            recipientName: $recipient->name,
+            recipientEmail: $recipient->email,
+            deliveryType: $this->deliveryType,
+            error: $exception?->getMessage(),
+        );
     }
 }

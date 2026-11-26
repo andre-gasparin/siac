@@ -86,6 +86,7 @@ interface RecipientInfo {
     send_count?: number;
     is_admin?: boolean;
     revoked_at?: string | null;
+    is_queued?: boolean;
 }
 
 const props = withDefaults(
@@ -185,6 +186,12 @@ const sentRecipientsCount = computed(
 
 const accessedRecipientsCount = computed(
     () => props.recipients.filter((r) => Boolean(r.last_accessed_at)).length,
+);
+
+const queuedRecipientsCount = computed(
+    () =>
+        props.recipients.filter((r) => !r.revoked_at && Boolean(r.is_queued))
+            .length,
 );
 
 function isTableOpen(system: SystemSection): boolean {
@@ -701,6 +708,15 @@ function publishComment(system: SystemSection): void {
                             {{ activeCount }} destinatário(s) ·
                             {{ sentRecipientsCount }} envio(s) ·
                             {{ accessedRecipientsCount }} acesso(s)
+                            <template v-if="queuedRecipientsCount > 0">
+                                ·
+                                <span
+                                    class="inline-flex items-center gap-1 text-sky-700 dark:text-sky-300"
+                                >
+                                    <Loader2 class="size-3 animate-spin" />
+                                    {{ queuedRecipientsCount }} na fila
+                                </span>
+                            </template>
                         </strong>
                         <button
                             type="button"

@@ -3,6 +3,7 @@
 namespace App\Features\Reports\Services;
 
 use App\Features\DataTable\Services\DataTableDataBuilder;
+use App\Features\Reports\Events\ReportDeliveryUpdatedEvent;
 use App\Models\MonitoredSystem;
 use App\Models\Parameter;
 use App\Models\ParameterValue;
@@ -306,9 +307,7 @@ class ConsolidatedReportService
                         'send_count' => $hasRecipient ? $recipient->send_count : 0,
                     ];
                 })->all(),
-            'recipients' => $recipients->map(fn (ReportRecipient $recipient): array => $this->serializeRecipient($recipient))->all(),
-            'activeRecipientsCount' => $recipients->whereNull('revoked_at')->count(),
-            'deliveryHistory' => $this->serializeDeliveryHistory($report),
+            ...$this->deliveryProps($report, $recipients),
             'activities' => $report->activities()
                 ->with(['user:id,name', 'recipient:id,name,email'])
                 ->latest('id')
@@ -1229,12 +1228,10 @@ class ConsolidatedReportService
             isPreview: true,
         );
 
-        $recipients = $report->recipients()->orderBy('name')->get();
-        $view['recipients'] = $recipients->map(fn (ReportRecipient $recipient): array => $this->serializeRecipient($recipient))->all();
-        $view['activeRecipientsCount'] = $recipients->whereNull('revoked_at')->count();
-        $view['deliveryHistory'] = $this->serializeDeliveryHistory($report);
-
-        return $view;
+        return [
+            ...$view,
+            ...$this->deliveryProps($report),
+        ];
     }
 
     /**
@@ -1403,12 +1400,110 @@ class ConsolidatedReportService
         ], fn (mixed $value): bool => $value !== null && $value !== '');
 
         $this->record($recipient->report, 'public.accessed', recipient: $recipient, metadata: $metadata);
+
+        ReportDeliveryUpdatedEvent::dispatchSafely(
+            reportId: $recipient->report_id,
+            recipientId: $recipient->id,
+            status: 'accessed',
+            recipientName: $recipient->name,
+            recipientEmail: $recipient->email,
+        );
+    }
+
+    /**
+     * @param  Collection<int, ReportRecipient>|null  $recipients
+     * @return array{
+     *     recipients: list<array<string, mixed>>,
+     *     activeRecipientsCount: int,
+     *     deliveryHistory: list<array<string, mixed>>
+     * }
+     */
+    private function deliveryProps(Report $report, ?Collection $recipients = null): array
+    {
+        $recipients ??= $report->recipients()->orderBy('name')->get();
+        $deliveryActivities = $report->activities()
+            ->whereIn('action', ['delivery.queued', 'delivery.sent', 'delivery.failed'])
+            ->with(['user:id,name', 'recipient:id,name,email'])
+            ->latest('id')
+            ->limit(100)
+            ->get();
+
+        $pendingRecipientIds = $this->pendingQueuedRecipientIds($deliveryActivities);
+
+        return [
+            'recipients' => array_values(
+                $recipients->map(
+                    fn (ReportRecipient $recipient): array => $this->serializeRecipient(
+                        $recipient,
+                        isset($pendingRecipientIds[$recipient->id]) && $recipient->revoked_at === null,
+                    ),
+                )->all(),
+            ),
+            'activeRecipientsCount' => $recipients->whereNull('revoked_at')->count(),
+            'deliveryHistory' => $this->formatDeliveryHistory($deliveryActivities),
+        ];
+    }
+
+    /**
+     * @param  Collection<int, ReportActivity>  $activities
+     * @return array<int, true>
+     */
+    private function pendingQueuedRecipientIds(Collection $activities): array
+    {
+        $completedByBatch = [];
+        foreach ($activities as $activity) {
+            if (! in_array($activity->action, ['delivery.sent', 'delivery.failed'], true)) {
+                continue;
+            }
+
+            $metadata = is_array($activity->metadata) ? $activity->metadata : [];
+            $batch = is_string($metadata['batch'] ?? null) ? $metadata['batch'] : '';
+
+            if ($batch !== '' && $activity->report_recipient_id !== null) {
+                $completedByBatch[$batch][(int) $activity->report_recipient_id] = true;
+            }
+        }
+
+        $cutoff = now()->subMinutes(30);
+        $pending = [];
+
+        foreach ($activities as $activity) {
+            if ($activity->action !== 'delivery.queued') {
+                continue;
+            }
+
+            if ($activity->created_at === null || $activity->created_at->lt($cutoff)) {
+                continue;
+            }
+
+            $metadata = is_array($activity->metadata) ? $activity->metadata : [];
+            $batch = is_string($metadata['batch'] ?? null) ? $metadata['batch'] : '';
+
+            if ($batch === '') {
+                continue;
+            }
+
+            $targetIds = [];
+            if (is_array($metadata['recipient_ids'] ?? null)) {
+                $targetIds = array_map('intval', $metadata['recipient_ids']);
+            } elseif ($activity->report_recipient_id !== null) {
+                $targetIds = [(int) $activity->report_recipient_id];
+            }
+
+            foreach ($targetIds as $recipientId) {
+                if ($recipientId > 0 && ! isset($completedByBatch[$batch][$recipientId])) {
+                    $pending[$recipientId] = true;
+                }
+            }
+        }
+
+        return $pending;
     }
 
     /**
      * @return array<string, mixed>
      */
-    private function serializeRecipient(ReportRecipient $recipient): array
+    private function serializeRecipient(ReportRecipient $recipient, bool $isQueued = false): array
     {
         return [
             'id' => $recipient->id,
@@ -1426,46 +1521,44 @@ class ConsolidatedReportService
             'last_sent_at' => $recipient->last_sent_at?->toIso8601String(),
             'last_failed_at' => $recipient->last_failed_at?->toIso8601String(),
             'send_count' => $recipient->send_count,
+            'is_queued' => $isQueued,
         ];
     }
 
     /**
+     * @param  Collection<int, ReportActivity>  $activities
      * @return list<array<string, mixed>>
      */
-    private function serializeDeliveryHistory(Report $report): array
+    private function formatDeliveryHistory(Collection $activities): array
     {
-        return $report->activities()
-            ->whereIn('action', ['delivery.queued', 'delivery.sent', 'delivery.failed'])
-            ->with(['user:id,name', 'recipient:id,name,email'])
-            ->latest('id')
-            ->limit(100)
-            ->get()
-            ->map(function (ReportActivity $activity): array {
-                $metadata = is_array($activity->metadata) ? $activity->metadata : [];
-                $status = match ($activity->action) {
-                    'delivery.sent' => 'sent',
-                    'delivery.failed' => 'failed',
-                    default => 'queued',
-                };
+        return array_values(
+            $activities
+                ->map(function (ReportActivity $activity): array {
+                    $metadata = is_array($activity->metadata) ? $activity->metadata : [];
+                    $status = match ($activity->action) {
+                        'delivery.sent' => 'sent',
+                        'delivery.failed' => 'failed',
+                        default => 'queued',
+                    };
 
-                return [
-                    'id' => $activity->id,
-                    'action' => $activity->action,
-                    'status' => $status,
-                    'delivery_type' => is_string($metadata['delivery_type'] ?? null)
-                        ? $metadata['delivery_type']
-                        : (! empty($metadata['individual']) ? 'resend_individual' : 'initial'),
-                    'recipient_name' => $activity->recipient?->name ?? (is_string($metadata['recipient_name'] ?? null) ? $metadata['recipient_name'] : null),
-                    'recipient_email' => $activity->recipient?->email ?? (is_string($metadata['email'] ?? null) ? $metadata['email'] : null),
-                    'recipient_count' => isset($metadata['recipient_count']) ? (int) $metadata['recipient_count'] : null,
-                    'actor' => $activity->user?->name ?? 'Sistema',
-                    'error' => is_string($metadata['error'] ?? null) ? $metadata['error'] : null,
-                    'batch' => is_string($metadata['batch'] ?? null) ? $metadata['batch'] : null,
-                    'created_at' => $activity->created_at?->toIso8601String(),
-                ];
-            })
-            ->values()
-            ->all();
+                    return [
+                        'id' => $activity->id,
+                        'action' => $activity->action,
+                        'status' => $status,
+                        'delivery_type' => is_string($metadata['delivery_type'] ?? null)
+                            ? $metadata['delivery_type']
+                            : (! empty($metadata['individual']) ? 'resend_individual' : 'initial'),
+                        'recipient_name' => $activity->recipient?->name ?? (is_string($metadata['recipient_name'] ?? null) ? $metadata['recipient_name'] : null),
+                        'recipient_email' => $activity->recipient?->email ?? (is_string($metadata['email'] ?? null) ? $metadata['email'] : null),
+                        'recipient_count' => isset($metadata['recipient_count']) ? (int) $metadata['recipient_count'] : null,
+                        'actor' => $activity->user?->name ?? 'Sistema',
+                        'error' => is_string($metadata['error'] ?? null) ? $metadata['error'] : null,
+                        'batch' => is_string($metadata['batch'] ?? null) ? $metadata['batch'] : null,
+                        'created_at' => $activity->created_at?->toIso8601String(),
+                    ];
+                })
+                ->all(),
+        );
     }
 
     public function addPublicComment(ReportRecipient $recipient, int $itemId, string $body): ReportComment

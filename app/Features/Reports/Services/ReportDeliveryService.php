@@ -153,6 +153,7 @@ class ReportDeliveryService
         $this->reports->record($report, 'delivery.queued', $user, recipient: $recipient, metadata: [
             'batch' => $batch,
             'recipient_count' => 1,
+            'recipient_ids' => [$recipient->id],
             'individual' => true,
             'delivery_type' => 'resend_individual',
             'email' => $recipient->email,
@@ -313,6 +314,7 @@ class ReportDeliveryService
         $this->reports->record($report, 'delivery.queued', $user, metadata: [
             'batch' => $batch,
             'recipient_count' => count($recipientIds),
+            'recipient_ids' => $recipientIds,
             'delivery_type' => $deliveryType,
         ]);
 

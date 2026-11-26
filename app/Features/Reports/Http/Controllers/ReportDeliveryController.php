@@ -10,6 +10,7 @@ use App\Models\ReportRecipient;
 use App\Models\Team;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Inertia\Inertia;
 
 class ReportDeliveryController extends Controller
 {
@@ -24,7 +25,10 @@ class ReportDeliveryController extends Controller
         $report = $reports->scopedReport($current_team, $report->id);
         $delivery->finalize($current_team, $report, $request->user());
 
-        return back()->with('success', 'Relatório finalizado e envios enfileirados.');
+        $message = 'Relatório finalizado e envios enfileirados.';
+        Inertia::flash('toast', ['type' => 'success', 'message' => $message]);
+
+        return back()->with('success', $message);
     }
 
     public function resend(
@@ -38,7 +42,10 @@ class ReportDeliveryController extends Controller
         $report = $reports->scopedReport($current_team, $report->id);
         $delivery->resend($current_team, $report, $request->user());
 
-        return back()->with('success', 'Reenvio enfileirado.');
+        $message = 'Reenvio enfileirado.';
+        Inertia::flash('toast', ['type' => 'success', 'message' => $message]);
+
+        return back()->with('success', $message);
     }
 
     public function storeRecipient(
@@ -64,7 +71,10 @@ class ReportDeliveryController extends Controller
             $request->user(),
         );
 
-        return back()->with('success', "Destinatário {$recipient->email} adicionado com sucesso.");
+        $message = "Destinatário {$recipient->email} adicionado com sucesso.";
+        Inertia::flash('toast', ['type' => 'success', 'message' => $message]);
+
+        return back()->with('success', $message);
     }
 
     public function resendIndividual(
@@ -79,7 +89,10 @@ class ReportDeliveryController extends Controller
         $report = $reports->scopedReport($current_team, $report->id);
         $delivery->resendIndividual($current_team, $report, $recipient, $request->user());
 
-        return back()->with('success', "Reenvio individual para {$recipient->email} enfileirado.");
+        $message = "Reenvio individual para {$recipient->email} enfileirado.";
+        Inertia::flash('toast', ['type' => 'success', 'message' => $message]);
+
+        return back()->with('success', $message);
     }
 
     public function revoke(
@@ -94,7 +107,10 @@ class ReportDeliveryController extends Controller
         $report = $reports->scopedReport($current_team, $report->id);
         $delivery->revoke($current_team, $report, $recipient, $request->user());
 
-        return back()->with('success', 'Destinatário removido.');
+        $message = 'Destinatário removido.';
+        Inertia::flash('toast', ['type' => 'success', 'message' => $message]);
+
+        return back()->with('success', $message);
     }
 
     private function authorizeAdmin(Request $request): void

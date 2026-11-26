@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { usePage } from '@inertiajs/vue3';
-import { Check, Clock, ShieldCheck, X } from '@lucide/vue';
+import { Check, Clock, Loader2, ShieldCheck, X } from '@lucide/vue';
 import { computed } from 'vue';
 import {
     formatDateBr,
@@ -20,6 +20,7 @@ const props = withDefaults(
         currentTeam: Team;
         intendedRecipientsCount?: number;
         activeRecipientsCount?: number;
+        queuedRecipientsCount?: number;
         issuerName?: string | null;
         pendingDate: string;
         datePrompt: {
@@ -32,6 +33,7 @@ const props = withDefaults(
     {
         intendedRecipientsCount: 0,
         activeRecipientsCount: undefined,
+        queuedRecipientsCount: 0,
         issuerName: null,
     },
 );
@@ -273,6 +275,16 @@ const resolvedIssuerName = computed(
                         }}
                         destinatário(s) ativo(s)
                     </strong>
+                    <span
+                        v-if="queuedRecipientsCount > 0"
+                        data-test="header-queued-indicator"
+                        class="inline-flex items-center gap-1 text-[10.5px] font-medium text-sky-700 dark:text-sky-300"
+                    >
+                        <Loader2 class="size-3 animate-spin" />
+                        <span>
+                            {{ queuedRecipientsCount }} envio(s) na fila...
+                        </span>
+                    </span>
                     <button
                         type="button"
                         class="inline-flex w-fit items-center gap-1 text-left text-[10.5px] font-semibold text-primary hover:underline"

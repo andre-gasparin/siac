@@ -1,5 +1,6 @@
 <?php
 
+use App\Features\Reports\Events\ReportDeliveryUpdatedEvent;
 use App\Features\Reports\Notifications\ReportAccessNotification;
 use App\Infrastructure\AI\GeminiService;
 use App\Jobs\SendReportRecipientEmail;
@@ -16,6 +17,8 @@ use App\Models\ReportRecipient;
 use App\Models\ReportSuggestion;
 use App\Models\Team;
 use App\Models\User;
+use Illuminate\Support\Facades\Broadcast;
+use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Notification;
 use Illuminate\Support\Facades\Queue;
 
@@ -1292,4 +1295,108 @@ test('report show and preview include currentTeam logoUrl when team has a logo',
             ->component('Reports/Preview')
             ->where('currentTeam.logoUrl', $expectedLogoUrl)
             ->where('report.team_logo_url', $expectedLogoUrl));
+});
+
+test('recipients expose is_queued while delivery job is pending and clear when finished', function () {
+    $report = createConsolidatedReport($this);
+    $report->update(['status' => 'completed', 'finished_at' => now()]);
+
+    $recipient = ReportRecipient::query()->create([
+        'team_id' => $this->team->id,
+        'report_id' => $report->id,
+        'name' => 'Destinatario Fila',
+        'email' => 'fila@innova.com',
+        'access_token' => 'queued-token-123',
+        'token_hash' => hash('sha256', 'queued-token-123'),
+    ]);
+
+    Queue::fake();
+
+    $this->actingAs($this->admin)
+        ->post(route('reports.recipients.resend', [$this->team, $report, $recipient]))
+        ->assertRedirect();
+
+    $this->actingAs($this->admin)
+        ->get(route('reports.show', [$this->team, $report]))
+        ->assertOk()
+        ->assertInertia(fn ($page) => $page
+            ->component('Reports/Show')
+            ->where('recipients.0.is_queued', true));
+
+    $this->actingAs($this->admin)
+        ->get(route('reports.preview', [$this->team, $report]))
+        ->assertOk()
+        ->assertInertia(fn ($page) => $page
+            ->component('Reports/Preview')
+            ->where('recipients.0.is_queued', true));
+
+    $queuedActivity = ReportActivity::query()
+        ->where('report_id', $report->id)
+        ->where('action', 'delivery.queued')
+        ->latest('id')
+        ->firstOrFail();
+
+    Notification::fake();
+    (new SendReportRecipientEmail($recipient->id, (string) $queuedActivity->metadata['batch'], [], 'resend_individual'))->handle();
+
+    $this->actingAs($this->admin)
+        ->get(route('reports.show', [$this->team, $report]))
+        ->assertOk()
+        ->assertInertia(fn ($page) => $page
+            ->component('Reports/Show')
+            ->where('recipients.0.is_queued', false)
+            ->where('recipients.0.send_count', 1));
+});
+
+test('report delivery job and public access broadcast ReportDeliveryUpdatedEvent and private channel authorizes admins only', function () {
+    $report = createConsolidatedReport($this);
+    $report->update(['status' => 'completed', 'finished_at' => now()]);
+
+    $recipient = ReportRecipient::query()->create([
+        'team_id' => $this->team->id,
+        'report_id' => $report->id,
+        'name' => 'Broadcast Test',
+        'email' => 'broadcast@innova.com',
+        'access_token' => 'broadcast-token-123',
+        'token_hash' => hash('sha256', 'broadcast-token-123'),
+    ]);
+
+    Event::fake([ReportDeliveryUpdatedEvent::class]);
+    Notification::fake();
+
+    $job = new SendReportRecipientEmail($recipient->id, 'batch-abc', [], 'resend_individual');
+    $job->handle();
+
+    Event::assertDispatched(ReportDeliveryUpdatedEvent::class, function (ReportDeliveryUpdatedEvent $event) use ($report, $recipient): bool {
+        return $event->reportId === $report->id
+            && $event->recipientId === $recipient->id
+            && $event->status === 'sent';
+    });
+
+    $job->failed(new RuntimeException('SMTP error'));
+
+    Event::assertDispatched(ReportDeliveryUpdatedEvent::class, function (ReportDeliveryUpdatedEvent $event) use ($report, $recipient): bool {
+        return $event->reportId === $report->id
+            && $event->recipientId === $recipient->id
+            && $event->status === 'failed'
+            && $event->error === 'SMTP error';
+    });
+
+    $this->get(route('reports.public.show', 'broadcast-token-123'))->assertOk();
+
+    Event::assertDispatched(ReportDeliveryUpdatedEvent::class, function (ReportDeliveryUpdatedEvent $event) use ($report, $recipient): bool {
+        return $event->reportId === $report->id
+            && $event->recipientId === $recipient->id
+            && $event->status === 'accessed';
+    });
+
+    $callback = Broadcast::driver()->getChannels()->get('reports.{reportId}');
+    expect($callback)->not->toBeNull()
+        ->and($callback($this->member, (string) $report->id))->toBeFalse()
+        ->and($callback($this->admin, (string) $report->id))->toBeTrue()
+        ->and($callback($this->admin, '999999'))->toBeFalse();
+
+    $event = new ReportDeliveryUpdatedEvent($report->id, $recipient->id, 'sent');
+    expect($event->broadcastOn()[0]->name)->toBe('private-reports.'.$report->id)
+        ->and($event->broadcastAs())->toBe('ReportDeliveryUpdated');
 });

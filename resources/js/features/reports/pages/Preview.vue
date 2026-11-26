@@ -7,6 +7,7 @@ import type {
     DeliveryHistoryEntry,
     ReportRecipientItem,
 } from '@/features/reports/components/ReportRecipientsModal.vue';
+import { useReportDeliverySync } from '@/features/reports/composables/useReportDeliverySync';
 import { notify as notifyPreviewInteractions } from '@/routes/reports/preview/interactions';
 import type { ChartSeries } from '@/shared/components/charts/EChartRenderer.vue';
 import type { Team } from '@/shared/types';
@@ -95,6 +96,17 @@ const props = defineProps<{
 }>();
 
 const recipientsOpen = ref(false);
+
+useReportDeliverySync({
+    reportId: () => props.report.id,
+    recipients: () => props.recipients ?? [],
+    reloadProps: [
+        'report',
+        'recipients',
+        'activeRecipientsCount',
+        'deliveryHistory',
+    ],
+});
 
 function getCommentSubmitUrl(): string {
     return `/${props.currentTeam.slug}/relatorios/${props.report.id}/preview/comentarios`;

@@ -35,6 +35,7 @@ export interface ReportRecipientItem {
     last_sent_at: string | null;
     last_failed_at?: string | null;
     send_count: number;
+    is_queued?: boolean;
 }
 
 export interface DeliveryHistoryEntry {
@@ -101,8 +102,14 @@ const accessedCount = computed(
         ).length,
 );
 
+const queuedCount = computed(
+    () => activeRecipients.value.filter((r) => Boolean(r.is_queued)).length,
+);
+
 const pendingSendCount = computed(
-    () => activeRecipients.value.filter((r) => r.send_count === 0).length,
+    () =>
+        activeRecipients.value.filter((r) => r.send_count === 0 && !r.is_queued)
+            .length,
 );
 
 const formattedReferenceDate = computed(() =>
@@ -336,6 +343,14 @@ function deliveryStatusClass(status: DeliveryHistoryEntry['status']): string {
                                 : 'aguardando emissão'
                         }}
                     </span>
+                    <span
+                        v-if="queuedCount > 0"
+                        data-test="recipients-queued-badge"
+                        class="inline-flex items-center gap-1.5 rounded-full bg-sky-500/15 px-2.5 py-0.5 font-medium text-sky-700 dark:text-sky-300"
+                    >
+                        <Loader2 class="size-3 animate-spin" />
+                        <span>{{ queuedCount }} na fila de envio</span>
+                    </span>
                 </div>
 
                 <button
@@ -434,7 +449,36 @@ function deliveryStatusClass(status: DeliveryHistoryEntry['status']): string {
 
                                 <!-- Último envio -->
                                 <td class="px-3.5 py-3 align-top">
-                                    <template v-if="rec.last_sent_at">
+                                    <template v-if="rec.is_queued">
+                                        <div
+                                            data-test="recipient-queued-status"
+                                            class="inline-flex items-center gap-1.5 font-semibold text-sky-700 dark:text-sky-400"
+                                        >
+                                            <Loader2
+                                                class="size-3.5 animate-spin"
+                                            />
+                                            <span>Na fila para envio...</span>
+                                        </div>
+                                        <div
+                                            v-if="rec.last_sent_at"
+                                            class="mt-0.5 text-[11px] text-muted-foreground"
+                                        >
+                                            Último:
+                                            {{
+                                                formatDateTime(rec.last_sent_at)
+                                            }}
+                                            · {{ rec.send_count }} envio{{
+                                                rec.send_count > 1 ? 's' : ''
+                                            }}
+                                        </div>
+                                        <div
+                                            v-else
+                                            class="mt-0.5 text-[11px] text-muted-foreground"
+                                        >
+                                            Processando disparo na fila
+                                        </div>
+                                    </template>
+                                    <template v-else-if="rec.last_sent_at">
                                         <div
                                             class="font-semibold text-emerald-700 dark:text-emerald-400"
                                         >
