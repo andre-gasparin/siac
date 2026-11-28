@@ -30,6 +30,7 @@ import ChartBuilderModal from '@/features/reports/components/ChartBuilderModal.v
 import ReportChartUpdaterModal from '@/features/reports/components/ReportChartUpdaterModal.vue';
 import ReportEditorToolbar from '@/features/reports/components/ReportEditorToolbar.vue';
 import ReportHistoryPanel from '@/features/reports/components/ReportHistoryPanel.vue';
+import ReportQuickCommentModal from '@/features/reports/components/ReportQuickCommentModal.vue';
 import ReportSystemPickerModal from '@/features/reports/components/ReportSystemPickerModal.vue';
 import { useFloatingDraggable } from '@/features/reports/composables/useFloatingDraggable';
 import {
@@ -39,6 +40,7 @@ import {
     ResizableImage,
 } from '@/features/reports/extensions';
 import type {
+    QuickCommentPayload,
     ReportChartConfig,
     ReportContext,
     ReportHistoryItem,
@@ -120,6 +122,7 @@ const showChartDialog = ref(false);
 const chartBeingEdited = ref<ReportChartConfig | null>(null);
 const chartBeingEditedPosition = ref<number | null>(null);
 const showChartUpdater = ref(false);
+const showQuickCommentModal = ref(false);
 const selectedInlineParameterIds = ref<number[]>([]);
 const bulkChartIds = ref<string[]>([]);
 
@@ -550,6 +553,50 @@ function insertParameters() {
     selectedInlineParameterIds.value = [];
 }
 
+function insertQuickComment(payload: QuickCommentPayload) {
+    if (!editor.value) {
+        return;
+    }
+
+    const nodes: Array<Record<string, unknown>> = [];
+
+    if (payload.status) {
+        nodes.push({ type: 'reportIcon', attrs: { kind: payload.status } });
+        nodes.push({ type: 'text', text: ' ' });
+    }
+
+    const selectedParameters =
+        context.value?.parameters.filter((parameter) =>
+            payload.parameterIds.includes(parameter.id),
+        ) ?? [];
+
+    if (selectedParameters.length > 0) {
+        nodes.push({
+            type: 'parameterReference',
+            attrs: {
+                ids: selectedParameters.map((parameter) => parameter.id),
+                label: naturalJoin(
+                    selectedParameters.map((parameter) => parameter.name),
+                ),
+            },
+        });
+
+        if (payload.comment) {
+            nodes.push({ type: 'text', text: ': ' });
+        }
+    }
+
+    if (payload.comment) {
+        nodes.push({ type: 'text', text: payload.comment });
+    }
+
+    if (nodes.length > 0) {
+        editor.value.chain().focus().insertContent(nodes).run();
+    }
+
+    showQuickCommentModal.value = false;
+}
+
 async function loadHistory() {
     if (!context.value) {
         return;
@@ -970,6 +1017,7 @@ onBeforeUnmount(() => {
                     @toggle-floating="toggleFloating"
                     @insert-check-phrase="insertCheckPhrase"
                     @insert-icon="insertIcon"
+                    @open-quick-comment="showQuickCommentModal = true"
                     @insert-parameters="insertParameters"
                     @apply-latest="applyLatest"
                     @load-history="loadHistory"
@@ -1064,6 +1112,15 @@ onBeforeUnmount(() => {
             v-model:bulk-chart-ids="bulkChartIds"
             @close="showChartUpdater = false"
             @update-periods="updateChartPeriods"
+        />
+
+        <!-- Modal de Comentário Rápido -->
+        <ReportQuickCommentModal
+            :show="showQuickCommentModal"
+            :team-slug="currentTeam.slug"
+            :parameters="context?.parameters ?? []"
+            @close="showQuickCommentModal = false"
+            @submit="insertQuickComment"
         />
     </div>
 </template>

@@ -157,4 +157,19 @@ export interface ReportTableData {
     is_multi_system?: boolean;
 }
 
+export type ReportIconKind = 'error' | 'warning' | 'success' | 'info';
+
+export interface ReportCommentTemplate {
+    id: number;
+    body: string;
+    created_at: string | null;
+    updated_at: string | null;
+}
+
+export interface QuickCommentPayload {
+    status: ReportIconKind | null;
+    parameterIds: number[];
+    comment: string;
+}
+
 export type ParameterCategoryCode = 'ON' | 'LAB' | 'OP' | 'CALC' | 'PORT';

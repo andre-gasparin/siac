@@ -10,6 +10,7 @@ use App\Features\Reports\Http\Controllers\PublicReportInteractionController;
 use App\Features\Reports\Http\Controllers\ReportAssistantController;
 use App\Features\Reports\Http\Controllers\ReportChartController;
 use App\Features\Reports\Http\Controllers\ReportCommentController;
+use App\Features\Reports\Http\Controllers\ReportCommentTemplateController;
 use App\Features\Reports\Http\Controllers\ReportDeliveryController;
 use App\Features\Reports\Http\Controllers\ReportGroupController;
 use App\Features\Reports\Http\Controllers\ReportHistoryController;
@@ -73,4 +74,8 @@ Route::prefix('{current_team}')
         Route::post('reports/chart-templates', [ChartTemplateController::class, 'store'])->name('reports.chart-templates.store');
         Route::put('reports/chart-templates/{chart_template}', [ChartTemplateController::class, 'update'])->name('reports.chart-templates.update');
         Route::delete('reports/chart-templates/{chart_template}', [ChartTemplateController::class, 'destroy'])->name('reports.chart-templates.destroy');
+        Route::get('reports/comment-templates', [ReportCommentTemplateController::class, 'index'])->name('reports.comment-templates.index');
+        Route::post('reports/comment-templates', [ReportCommentTemplateController::class, 'store'])->name('reports.comment-templates.store');
+        Route::put('reports/comment-templates/{comment_template}', [ReportCommentTemplateController::class, 'update'])->name('reports.comment-templates.update');
+        Route::delete('reports/comment-templates/{comment_template}', [ReportCommentTemplateController::class, 'destroy'])->name('reports.comment-templates.destroy');
     });

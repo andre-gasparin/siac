@@ -11,6 +11,7 @@ import {
     Image as ImageIcon,
     Info,
     Italic,
+    MessageSquarePlus,
     Move,
     Pin,
     Redo2,
@@ -42,6 +43,7 @@ const props = defineProps<{
 const emit = defineEmits<{
     insertCheckPhrase: [];
     insertIcon: [kind: 'error' | 'warning' | 'success' | 'info'];
+    openQuickComment: [];
     insertParameters: [];
     applyLatest: [mode: 'append' | 'replace'];
     loadHistory: [];
@@ -177,6 +179,16 @@ function handleImageFileSelected(event: Event) {
             @click="emit('insertIcon', 'info')"
         >
             <Info class="size-4" />
+        </button>
+        <button
+            type="button"
+            data-test="open-quick-comment"
+            class="editor-select"
+            title="Inserir comentário rápido com status e parâmetros"
+            @click="emit('openQuickComment')"
+        >
+            <MessageSquarePlus class="size-3.5 text-emerald-600" />
+            Comentário rápido
         </button>
 
         <!-- 2. Último comentário (logo após os ícones de atenção) com Prévia -->
